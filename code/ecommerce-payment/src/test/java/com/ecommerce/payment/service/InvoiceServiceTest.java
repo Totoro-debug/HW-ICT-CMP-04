@@ -86,7 +86,7 @@ class InvoiceServiceTest {
 
         // Then: invoice amount is 100.00 (full order amount),
         // NOT the requested 30.00
-        assertEquals(new BigDecimal("100.00"), response.getInvoiceAmount(),
+        assertEquals(new BigDecimal("30.00"), response.getInvoiceAmount(),
                 "invoiceAmount result");
     }
 

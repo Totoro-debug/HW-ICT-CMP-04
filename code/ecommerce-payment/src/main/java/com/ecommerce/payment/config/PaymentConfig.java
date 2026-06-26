@@ -19,6 +19,15 @@ public class PaymentConfig {
      */
     private BigDecimal refundFeeRate = BigDecimal.valueOf(0.02);
 
+    /**
+     * Shared secret/signature value used to authenticate payment gateway callbacks.
+     * Tests use the default value via X-Payment-Signature.
+     */
+    private String callbackSignature = "valid-signature";
+
     public BigDecimal getRefundFeeRate() { return refundFeeRate; }
     public void setRefundFeeRate(BigDecimal refundFeeRate) { this.refundFeeRate = refundFeeRate; }
+
+    public String getCallbackSignature() { return callbackSignature; }
+    public void setCallbackSignature(String callbackSignature) { this.callbackSignature = callbackSignature; }
 }

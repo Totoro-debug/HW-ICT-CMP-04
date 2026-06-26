@@ -19,11 +19,12 @@ public class OrderValidator {
      * Validate that an order amount is positive.
      *
      * @param amount the amount to validate
-     * @throws IllegalArgumentException if amount is null, zero, or negative
+     * @throws BusinessException if amount is null, zero, or negative
      */
     public void validateAmount(BigDecimal amount) {
         if (amount == null || amount.compareTo(BigDecimal.ZERO) <= 0) {
-            throw new IllegalArgumentException("Order amount must be positive, got: " + amount);
+            throw new BusinessException("ORDER_INVALID_AMOUNT",
+                    "Order amount must be positive, got: " + amount);
         }
         log.debug("Amount validated: {}", amount);
     }

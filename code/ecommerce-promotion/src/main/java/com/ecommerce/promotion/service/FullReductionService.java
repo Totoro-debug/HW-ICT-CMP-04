@@ -10,6 +10,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
+import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Optional;
 
@@ -68,9 +69,13 @@ public class FullReductionService {
         }
 
         List<FullReductionActivity> activeActivities = listActive();
+        LocalDateTime now = LocalDateTime.now();
         BigDecimal bestReduction = BigDecimal.ZERO;
 
         for (FullReductionActivity activity : activeActivities) {
+            if (!isEffective(activity, now)) {
+                continue;
+            }
             if (orderTotal.compareTo(activity.getThresholdAmount()) >= 0) {
                 if (activity.getReductionAmount().compareTo(bestReduction) > 0) {
                     bestReduction = activity.getReductionAmount();
@@ -82,6 +87,16 @@ public class FullReductionService {
             return Optional.of(MonetaryUtil.roundToCent(bestReduction));
         }
         return Optional.empty();
+    }
+
+    private boolean isEffective(FullReductionActivity activity, LocalDateTime now) {
+        if (!"ACTIVE".equals(activity.getStatus())) {
+            return false;
+        }
+        if (activity.getStartTime() != null && now.isBefore(activity.getStartTime())) {
+            return false;
+        }
+        return activity.getEndTime() == null || !now.isAfter(activity.getEndTime());
     }
 
     private String toJson(Object value) {

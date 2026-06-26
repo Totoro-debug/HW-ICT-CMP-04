@@ -1,6 +1,7 @@
 package com.ecommerce.order.service;
 
 import com.ecommerce.common.event.DomainEventPublisher;
+import com.ecommerce.common.exception.BusinessException;
 import com.ecommerce.inventory.query.InventoryReservationService;
 import com.ecommerce.inventory.query.ReserveItem;
 import com.ecommerce.loyalty.query.LoyaltyQueryService;
@@ -37,6 +38,7 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.ArgumentMatchers.anyLong;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
@@ -97,6 +99,9 @@ class OrderServiceTest {
     private OrderRiskChecker riskChecker;
 
     @Mock
+    private OrderSplitStrategy splitStrategy;
+
+    @Mock
     private DomainEventPublisher eventPublisher;
 
     @Mock
@@ -120,6 +125,8 @@ class OrderServiceTest {
         item.setSkuId(100L);
         item.setQuantity(2);
         request.setItems(List.of(item));
+        org.mockito.Mockito.lenient().when(splitStrategy.split(any(CreateOrderRequest.class)))
+                .thenAnswer(invocation -> List.of(new OrderSplitGroup(invocation.getArgument(0, CreateOrderRequest.class).getItems())));
 
         // Build SKU
         sku = new SkuDto();
@@ -305,8 +312,62 @@ class OrderServiceTest {
 
         orderService.createOrder(1L, request);
 
-        // Verify risk checker interaction.
-        verify(riskChecker, never()).check(anyLong(), any(), anyList());
+        // Verify risk checker runs before persistence/reservation.
+        verify(riskChecker).check(eq(1L), eq(itemTotal), eq(List.of(100L)));
+    }
+
+    @Test
+    @DisplayName("createOrder rejects high risk order before persistence")
+    void testCreateOrder_highRisk_rejectedBeforeSave() {
+        when(productQueryService.getSkuForSale(100L)).thenReturn(sku);
+        BigDecimal itemTotal = new BigDecimal("100.00");
+        when(riskChecker.check(eq(1L), eq(itemTotal), eq(List.of(100L))))
+                .thenReturn(RiskCheckResult.rejected(RiskCheckResult.RiskLevel.HIGH, "high risk"));
+
+        assertThatThrownBy(() -> orderService.createOrder(1L, request))
+                .isInstanceOf(BusinessException.class)
+                .extracting(ex -> ((BusinessException) ex).getCode())
+                .isEqualTo("ORDER_RISK_REJECTED");
+
+        verify(orderRepository, never()).save(any(Order.class));
+        verify(inventoryReservationService, never()).reserve(anyLong(), anyList());
+    }
+
+    @Test
+    @DisplayName("createOrder propagates promotion calculation errors")
+    void testCreateOrder_promotionException_propagates() {
+        when(productQueryService.getSkuForSale(100L)).thenReturn(sku);
+
+        BigDecimal itemTotal = new BigDecimal("100.00");
+        BigDecimal shippingFee = new BigDecimal("8.00");
+        BigDecimal packagingFee = new BigDecimal("1.00");
+
+        when(totalCalculator.calculateShippingFee(itemTotal)).thenReturn(shippingFee);
+        when(totalCalculator.calculatePackagingFee(1)).thenReturn(packagingFee);
+        when(promotionCalculationService.calculate(any()))
+                .thenThrow(new BusinessException("COUPON_EXPIRED", "Coupon expired"));
+
+        assertThatThrownBy(() -> orderService.createOrder(1L, request))
+                .isInstanceOf(BusinessException.class)
+                .extracting(ex -> ((BusinessException) ex).getCode())
+                .isEqualTo("COUPON_EXPIRED");
+
+        verify(orderRepository, never()).save(any(Order.class));
+        verify(inventoryReservationService, never()).reserve(anyLong(), anyList());
+    }
+
+    @Test
+    @DisplayName("createOrder rejects unsupported multi-group split")
+    void testCreateOrder_multiGroupSplit_rejected() {
+        when(splitStrategy.split(any(CreateOrderRequest.class)))
+                .thenReturn(List.of(new OrderSplitGroup(request.getItems()), new OrderSplitGroup(request.getItems())));
+
+        assertThatThrownBy(() -> orderService.createOrder(1L, request))
+                .isInstanceOf(BusinessException.class)
+                .extracting(ex -> ((BusinessException) ex).getCode())
+                .isEqualTo("ORDER_STATUS_CONFLICT");
+
+        verify(productQueryService, never()).getSkuForSale(anyLong());
     }
 
     // ======================== payable amount ========================

@@ -73,10 +73,7 @@ class PaymentServiceTest {
                 paymentRecordRepository,
                 paymentValidator,
                 eventPublisher,
-                notificationService,
-                orderPaymentStatusUpdater,
-                orderQueryService,
-                jdbcTemplate
+                orderQueryService
         );
     }
 
@@ -96,9 +93,7 @@ class PaymentServiceTest {
         orderDto.setPayableAmount(new BigDecimal("99.00"));
         orderDto.setStatus(com.ecommerce.order.entity.OrderStatus.CREATED);
 
-        // JdbcTemplate is used directly to query order
-        when(jdbcTemplate.queryForObject(anyString(), any(RowMapper.class), eq(1L)))
-                .thenReturn(orderDto);
+        when(orderQueryService.getPayableOrder(1L)).thenReturn(orderDto);
 
         PaymentRecord savedRecord = new PaymentRecord();
         savedRecord.setPaymentNo("PAY123");
@@ -118,103 +113,25 @@ class PaymentServiceTest {
         assertEquals(new BigDecimal("99.00"), response.getPaidAmount());
         assertNotNull(response.getPaymentNo());
 
-        // Verify JdbcTemplate was used directly to query order
-        verify(jdbcTemplate).queryForObject(anyString(), any(RowMapper.class), eq(1L));
-        // Verify OrderQueryService was NOT used (bypasses interface)
-        verify(orderQueryService, never()).getPayableOrder(any());
-        verify(orderQueryService, never()).getOrder(any());
+        verify(orderQueryService).getPayableOrder(1L);
 
         // Verify payment was saved
         verify(paymentRecordRepository).save(any(PaymentRecord.class));
         verify(paymentValidator).validate(eq(request), eq(orderDto));
     }
 
-    // ---- testConfirmPayment_synchronousPostActions ----
-
     @Test
-    @DisplayName("confirmPayment() executes logistics/loyalty/notification synchronously in same transaction")
-    void testConfirmPayment_synchronousPostActions() {
-        // Given: a payment record to confirm
+    @DisplayName("confirmPayment publishes only a domain event")
+    void testConfirmPayment_publishesEvent() {
         PaymentRecord payment = new PaymentRecord();
         payment.setPaymentNo("PAY001");
         payment.setOrderId(1L);
         payment.setPaidAmount(new BigDecimal("99.00"));
         payment.setStatus(PaymentStatus.PENDING);
 
-        // When: confirmPayment is called
         paymentService.confirmPayment(payment);
 
-        // Then: notificationService.send() is called SYNCHRONOUSLY
-        // inside the confirmPayment transaction.
-        // Verify the notification service was called with correct parameters
-        ArgumentCaptor<NotificationRequest> notificationCaptor =
-                ArgumentCaptor.forClass(NotificationRequest.class);
-        verify(notificationService).send(notificationCaptor.capture());
-
-        NotificationRequest sent = notificationCaptor.getValue();
-        assertEquals("PAYMENT_SUCCESS", sent.getBizType());
-        assertEquals("PAY001", sent.getBizId());
-        assertEquals("payment_success", sent.getTemplateCode());
-        assertEquals("pay_notify_PAY001", sent.getIdempotencyKey());
-
-        // Verify event was published synchronously too
         verify(eventPublisher).publish(any());
-    }
-
-    // ---- testConfirmPayment_postActionFailure_rollsBackPayment ----
-
-    @Test
-    @DisplayName("confirmPayment() should fail entirely if any post-action throws (rollback behavior)")
-    void testConfirmPayment_postActionFailure_rollsBackPayment() {
-        // Given: notificationService will throw, simulating a downstream failure
-        PaymentRecord payment = new PaymentRecord();
-        payment.setPaymentNo("PAY001");
-        payment.setOrderId(1L);
-        payment.setPaidAmount(new BigDecimal("99.00"));
-        payment.setStatus(PaymentStatus.PENDING);
-
-        doThrow(new RuntimeException("Notification service down"))
-                .when(notificationService).send(any(NotificationRequest.class));
-
-        // When / Then: the entire confirmPayment fails because
-        // notification failure propagates within the same transaction.
-        // The RuntimeException should propagate out of confirmPayment.
-        assertThrows(RuntimeException.class, () -> paymentService.confirmPayment(payment));
-
-        // Consequence: the notification failure causes the entire
-        // payment confirmation to fail, even though payment was successful.
-        // In the real application with @Transactional, this would roll back
-        // the payment status change too.
-    }
-
-    // ---- testConfirmPayment_usesJdbcTemplate ----
-
-    @Test
-    @DisplayName("pay() queries order data for payment")
-    void testConfirmPayment_usesJdbcTemplate() {
-        // Given
-        PayRequest request = new PayRequest(1L, new BigDecimal("50.00"),
-                PaymentMethod.WECHAT, "CLIENT456");
-
-        OrderDto orderDto = new OrderDto();
-        orderDto.setOrderId(1L);
-        orderDto.setPayableAmount(new BigDecimal("50.00"));
-        orderDto.setStatus(com.ecommerce.order.entity.OrderStatus.CREATED);
-
-        // JdbcTemplate is used directly
-        when(jdbcTemplate.queryForObject(anyString(), any(RowMapper.class), eq(1L)))
-                .thenReturn(orderDto);
-        when(paymentRecordRepository.save(any(PaymentRecord.class)))
-                .thenAnswer(invocation -> invocation.getArgument(0));
-
-        // When
-        paymentService.pay(request);
-
-        // Then: JdbcTemplate is called directly
-        // Verify order lookup dependencies.
-        verify(jdbcTemplate, times(1)).queryForObject(anyString(), any(RowMapper.class), eq(1L));
-        verify(orderQueryService, never()).getPayableOrder(any());
-        verify(orderQueryService, never()).getOrder(any());
     }
 
     // ---- testGetPayment_returnsPaymentRecord ----

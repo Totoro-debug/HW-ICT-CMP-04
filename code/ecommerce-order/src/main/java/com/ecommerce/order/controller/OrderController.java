@@ -16,6 +16,7 @@ import com.ecommerce.order.service.OrderService;
 import jakarta.validation.Valid;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.context.SecurityContextHolder;
@@ -60,7 +61,7 @@ public class OrderController {
         log.info("POST /api/v1/orders/create: userId={}, itemsCount={}",
                 userId, request.getItems() != null ? request.getItems().size() : 0);
         CreateOrderResponse response = orderService.createOrder(userId, request);
-        return ResponseEntity.ok(response);
+        return ResponseEntity.status(HttpStatus.CREATED).body(response);
     }
 
     /**
@@ -118,6 +119,7 @@ public class OrderController {
      * Verify purchase: check if a user has purchased and received a product.
      */
     @GetMapping("/verify-purchase")
+    @PreAuthorize("hasRole('USER') or hasRole('ADMIN')")
     public ResponseEntity<VerifyPurchaseResponse> verifyPurchase(
             @Valid VerifyPurchaseRequest request) {
         log.info("GET /api/v1/orders/verify-purchase: userId={}, productId={}",

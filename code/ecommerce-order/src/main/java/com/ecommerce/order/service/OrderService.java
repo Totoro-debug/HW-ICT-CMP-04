@@ -87,6 +87,7 @@ public class OrderService {
     private final OrderTotalCalculator totalCalculator;
     private final OrderStateMachine stateMachine;
     private final OrderRiskChecker riskChecker;
+    private final OrderSplitStrategy splitStrategy;
     private final DomainEventPublisher eventPublisher;
     private final com.ecommerce.promotion.service.PromotionCalculationService promotionCalculationService;
 
@@ -102,6 +103,7 @@ public class OrderService {
                         OrderTotalCalculator totalCalculator,
                         OrderStateMachine stateMachine,
                         OrderRiskChecker riskChecker,
+                        OrderSplitStrategy splitStrategy,
                         DomainEventPublisher eventPublisher,
                         com.ecommerce.promotion.service.PromotionCalculationService promotionCalculationService) {
         this.orderRepository = orderRepository;
@@ -116,6 +118,7 @@ public class OrderService {
         this.totalCalculator = totalCalculator;
         this.stateMachine = stateMachine;
         this.riskChecker = riskChecker;
+        this.splitStrategy = splitStrategy;
         this.eventPublisher = eventPublisher;
         this.promotionCalculationService = promotionCalculationService;
     }
@@ -135,8 +138,15 @@ public class OrderService {
         // Checks user existence only (does not check frozen status)
         preconditionChecker.check(userId, request.getItems().size());
 
-        // ===== Step 2: Validate SKUs and get product data =====
-        List<CreateOrderRequest.OrderItemRequest> requestItems = request.getItems();
+        // ===== Step 2: Apply internal split strategy (default: single group to preserve API contract) =====
+        List<OrderSplitGroup> splitGroups = splitStrategy.split(request);
+        if (splitGroups.size() != 1) {
+            throw new BusinessException("ORDER_STATUS_CONFLICT",
+                    "Multiple split groups are not supported by the current create-order API contract");
+        }
+
+        // ===== Step 3: Validate SKUs and get product data =====
+        List<CreateOrderRequest.OrderItemRequest> requestItems = splitGroups.get(0).getItems();
         List<OrderItem> orderItems = new ArrayList<>();
         BigDecimal itemTotal = BigDecimal.ZERO;
 
@@ -161,12 +171,19 @@ public class OrderService {
             itemTotal = MonetaryUtil.add(itemTotal, orderItem.getSubtotal());
         }
 
-        // ===== Step 3: Validate calculated amounts =====
+        // ===== Step 4: Validate calculated amounts =====
         orderValidator.validateAmount(itemTotal);
 
-        // ===== Step 4: Risk check =====
+        // ===== Step 5: Risk check before persistence and inventory reservation =====
+        List<Long> skuIds = orderItems.stream()
+                .map(OrderItem::getSkuId)
+                .collect(Collectors.toList());
+        RiskCheckResult riskResult = riskChecker.check(userId, itemTotal, skuIds);
+        if (riskResult != null && !riskResult.isPassed()) {
+            throw new BusinessException("ORDER_RISK_REJECTED", riskResult.getReason());
+        }
 
-        // ===== Step 5: Calculate shipping and packaging fees =====
+        // ===== Step 6: Calculate shipping and packaging fees =====
         BigDecimal shippingFee = totalCalculator.calculateShippingFee(itemTotal);
         BigDecimal packagingFee = totalCalculator.calculatePackagingFee(orderItems.size());
 
@@ -377,33 +394,28 @@ public class OrderService {
      */
     private BigDecimal calculateDiscounts(Long userId, CreateOrderRequest request,
                                           List<OrderItem> orderItems, BigDecimal itemTotal) {
-        try {
-            List<com.ecommerce.promotion.dto.PromotionCalculateRequest.CalculateItem> calcItems =
-                    new ArrayList<>();
-            for (OrderItem item : orderItems) {
-                com.ecommerce.promotion.dto.PromotionCalculateRequest.CalculateItem calcItem =
-                        new com.ecommerce.promotion.dto.PromotionCalculateRequest.CalculateItem();
-                calcItem.setSkuId(item.getSkuId());
-                calcItem.setPrice(item.getPrice());
-                calcItem.setQuantity(item.getQuantity());
-                calcItems.add(calcItem);
-            }
-
-            com.ecommerce.promotion.dto.PromotionCalculateRequest calcRequest =
-                    new com.ecommerce.promotion.dto.PromotionCalculateRequest();
-            calcRequest.setUserId(userId);
-            calcRequest.setItems(calcItems);
-            calcRequest.setCouponIds(request.getCouponIds() != null
-                    ? request.getCouponIds() : Collections.emptyList());
-
-            com.ecommerce.promotion.dto.PromotionCalculateResponse calcResponse =
-                    promotionCalculationService.calculate(calcRequest);
-
-            return calcResponse.getTotalDiscount();
-        } catch (Exception e) {
-            log.warn("Failed to calculate promotions, using zero discount: {}", e.getMessage());
-            return BigDecimal.ZERO;
+        List<com.ecommerce.promotion.dto.PromotionCalculateRequest.CalculateItem> calcItems =
+                new ArrayList<>();
+        for (OrderItem item : orderItems) {
+            com.ecommerce.promotion.dto.PromotionCalculateRequest.CalculateItem calcItem =
+                    new com.ecommerce.promotion.dto.PromotionCalculateRequest.CalculateItem();
+            calcItem.setSkuId(item.getSkuId());
+            calcItem.setPrice(item.getPrice());
+            calcItem.setQuantity(item.getQuantity());
+            calcItems.add(calcItem);
         }
+
+        com.ecommerce.promotion.dto.PromotionCalculateRequest calcRequest =
+                new com.ecommerce.promotion.dto.PromotionCalculateRequest();
+        calcRequest.setUserId(userId);
+        calcRequest.setItems(calcItems);
+        calcRequest.setCouponIds(request.getCouponIds() != null
+                ? request.getCouponIds() : Collections.emptyList());
+
+        com.ecommerce.promotion.dto.PromotionCalculateResponse calcResponse =
+                promotionCalculationService.calculate(calcRequest);
+
+        return calcResponse.getTotalDiscount();
     }
 
     private String toAddressSnapshot(AddressDto address) {

@@ -60,7 +60,10 @@ public class InvoiceService {
                 .orElseThrow(() -> new BusinessException("NO_PAID_PAYMENT",
                         "Order " + request.getOrderId() + " has no successful payment"));
 
-        BigDecimal invoiceAmount = successfulPayment.getPaidAmount();
+        BigDecimal invoiceAmount = MonetaryUtil.roundToCent(request.getInvoiceAmount());
+        if (request.getInvoiceAmount() == null || invoiceAmount.compareTo(BigDecimal.ZERO) <= 0) {
+            throw new ValidationException("invoiceAmount", "Invoice amount must be greater than 0");
+        }
 
         // Check remaining invoiceable amount
         BigDecimal alreadyInvoiced = invoiceRecordRepository
@@ -69,8 +72,12 @@ public class InvoiceService {
                 successfulPayment.getPaidAmount(), alreadyInvoiced);
 
         if (alreadyInvoiced.compareTo(successfulPayment.getPaidAmount()) >= 0) {
-            throw new BusinessException("INVOICE_LIMIT_EXCEEDED",
+            throw new BusinessException("INVOICE_AMOUNT_EXCEEDED",
                     "Order " + request.getOrderId() + " has already been fully invoiced");
+        }
+        if (invoiceAmount.compareTo(remaining) > 0) {
+            throw new BusinessException("INVOICE_AMOUNT_EXCEEDED",
+                    "Invoice amount exceeds remaining invoiceable amount");
         }
 
         BigDecimal taxRate = RuntimeConfigRegistry.getBigDecimal("invoice.tax-rate", TAX_RATE);

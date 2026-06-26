@@ -5,9 +5,13 @@ import com.ecommerce.order.entity.OrderStatus;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Query;
+import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
 
+import java.math.BigDecimal;
 import java.time.LocalDateTime;
+import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
 
@@ -37,4 +41,11 @@ public interface OrderRepository extends JpaRepository<Order, Long> {
      * Find orders by external order number (used for deduplication in batch).
      */
     Optional<Order> findByExternalOrderNoAndUserId(String externalOrderNo, Long userId);
+
+    @Query("select coalesce(sum(o.payableAmount), 0) from Order o "
+            + "where o.userId = :userId and o.status in :statuses and o.paidAt >= :startTime")
+    BigDecimal sumPayableAmountByUserIdAndStatusInAndPaidAtAfter(
+            @Param("userId") Long userId,
+            @Param("statuses") Collection<OrderStatus> statuses,
+            @Param("startTime") LocalDateTime startTime);
 }

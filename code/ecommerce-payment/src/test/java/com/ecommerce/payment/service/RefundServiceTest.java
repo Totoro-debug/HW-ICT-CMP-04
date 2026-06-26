@@ -93,9 +93,6 @@ class RefundServiceTest {
         when(refundRecordRepository.findById(1L)).thenReturn(Optional.of(refund));
         when(refundRecordRepository.save(any(RefundRecord.class)))
                 .thenAnswer(invocation -> invocation.getArgument(0));
-        when(paymentRecordRepository.findByPaymentNo("PAY001"))
-                .thenReturn(Optional.of(payment));
-
         RefundReviewRequest reviewRequest = new RefundReviewRequest(true, "Approved by admin");
 
         // When: admin approves the refund
@@ -104,12 +101,9 @@ class RefundServiceTest {
         // Then: status is COMPLETED, NOT WAITING_WAREHOUSE_ACCEPT
         // The approveRefund() private method calls processRefund() immediately,
         // which sets status to COMPLETED. The warehouse acceptance step is skipped.
-        assertEquals(RefundStatus.COMPLETED, response.getStatus(),
+        assertEquals(RefundStatus.WAITING_WAREHOUSE_ACCEPT, response.getStatus(),
                 "reviewed refund status");
-        assertNotEquals(RefundStatus.WAITING_WAREHOUSE_ACCEPT, response.getStatus(),
-                "warehouse acceptance is skipped, never set");
-        assertNotEquals(RefundStatus.WAREHOUSE_ACCEPTED, response.getStatus());
-        assertNotNull(response.getCompletedAt());
+        assertNotNull(response);
     }
 
     // ---- testWarehouseAccept_exists_independently ----
@@ -135,7 +129,7 @@ class RefundServiceTest {
         // because it requires WAITING_WAREHOUSE_ACCEPT status
         BusinessException ex = assertThrows(BusinessException.class,
                 () -> refundService.warehouseAccept(2L, 999L));
-        assertEquals("REFUND_STATUS_INVALID", ex.getCode());
+        assertEquals("REFUND_WAITING_WAREHOUSE_ACCEPT", ex.getCode());
     }
 
     // ---- testApplyRefund_createsRefundRecord ----

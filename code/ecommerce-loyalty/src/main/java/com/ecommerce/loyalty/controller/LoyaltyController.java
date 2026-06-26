@@ -11,7 +11,9 @@ import com.ecommerce.loyalty.entity.MemberLevel;
 import com.ecommerce.loyalty.entity.PointsTransaction;
 import com.ecommerce.loyalty.repository.PointsTransactionRepository;
 import com.ecommerce.loyalty.service.LoyaltyPointService;
+import com.ecommerce.loyalty.service.MemberBenefitService;
 import com.ecommerce.loyalty.service.MemberLevelService;
+import jakarta.validation.Valid;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
@@ -40,13 +42,16 @@ public class LoyaltyController {
 
     private final LoyaltyPointService loyaltyPointService;
     private final MemberLevelService memberLevelService;
+    private final MemberBenefitService memberBenefitService;
     private final PointsTransactionRepository transactionRepository;
 
     public LoyaltyController(LoyaltyPointService loyaltyPointService,
                              MemberLevelService memberLevelService,
+                             MemberBenefitService memberBenefitService,
                              PointsTransactionRepository transactionRepository) {
         this.loyaltyPointService = loyaltyPointService;
         this.memberLevelService = memberLevelService;
+        this.memberBenefitService = memberBenefitService;
         this.transactionRepository = transactionRepository;
     }
 
@@ -69,7 +74,7 @@ public class LoyaltyController {
     // ---- POST /points/estimate-redeem ----
 
     @PostMapping("/points/estimate-redeem")
-    public ResponseEntity<PointsEstimateResponse> estimateRedeem(@RequestBody PointsEstimateRequest request) {
+    public ResponseEntity<PointsEstimateResponse> estimateRedeem(@Valid @RequestBody PointsEstimateRequest request) {
         Long userId = getCurrentUserId();
         LoyaltyAccount account = loyaltyPointService.getAccountByUserId(userId);
 
@@ -126,7 +131,7 @@ public class LoyaltyController {
         MemberLevelResponse resp = new MemberLevelResponse();
         resp.setLevel(level.name());
         resp.setLevelName(formatLevelName(level));
-        resp.setMultiplier(level.getMultiplier());
+        resp.setMultiplier(memberBenefitService.getPointsMultiplier(level));
         resp.setAnnualConsumption(account.getAnnualConsumption());
         resp.setNextLevelCondition(getNextLevelCondition(level));
         return ResponseEntity.ok(resp);

@@ -1,10 +1,14 @@
 package com.ecommerce.loyalty.repository;
 
 import com.ecommerce.loyalty.entity.PointsTransaction;
+import com.ecommerce.loyalty.entity.PointsTransactionType;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.stereotype.Repository;
+
+import java.time.LocalDateTime;
+import java.util.List;
 
 /**
  * Spring Data JPA repository for {@link PointsTransaction}.
@@ -20,4 +24,8 @@ public interface PointsTransactionRepository extends JpaRepository<PointsTransac
      * @return a page of points transactions
      */
     Page<PointsTransaction> findByUserIdOrderByCreatedAtDesc(Long userId, Pageable pageable);
+
+    List<PointsTransaction> findByTypeAndExpiresAtLessThanEqual(PointsTransactionType type, LocalDateTime expiresAt);
+
+    boolean existsByTypeAndBizTypeAndBizId(PointsTransactionType type, String bizType, String bizId);
 }

@@ -122,6 +122,16 @@ class UserControllerTest {
     // --- GET /api/v1/users/me ---
 
     @Test
+    @DisplayName("returns 403 Forbidden when ADMIN requests user-only current user info")
+    void testGetMe_adminRole_returns403() throws Exception {
+        String token = jwtTokenProvider.generateToken(1L, List.of("ADMIN"));
+
+        mockMvc.perform(get("/api/v1/users/me")
+                        .header("Authorization", "Bearer " + token))
+                .andExpect(status().isForbidden());
+    }
+
+    @Test
     @DisplayName("returns 200 OK for authenticated user requesting their own info")
     void testGetMe_authenticated_returns200() throws Exception {
         User user = new User();

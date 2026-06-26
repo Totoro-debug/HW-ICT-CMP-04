@@ -45,6 +45,8 @@ public class SecurityConfig {
                         .requestMatchers("/api/v1/inventory/**").permitAll()
                         .requestMatchers("/api/v1/reviews/product/**").permitAll()
                         .requestMatchers("/api/v1/admin/**").hasRole("ADMIN")
+                        .requestMatchers("/api/v1/users/me").hasRole("USER")
+                        .requestMatchers("/api/v1/users/addresses", "/api/v1/users/addresses/**").hasRole("USER")
                         .anyRequest().authenticated()
                 )
                 .addFilterBefore(new JwtAuthFilter(jwtTokenProvider),

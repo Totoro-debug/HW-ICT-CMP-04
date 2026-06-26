@@ -58,7 +58,7 @@ public class ProductQueryServiceImpl implements ProductQueryService {
                 .orElseThrow(() -> new ResourceNotFoundException("ProductSku", skuId));
 
         if (sku.getStatus() != SkuStatus.ON_SHELF) {
-            throw new BusinessException("SKU_NOT_AVAILABLE",
+            throw new BusinessException("PRODUCT_NOT_FOR_SALE",
                     "SKU " + skuId + " is not available for sale, current status: " + sku.getStatus());
         }
 

@@ -1,7 +1,7 @@
 package com.ecommerce.loyalty.service;
 
 import com.ecommerce.common.exception.BusinessException;
-import com.ecommerce.common.exception.ResourceNotFoundException;
+import com.ecommerce.common.integration.PointsRedeemEstimator;
 import com.ecommerce.common.test.RuntimeConfigRegistry;
 import com.ecommerce.common.test.SystemClockService;
 import com.ecommerce.loyalty.entity.LoyaltyAccount;
@@ -27,7 +27,7 @@ import java.math.RoundingMode;
  * {@link LoyaltyCommandService} (writes).
  */
 @Service
-public class LoyaltyPointService implements LoyaltyQueryService, LoyaltyCommandService {
+public class LoyaltyPointService implements LoyaltyQueryService, LoyaltyCommandService, PointsRedeemEstimator {
 
     private static final Logger log = LoggerFactory.getLogger(LoyaltyPointService.class);
 
@@ -44,11 +44,14 @@ public class LoyaltyPointService implements LoyaltyQueryService, LoyaltyCommandS
 
     private final LoyaltyAccountRepository accountRepository;
     private final PointsTransactionRepository transactionRepository;
+    private final MemberBenefitService memberBenefitService;
 
     public LoyaltyPointService(LoyaltyAccountRepository accountRepository,
-                               PointsTransactionRepository transactionRepository) {
+                               PointsTransactionRepository transactionRepository,
+                               MemberBenefitService memberBenefitService) {
         this.accountRepository = accountRepository;
         this.transactionRepository = transactionRepository;
+        this.memberBenefitService = memberBenefitService;
     }
 
     // ======================== LoyaltyQueryService ========================
@@ -83,7 +86,7 @@ public class LoyaltyPointService implements LoyaltyQueryService, LoyaltyCommandS
     @Override
     public double getMemberMultiplier(Long userId) {
         LoyaltyAccount account = getAccount(userId);
-        return account.getMemberLevel().getMultiplier();
+        return memberBenefitService.getPointsMultiplier(account.getMemberLevel());
     }
 
     // ======================== LoyaltyCommandService ========================
@@ -114,21 +117,60 @@ public class LoyaltyPointService implements LoyaltyQueryService, LoyaltyCommandS
 
         account.setAvailablePoints(account.getAvailablePoints() - actual);
         account.setRedeemedPoints(account.getRedeemedPoints() + actual);
-        account.setTotalPoints(account.getTotalPoints() - actual);
+        account.setTotalPoints(Math.max(0, account.getTotalPoints() - actual));
         accountRepository.save(account);
 
-        PointsTransaction tx = new PointsTransaction();
-        tx.setUserId(userId);
-        tx.setType(PointsTransactionType.REDEEM);
-        tx.setAmount(-actual);
-        tx.setBalance(account.getAvailablePoints());
-        tx.setBizType("ORDER_REDEEM");
-        tx.setDescription("Points redeem, deducted " + actual + " points");
-        tx.setExpiresAt(null);
-        transactionRepository.save(tx);
+        recordTransaction(userId, PointsTransactionType.REDEEM, -actual, account.getAvailablePoints(),
+                "ORDER_REDEEM", null, "Points redeem, deducted " + actual + " points");
 
         log.info("Redeemed {} points for userId={}, balance={}", actual, userId, account.getAvailablePoints());
         return actual;
+    }
+
+    @Override
+    @Transactional
+    public void freezePoints(Long userId, int points, String bizType, String bizId, String description) {
+        validatePositivePoints(points);
+        LoyaltyAccount account = getAccount(userId);
+        if (account.getAvailablePoints() < points) {
+            throw new BusinessException("LOYALTY_POINTS_NOT_ENOUGH", "Available points are not enough to freeze");
+        }
+        account.setAvailablePoints(account.getAvailablePoints() - points);
+        account.setFrozenPoints(account.getFrozenPoints() + points);
+        accountRepository.save(account);
+        recordTransaction(userId, PointsTransactionType.FREEZE, -points, account.getAvailablePoints(),
+                bizType, bizId, description);
+    }
+
+    @Override
+    @Transactional
+    public void unfreezePoints(Long userId, int points, String bizType, String bizId, String description) {
+        validatePositivePoints(points);
+        LoyaltyAccount account = getAccount(userId);
+        if (account.getFrozenPoints() < points) {
+            throw new BusinessException("LOYALTY_POINTS_NOT_ENOUGH", "Frozen points are not enough to unfreeze");
+        }
+        account.setFrozenPoints(account.getFrozenPoints() - points);
+        account.setAvailablePoints(account.getAvailablePoints() + points);
+        accountRepository.save(account);
+        recordTransaction(userId, PointsTransactionType.UNFREEZE, points, account.getAvailablePoints(),
+                bizType, bizId, description);
+    }
+
+    @Override
+    @Transactional
+    public void consumeFrozenPoints(Long userId, int points, String bizType, String bizId, String description) {
+        validatePositivePoints(points);
+        LoyaltyAccount account = getAccount(userId);
+        if (account.getFrozenPoints() < points) {
+            throw new BusinessException("LOYALTY_POINTS_NOT_ENOUGH", "Frozen points are not enough to consume");
+        }
+        account.setFrozenPoints(account.getFrozenPoints() - points);
+        account.setRedeemedPoints(account.getRedeemedPoints() + points);
+        account.setTotalPoints(Math.max(0, account.getTotalPoints() - points));
+        accountRepository.save(account);
+        recordTransaction(userId, PointsTransactionType.CONSUME_FROZEN, -points, account.getAvailablePoints(),
+                bizType, bizId, description);
     }
 
     @Override
@@ -142,7 +184,7 @@ public class LoyaltyPointService implements LoyaltyQueryService, LoyaltyCommandS
      * Calculate order points.
      *
      * <p>The calculation multiplies the paid amount by the points-per-yuan
-     * rate, member-level multiplier, request activity multiplier, and runtime
+     * rate, member benefit multiplier, request activity multiplier, and runtime
      * configured activity multiplier.
      *
      * @param amount             the order payable amount
@@ -152,7 +194,8 @@ public class LoyaltyPointService implements LoyaltyQueryService, LoyaltyCommandS
      */
     public int calcOrderPoints(BigDecimal amount, Long userId, double activityMultiplier) {
         LoyaltyAccount account = getAccount(userId);
-        BigDecimal levelMultiplier = BigDecimal.valueOf(account.getMemberLevel().getMultiplier());
+        BigDecimal levelMultiplier = BigDecimal.valueOf(
+                memberBenefitService.getPointsMultiplier(account.getMemberLevel()));
         double configuredActivityMultiplier =
                 RuntimeConfigRegistry.getDouble("loyalty.activity-multiplier", 1.0d);
         BigDecimal points = amount.multiply(BigDecimal.valueOf(POINTS_PER_YUAN))
@@ -243,6 +286,26 @@ public class LoyaltyPointService implements LoyaltyQueryService, LoyaltyCommandS
         } catch (IllegalArgumentException e) {
             return fallback;
         }
+    }
+
+    private void validatePositivePoints(int points) {
+        if (points <= 0) {
+            throw new BusinessException("VALIDATION_FAILED", "points must be greater than zero");
+        }
+    }
+
+    private void recordTransaction(Long userId, PointsTransactionType type, int amount, int balance,
+                                   String bizType, String bizId, String description) {
+        PointsTransaction tx = new PointsTransaction();
+        tx.setUserId(userId);
+        tx.setType(type);
+        tx.setAmount(amount);
+        tx.setBalance(balance);
+        tx.setBizType(bizType);
+        tx.setBizId(bizId);
+        tx.setDescription(description);
+        tx.setExpiresAt(null);
+        transactionRepository.save(tx);
     }
 
     /**

@@ -34,6 +34,14 @@ public class OrderPreconditionChecker {
             throw new BusinessException("USER_NOT_FOUND", "User not found: " + userId);
         }
 
+        String status = user.getStatus();
+        if ("FROZEN".equalsIgnoreCase(status)) {
+            throw new BusinessException("USER_FROZEN", "User is frozen: " + userId);
+        }
+        if (!"ACTIVE".equalsIgnoreCase(status)) {
+            throw new BusinessException("USER_NOT_ACTIVE", "User is not active: " + userId);
+        }
+
         if (itemCount <= 0) {
             throw new BusinessException("ORDER_EMPTY", "Order must have at least one item");
         }

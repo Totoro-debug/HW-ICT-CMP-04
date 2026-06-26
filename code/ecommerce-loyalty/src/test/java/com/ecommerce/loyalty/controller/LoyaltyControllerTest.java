@@ -7,6 +7,7 @@ import com.ecommerce.loyalty.entity.PointsTransaction;
 import com.ecommerce.loyalty.entity.PointsTransactionType;
 import com.ecommerce.loyalty.repository.PointsTransactionRepository;
 import com.ecommerce.loyalty.service.LoyaltyPointService;
+import com.ecommerce.loyalty.service.MemberBenefitService;
 import com.ecommerce.loyalty.service.MemberLevelService;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import jakarta.servlet.http.HttpServletRequest;
@@ -101,6 +102,9 @@ class LoyaltyControllerTest {
 
     @MockBean
     private MemberLevelService memberLevelService;
+
+    @MockBean
+    private MemberBenefitService memberBenefitService;
 
     @MockBean
     private PointsTransactionRepository transactionRepository;
@@ -203,6 +207,7 @@ class LoyaltyControllerTest {
         account.setAnnualConsumption(new BigDecimal("3500"));
 
         when(memberLevelService.evaluateAndUpgrade(1L)).thenReturn(MemberLevel.SILVER);
+        when(memberBenefitService.getPointsMultiplier(MemberLevel.SILVER)).thenReturn(1.1);
         when(loyaltyPointService.getAccountByUserId(1L)).thenReturn(account);
 
         mockMvc.perform(get("/api/v1/loyalty/member-level"))

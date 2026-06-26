@@ -29,7 +29,11 @@ order:
 payment:
   retry-times: 5
   refund-fee-rate: 0.02
+  callback-signature: valid-signature
   callback-timeout-seconds: 5
+
+logistics:
+  callback-secret: shophub-logistics-callback-secret
 
 invoice:
   tax-rate: 0.06

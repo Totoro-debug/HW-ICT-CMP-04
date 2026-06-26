@@ -14,7 +14,6 @@ import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-import java.math.BigDecimal;
 import java.time.LocalDateTime;
 
 /**
@@ -81,26 +80,22 @@ public class OrderCancelService {
                 return cancelPayingOrder(order, reason);
 
             case PAID:
-                return cancelPaidOrderDirectly(order, reason);
+                return submitPaidOrderCancelReview(order, reason);
 
             case SHIPPED:
             case DELIVERED:
-                throw new BusinessException("ORDER_CANNOT_CANCEL",
-                        "Order in status " + currentStatus + " cannot be cancelled. "
-                                + "Please use the after-sale/return process.");
+                throw statusConflict("Order in status " + currentStatus + " cannot be cancelled. "
+                        + "Please use the after-sale/return process.");
 
             case CANCELLED:
             case CLOSED:
-                throw new BusinessException("ORDER_ALREADY_CANCELLED",
-                        "Order is already in status " + currentStatus);
+                throw statusConflict("Order is already in status " + currentStatus);
 
             case CANCEL_REVIEWING:
-                throw new BusinessException("ORDER_CANCEL_REVIEWING",
-                        "Order cancellation is already under review");
+                throw statusConflict("Order cancellation is already under review");
 
             default:
-                throw new BusinessException("ORDER_CANNOT_CANCEL",
-                        "Order in status " + currentStatus + " cannot be cancelled");
+                throw statusConflict("Order in status " + currentStatus + " cannot be cancelled");
         }
     }
 
@@ -161,36 +156,23 @@ public class OrderCancelService {
     }
 
     /**
-     * Cancel a PAID order and calculate the refund amount.
+     * Submit a PAID order cancellation for merchant review.
      */
-    private CancelOrderResponse cancelPaidOrderDirectly(Order order, String reason) {
+    private CancelOrderResponse submitPaidOrderCancelReview(Order order, String reason) {
         OrderStatus fromStatus = order.getStatus();
+        stateMachine.validateTransition(fromStatus, OrderStatus.CANCEL_REVIEWING);
 
-        stateMachine.validateTransition(fromStatus, OrderStatus.CANCELLED);
-
-        // Calculate full refund (no fee deduction)
-        BigDecimal refundAmount = order.getPaidAmount() != null
-                ? order.getPaidAmount()
-                : order.getPayableAmount();
-
-        order.setStatus(OrderStatus.CANCELLED);
+        order.setStatus(OrderStatus.CANCEL_REVIEWING);
         order.setCancelReason(reason);
-        order.setCancelledAt(LocalDateTime.now());
-        order.setPaidAmount(BigDecimal.ZERO); // Full refund
         orderRepository.save(order);
 
-        orderService.recordEvent(order.getId(), fromStatus, OrderStatus.CANCELLED,
-                "CANCEL", order.getUserId().toString(),
-                "User cancelled paid order directly — full refund of "
-                        + refundAmount);
+        orderService.recordEvent(order.getId(), fromStatus, OrderStatus.CANCEL_REVIEWING,
+                "CANCEL_REQUEST", order.getUserId().toString(),
+                "User requested paid order cancellation: " + reason);
 
-        eventPublisher.publish(new OrderCancelledEvent(this, order.getId(), order.getUserId()));
-
-        log.warn("PAID order {} directly cancelled with full refund of {}",
-                order.getId(), refundAmount);
-
-        return new CancelOrderResponse(order.getId(), OrderStatus.CANCELLED.name(),
-                "Order cancelled and full refund of " + refundAmount + " will be processed");
+        log.info("PAID order {} cancellation submitted for merchant review", order.getId());
+        return new CancelOrderResponse(order.getId(), OrderStatus.CANCEL_REVIEWING.name(),
+                "Cancellation request submitted for merchant review");
     }
 
     /**
@@ -204,8 +186,7 @@ public class OrderCancelService {
                 .orElseThrow(() -> new ResourceNotFoundException("Order not found: " + orderId));
 
         if (order.getStatus() != OrderStatus.CANCEL_REVIEWING) {
-            throw new BusinessException("ORDER_NOT_IN_REVIEW",
-                    "Order " + orderId + " is not in CANCEL_REVIEWING status");
+            throw statusConflict("Order " + orderId + " is not in CANCEL_REVIEWING status");
         }
 
         OrderStatus fromStatus = order.getStatus();
@@ -245,5 +226,9 @@ public class OrderCancelService {
             return new CancelOrderResponse(orderId, OrderStatus.PAID.name(),
                     "Cancellation rejected, order remains active");
         }
+    }
+
+    private BusinessException statusConflict(String message) {
+        return new BusinessException("ORDER_STATUS_CONFLICT", message);
     }
 }

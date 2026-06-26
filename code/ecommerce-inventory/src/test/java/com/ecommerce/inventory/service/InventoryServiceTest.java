@@ -322,8 +322,8 @@ class InventoryServiceTest {
 
         assertThatThrownBy(() -> inventoryService.outbound(1L, 100L, 200, 10L))
                 .isInstanceOf(BusinessException.class)
-                .matches(ex -> ((BusinessException) ex).getCode().equals("INSUFFICIENT_STOCK"),
-                        "should have code INSUFFICIENT_STOCK");
+                .matches(ex -> ((BusinessException) ex).getCode().equals("INVENTORY_NOT_ENOUGH"),
+                        "should have code INVENTORY_NOT_ENOUGH");
 
         verify(outboundOrderRepo, never()).save(any());
     }

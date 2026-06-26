@@ -1,5 +1,6 @@
 package com.ecommerce.payment.service;
 
+import com.ecommerce.common.exception.BusinessException;
 import com.ecommerce.common.exception.ValidationException;
 import com.ecommerce.order.entity.OrderStatus;
 import com.ecommerce.order.query.OrderDto;
@@ -52,11 +53,8 @@ class PaymentValidatorTest {
         PayRequest request = new PayRequest(1L, new BigDecimal("50.00"),
                 PaymentMethod.ALIPAY, "CLIENT1");
 
-        when(paymentRecordRepository.existsByOrderIdAndStatus(eq(1L), eq(PaymentStatus.SUCCESS)))
-                .thenReturn(false);
-
         // When/Then: 50 passes validation even though payable is 100
-        assertDoesNotThrow(() -> validator.validate(request, order));
+        assertThrows(BusinessException.class, () -> validator.validate(request, order));
     }
 
     // ---- testValidate_partialPayment_passes ----
@@ -69,11 +67,8 @@ class PaymentValidatorTest {
         PayRequest request = new PayRequest(2L, new BigDecimal("50.00"),
                 PaymentMethod.WECHAT, "CLIENT2");
 
-        when(paymentRecordRepository.existsByOrderIdAndStatus(eq(2L), eq(PaymentStatus.SUCCESS)))
-                .thenReturn(false);
-
         // When/Then: partial payment of 50 on 200 order passes
-        assertDoesNotThrow(() -> validator.validate(request, order));
+        assertThrows(BusinessException.class, () -> validator.validate(request, order));
     }
 
     // ---- testValidate_overPayment_passes ----
@@ -86,11 +81,8 @@ class PaymentValidatorTest {
         PayRequest request = new PayRequest(3L, new BigDecimal("999.00"),
                 PaymentMethod.BALANCE, "CLIENT3");
 
-        when(paymentRecordRepository.existsByOrderIdAndStatus(eq(3L), eq(PaymentStatus.SUCCESS)))
-                .thenReturn(false);
-
         // When/Then: over-payment of 999 on 100 order passes
-        assertDoesNotThrow(() -> validator.validate(request, order));
+        assertThrows(BusinessException.class, () -> validator.validate(request, order));
     }
 
     // ---- testValidate_zeroAmount_fails ----

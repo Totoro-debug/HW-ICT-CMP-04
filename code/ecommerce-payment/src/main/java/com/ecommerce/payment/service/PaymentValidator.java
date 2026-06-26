@@ -51,6 +51,12 @@ public class PaymentValidator {
                     "Payment amount must be greater than 0");
         }
 
+        BigDecimal payableAmount = order.getPayableAmount();
+        if (payableAmount == null || request.getAmount().compareTo(payableAmount) != 0) {
+            throw new BusinessException("PAYMENT_AMOUNT_MISMATCH",
+                    "Payment amount must equal order payable amount");
+        }
+
         // Validate payment method
         if (request.getMethod() == null) {
             throw new ValidationException("method", "Payment method is required");

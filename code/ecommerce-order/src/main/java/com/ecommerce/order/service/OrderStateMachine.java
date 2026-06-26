@@ -36,10 +36,9 @@ public class OrderStateMachine {
         allowedTransitions.put(OrderStatus.PAYING,
                 EnumSet.of(OrderStatus.PAID, OrderStatus.CANCELLED));
 
-        // PAID can transition to: PICKING, CANCEL_REVIEWING, CANCELLED
+        // PAID can transition to: PICKING, CANCEL_REVIEWING
         allowedTransitions.put(OrderStatus.PAID,
-                EnumSet.of(OrderStatus.PICKING, OrderStatus.CANCEL_REVIEWING,
-                        OrderStatus.CANCELLED));
+                EnumSet.of(OrderStatus.PICKING, OrderStatus.CANCEL_REVIEWING));
 
         // PICKING can transition to: SHIPPED
         allowedTransitions.put(OrderStatus.PICKING,
@@ -106,7 +105,7 @@ public class OrderStateMachine {
      */
     public void validateTransition(OrderStatus from, OrderStatus to) {
         if (!canTransition(from, to)) {
-            throw new BusinessException("ORDER_INVALID_TRANSITION",
+            throw new BusinessException("ORDER_STATUS_CONFLICT",
                     "Cannot transition order from " + from + " to " + to);
         }
         log.info("Order transition validated: {} -> {}", from, to);

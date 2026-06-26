@@ -6,8 +6,8 @@ import java.util.List;
 /**
  * Request DTO for product search.
  *
- * <p>The {@code onlyOnShelf} field defaults to {@code false},
- * which causes the search to include OFF_SHELF and DRAFT products.
+ * <p>The {@code onlyOnShelf} field defaults to {@code true},
+ * so public listing/search returns only ON_SHELF products unless explicitly overridden.
  */
 public class ProductSearchRequest {
 
@@ -24,11 +24,11 @@ public class ProductSearchRequest {
     private List<String> tags;
 
     /**
-     * When false, the search includes all non-DELETED products (ON_SHELF, OFF_SHELF, DRAFT).
      * When true, only ON_SHELF products are shown.
-     * Defaults to false.
+     * When false, the search includes all non-DELETED products (ON_SHELF, OFF_SHELF, DRAFT).
+     * Defaults to true for public listing/search.
      */
-    private boolean onlyOnShelf = false;
+    private boolean onlyOnShelf = true;
 
     private int page = 0;
 

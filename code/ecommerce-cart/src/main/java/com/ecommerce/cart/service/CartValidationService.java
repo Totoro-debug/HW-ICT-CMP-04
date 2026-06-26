@@ -44,7 +44,7 @@ public class CartValidationService {
             throw new ResourceNotFoundException("SKU", skuId);
         }
         if (!SKU_STATUS_ON_SHELF.equals(sku.getStatus())) {
-            throw new BusinessException("SKU_NOT_AVAILABLE",
+            throw new BusinessException("PRODUCT_NOT_FOR_SALE",
                     "SKU " + skuId + " is not available for sale, current status: " + sku.getStatus());
         }
         log.debug("SKU {} validated: status={}, price={}", skuId, sku.getStatus(), sku.getPrice());
@@ -62,7 +62,7 @@ public class CartValidationService {
     public void validateStock(Long skuId, int quantity) {
         StockSummaryDto stock = inventoryQueryService.getStockSummary(skuId);
         if (stock == null || stock.getAvailableStock() < quantity) {
-            throw new BusinessException("INSUFFICIENT_STOCK",
+            throw new BusinessException("INVENTORY_NOT_ENOUGH",
                     "Insufficient stock for SKU " + skuId
                             + ": requested=" + quantity
                             + ", available=" + (stock != null ? stock.getAvailableStock() : 0));

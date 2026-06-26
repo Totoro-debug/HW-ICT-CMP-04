@@ -2,6 +2,7 @@ package com.ecommerce.review.service;
 
 import com.ecommerce.common.event.DomainEventPublisher;
 import com.ecommerce.common.exception.BusinessException;
+import com.ecommerce.order.dto.VerifyPurchaseResponse;
 import com.ecommerce.order.query.OrderQueryService;
 import com.ecommerce.review.dto.ReviewAppendRequest;
 import com.ecommerce.review.dto.ReviewCreateRequest;
@@ -62,6 +63,9 @@ class ReviewServiceTest {
     @Mock
     private DomainEventPublisher eventPublisher;
 
+    @Mock
+    private OrderQueryService orderQueryService;
+
     @InjectMocks
     private ReviewService reviewService;
 
@@ -87,6 +91,8 @@ class ReviewServiceTest {
     }
 
     private void stubStandardMocks() {
+        when(orderQueryService.verifyPurchase(1L, createRequest.getProductId()))
+                .thenReturn(new VerifyPurchaseResponse(true, createRequest.getOrderId(), null));
         when(reviewRepository.findByUserIdAndOrderItemId(anyLong(), anyLong()))
                 .thenReturn(Optional.empty());
         when(sensitiveWordFilter.containsSensitiveWord(any()))
@@ -105,9 +111,6 @@ class ReviewServiceTest {
     @Test
     @DisplayName("createReview: creates pending review")
     void testCreateReview_createsPendingReview() {
-        // Verify interaction with an external order query collaborator.
-        OrderQueryService orderQueryService = mock(OrderQueryService.class);
-
         stubStandardMocks();
 
         ReviewResponse response = reviewService.createReview(1L, createRequest);
@@ -118,7 +121,33 @@ class ReviewServiceTest {
         assertThat(response.getStatus()).isEqualTo(ReviewStatus.PENDING_REVIEW);
 
         // Verify purchase verification interaction.
-        verify(orderQueryService, never()).verifyPurchase(anyLong(), anyLong());
+        verify(orderQueryService).verifyPurchase(1L, 100L);
+    }
+
+    @Test
+    @DisplayName("createReview: rejects when purchase verification fails")
+    void testCreateReview_purchaseRequiredWhenNotPurchased() {
+        when(orderQueryService.verifyPurchase(1L, createRequest.getProductId()))
+                .thenReturn(new VerifyPurchaseResponse(false, null, null));
+
+        assertThatThrownBy(() -> reviewService.createReview(1L, createRequest))
+                .isInstanceOf(BusinessException.class)
+                .extracting("code")
+                .isEqualTo("REVIEW_PURCHASE_REQUIRED");
+        verify(reviewRepository, never()).save(any(Review.class));
+    }
+
+    @Test
+    @DisplayName("createReview: rejects when verified delivered order does not match request order")
+    void testCreateReview_purchaseRequiredWhenOrderIdMismatches() {
+        when(orderQueryService.verifyPurchase(1L, createRequest.getProductId()))
+                .thenReturn(new VerifyPurchaseResponse(true, 999L, null));
+
+        assertThatThrownBy(() -> reviewService.createReview(1L, createRequest))
+                .isInstanceOf(BusinessException.class)
+                .extracting("code")
+                .isEqualTo("REVIEW_PURCHASE_REQUIRED");
+        verify(reviewRepository, never()).save(any(Review.class));
     }
 
     // -----------------------------------------------------------------------
@@ -274,9 +303,8 @@ class ReviewServiceTest {
 
         // verify the repository was called with APPROVED status — the public query
         // must never return PENDING_REVIEW, REJECTED, or HIDDEN reviews.
-        // Verify repository pagination interactions.
-        //   once for the main query and once in calculateAverageRating.
-        verify(reviewRepository, times(2)).findByProductIdAndStatus(
+        // Verify repository pagination interaction.
+        verify(reviewRepository).findByProductIdAndStatus(
                 eq(100L), eq(ReviewStatus.APPROVED), any(PageRequest.class));
     }
 

@@ -1,26 +1,21 @@
 package com.ecommerce.cart.service;
 
+import com.ecommerce.cart.cache.CartCacheManager;
+import com.ecommerce.cart.cache.CartData;
+import com.ecommerce.cart.cache.CartItemData;
 import com.ecommerce.cart.dto.AddCartItemRequest;
 import com.ecommerce.cart.dto.CartEstimateRequest;
 import com.ecommerce.cart.dto.CartEstimateResponse;
 import com.ecommerce.cart.dto.CartItemResponse;
 import com.ecommerce.cart.dto.CartResponse;
 import com.ecommerce.cart.dto.UpdateCartItemRequest;
-import com.ecommerce.cart.entity.Cart;
-import com.ecommerce.cart.entity.CartItem;
-import com.ecommerce.cart.entity.CartStatus;
-import com.ecommerce.cart.repository.CartItemRepository;
-import com.ecommerce.cart.repository.CartRepository;
-import com.ecommerce.common.exception.BusinessException;
-import com.ecommerce.common.exception.ResourceNotFoundException;
+import com.ecommerce.common.integration.PointsRedeemEstimator;
+import com.ecommerce.common.integration.PromotionDiscountCalculator;
 import com.ecommerce.common.money.MonetaryUtil;
-import com.ecommerce.product.query.InventoryQueryService;
-import com.ecommerce.product.query.ProductQueryService;
 import com.ecommerce.product.query.SkuDto;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
 import java.util.ArrayList;
@@ -30,8 +25,9 @@ import java.util.Optional;
 /**
  * Core service for shopping cart operations.
  *
- * <p>Uses JPA entities ({@link Cart}, {@link CartItem}) and repositories
- * ({@link CartRepository}, {@link CartItemRepository}) to persist cart data to H2.
+ * <p>The main cart flow stores temporary cart data in Caffeine via
+ * {@link CartCacheManager}. The cache configuration applies the required
+ * 7-day TTL for cart entries.
  */
 @Service
 public class CartService {
@@ -41,202 +37,165 @@ public class CartService {
     private static final BigDecimal SHIPPING_FEE = new BigDecimal("8.00");
     private static final BigDecimal PACKAGING_FEE = new BigDecimal("2.00");
     private static final BigDecimal FREE_SHIPPING_THRESHOLD = new BigDecimal("199.00");
+    private static final BigDecimal POINTS_TO_YUAN_RATE = new BigDecimal("0.01");
 
-    private final CartRepository cartRepository;
-    private final CartItemRepository cartItemRepository;
-    private final ProductQueryService productQueryService;
-    private final InventoryQueryService inventoryQueryService;
+    private final CartCacheManager cartCacheManager;
     private final CartValidationService cartValidationService;
+    private final PromotionDiscountCalculator promotionDiscountCalculator;
+    private final PointsRedeemEstimator pointsRedeemEstimator;
 
-    public CartService(CartRepository cartRepository,
-                       CartItemRepository cartItemRepository,
-                       ProductQueryService productQueryService,
-                       InventoryQueryService inventoryQueryService,
-                       CartValidationService cartValidationService) {
-        this.cartRepository = cartRepository;
-        this.cartItemRepository = cartItemRepository;
-        this.productQueryService = productQueryService;
-        this.inventoryQueryService = inventoryQueryService;
+    public CartService(CartCacheManager cartCacheManager,
+                       CartValidationService cartValidationService,
+                       PromotionDiscountCalculator promotionDiscountCalculator,
+                       PointsRedeemEstimator pointsRedeemEstimator) {
+        this.cartCacheManager = cartCacheManager;
         this.cartValidationService = cartValidationService;
+        this.promotionDiscountCalculator = promotionDiscountCalculator;
+        this.pointsRedeemEstimator = pointsRedeemEstimator;
     }
 
     /**
      * Adds an item to the user's cart. If the cart does not exist, it is created.
      */
-    @Transactional
     public CartItemResponse addItem(Long userId, AddCartItemRequest request) {
         log.debug("Adding item to cart: userId={}, skuId={}, quantity={}",
                 userId, request.getSkuId(), request.getQuantity());
 
-        // Validate quantity range
         cartValidationService.validateQuantity(request.getQuantity());
-
-        // Validate SKU status (ON_SHELF) and get SKU details
         SkuDto sku = cartValidationService.validateSku(request.getSkuId());
-
-        // Validate stock availability
         cartValidationService.validateStock(request.getSkuId(), request.getQuantity());
 
-        // Get or create cart
-        Cart cart = getOrCreateCart(userId);
-
-        // Check if this SKU already exists in the cart
-        List<CartItem> items = cartItemRepository.findByCartId(cart.getId());
-        Optional<CartItem> existingItem = items.stream()
+        CartData cart = getOrCreateCart(userId);
+        Optional<CartItemData> existingItem = cart.getItems().stream()
                 .filter(item -> item.getSkuId().equals(request.getSkuId()))
                 .findFirst();
 
+        CartItemData item;
         if (existingItem.isPresent()) {
-            CartItem item = existingItem.get();
+            item = existingItem.get();
+            item.setSkuName(sku.getName());
+            item.setPrice(sku.getPrice());
             item.setQuantity(request.getQuantity());
-            cartItemRepository.save(item);
-
-            BigDecimal subtotal = MonetaryUtil.multiply(item.getPrice(),
-                    BigDecimal.valueOf(item.getQuantity()));
-            log.debug("Updated existing item: skuId={}, newQuantity={}", request.getSkuId(), item.getQuantity());
-            return new CartItemResponse(item.getSkuId(), item.getSkuName(), item.getPrice(),
-                    item.getQuantity(), subtotal);
         } else {
-            // Validate cart size for new item types
-            cartValidationService.validateCartSize(items.size(), 1);
-
-            CartItem newItem = new CartItem();
-            newItem.setCart(cart);
-            newItem.setSkuId(sku.getSkuId());
-            newItem.setSkuName(sku.getName());
-            newItem.setPrice(sku.getPrice());
-            newItem.setQuantity(request.getQuantity());
-            cartItemRepository.save(newItem);
-
-            BigDecimal subtotal = MonetaryUtil.multiply(sku.getPrice(),
-                    BigDecimal.valueOf(request.getQuantity()));
-            log.debug("Added new item: skuId={}, quantity={}", request.getSkuId(), request.getQuantity());
-            return new CartItemResponse(newItem.getSkuId(), newItem.getSkuName(), newItem.getPrice(),
-                    newItem.getQuantity(), subtotal);
+            cartValidationService.validateCartSize(cart.getItems().size(), 1);
+            item = new CartItemData(sku.getSkuId(), sku.getName(), sku.getPrice(), request.getQuantity());
+            cart.getItems().add(item);
         }
+
+        cartCacheManager.saveCart(cart);
+        return toCartItemResponse(item);
     }
 
     /**
      * Retrieves the full cart for the given user.
      */
-    @Transactional(readOnly = true)
     public CartResponse getCart(Long userId) {
         log.debug("Getting cart for userId={}", userId);
-
-        return cartRepository.findByUserId(userId)
-                .map(cart -> {
-                    List<CartItem> items = cartItemRepository.findByCartId(cart.getId());
-                    return buildCartResponse(items);
-                })
-                .orElse(buildEmptyCartResponse());
+        CartData cart = cartCacheManager.getCart(userId);
+        if (cart == null) {
+            return buildEmptyCartResponse();
+        }
+        return buildCartResponse(cart.getItems());
     }
 
     /**
      * Updates the quantity of an existing item in the cart.
      */
-    @Transactional
     public CartItemResponse updateItem(Long userId, Long skuId, UpdateCartItemRequest request) {
         log.debug("Updating cart item: userId={}, skuId={}, quantity={}", userId, skuId, request.getQuantity());
 
         cartValidationService.validateQuantity(request.getQuantity());
+        SkuDto sku = cartValidationService.validateSku(skuId);
         cartValidationService.validateStock(skuId, request.getQuantity());
 
-        Cart cart = findCartByUserId(userId);
-        CartItem item = findCartItemBySkuId(cart.getId(), skuId);
+        CartData cart = findCartByUserId(userId);
+        CartItemData item = findCartItemBySkuId(cart, skuId);
 
+        item.setSkuName(sku.getName());
+        item.setPrice(sku.getPrice());
         item.setQuantity(request.getQuantity());
-        cartItemRepository.save(item);
+        cartCacheManager.saveCart(cart);
 
-        BigDecimal subtotal = MonetaryUtil.multiply(item.getPrice(),
-                BigDecimal.valueOf(item.getQuantity()));
-        log.debug("Updated item quantity: skuId={}, newQuantity={}", skuId, item.getQuantity());
-        return new CartItemResponse(item.getSkuId(), item.getSkuName(), item.getPrice(),
-                item.getQuantity(), subtotal);
+        return toCartItemResponse(item);
     }
 
     /**
      * Removes a single item from the cart.
      */
-    @Transactional
     public void removeItem(Long userId, Long skuId) {
         log.debug("Removing item from cart: userId={}, skuId={}", userId, skuId);
 
-        Cart cart = findCartByUserId(userId);
-        CartItem item = findCartItemBySkuId(cart.getId(), skuId);
-
-        cartItemRepository.delete(item);
+        CartData cart = findCartByUserId(userId);
+        CartItemData item = findCartItemBySkuId(cart, skuId);
+        cart.getItems().remove(item);
+        if (cart.getItems().isEmpty()) {
+            cartCacheManager.removeCart(userId);
+        } else {
+            cartCacheManager.saveCart(cart);
+        }
         log.debug("Removed item: skuId={} from cart of userId={}", skuId, userId);
     }
 
     /**
      * Clears all items from the cart.
      */
-    @Transactional
     public void clearCart(Long userId) {
         log.debug("Clearing cart for userId={}", userId);
-
-        Optional<Cart> cartOpt = cartRepository.findByUserId(userId);
-        if (cartOpt.isPresent()) {
-            cartItemRepository.deleteByCartId(cartOpt.get().getId());
-            log.debug("Cart cleared for userId={}", userId);
-        }
+        cartCacheManager.removeCart(userId);
     }
 
     /**
-     * Estimates the total price for the cart including shipping and fees.
-     * Uses ProductQueryService for current SKU prices.
-     *
-     * <p>Discount calculation via PromotionCalculationService is not yet integrated;
-     * discountAmount and pointsDeductionAmount are returned as zero.
+     * Estimates the total price for the cart including shipping, packaging,
+     * promotions and points deduction. Each item is revalidated against current
+     * SKU and stock state before pricing.
      */
-    @Transactional(readOnly = true)
     public CartEstimateResponse estimate(Long userId, CartEstimateRequest request) {
         log.debug("Estimating cart for userId={}, couponIds={}, redeemPoints={}",
                 userId, request.getCouponIds(), request.getRedeemPoints());
 
-        CartResponse cart = getCart(userId);
-
-        if (cart.getItems() == null || cart.getItems().isEmpty()) {
-            CartEstimateResponse empty = new CartEstimateResponse();
-            empty.setItemTotal(BigDecimal.ZERO);
-            empty.setShippingFee(BigDecimal.ZERO);
-            empty.setPackagingFee(BigDecimal.ZERO);
-            empty.setDiscountAmount(BigDecimal.ZERO);
-            empty.setPointsDeductionAmount(BigDecimal.ZERO);
-            empty.setPayableAmount(BigDecimal.ZERO);
-            return empty;
+        CartData cart = cartCacheManager.getCart(userId);
+        if (cart == null || cart.getItems() == null || cart.getItems().isEmpty()) {
+            return emptyEstimateResponse();
         }
 
-        // Calculate item total using current SKU prices from ProductQueryService
         BigDecimal itemTotal = BigDecimal.ZERO;
-        for (CartItemResponse item : cart.getItems()) {
-            SkuDto sku = productQueryService.getSkuForSale(item.getSkuId());
-            if (sku == null) {
-                throw new BusinessException("SKU_NOT_FOUND",
-                        "SKU " + item.getSkuId() + " is no longer available");
-            }
-            BigDecimal lineTotal = MonetaryUtil.multiply(sku.getPrice(),
-                    BigDecimal.valueOf(item.getQuantity()));
-            itemTotal = MonetaryUtil.add(itemTotal, lineTotal);
-        }
+        List<PromotionDiscountCalculator.Item> promotionItems = new ArrayList<>();
+        List<CartItemData> refreshedItems = new ArrayList<>();
+        for (CartItemData item : cart.getItems()) {
+            SkuDto sku = cartValidationService.validateSku(item.getSkuId());
+            cartValidationService.validateStock(item.getSkuId(), item.getQuantity());
 
-        // Shipping fee: 8.00, free if itemTotal >= 199.00 (correct boundary: >=)
+            CartItemData refreshed = new CartItemData(sku.getSkuId(), sku.getName(), sku.getPrice(), item.getQuantity());
+            refreshed.setAddedAt(item.getAddedAt());
+            refreshedItems.add(refreshed);
+
+            BigDecimal lineTotal = MonetaryUtil.multiply(sku.getPrice(), BigDecimal.valueOf(item.getQuantity()));
+            itemTotal = MonetaryUtil.add(itemTotal, lineTotal);
+
+            PromotionDiscountCalculator.Item promotionItem = new PromotionDiscountCalculator.Item();
+            promotionItem.setSkuId(sku.getSkuId());
+            promotionItem.setPrice(sku.getPrice());
+            promotionItem.setQuantity(item.getQuantity());
+            promotionItems.add(promotionItem);
+        }
+        cart.setItems(refreshedItems);
+        cartCacheManager.saveCart(cart);
+
         BigDecimal shippingFee = itemTotal.compareTo(FREE_SHIPPING_THRESHOLD) >= 0
                 ? BigDecimal.ZERO : SHIPPING_FEE;
-
-        // Packaging fee: always 2.00
         BigDecimal packagingFee = PACKAGING_FEE;
 
-        // Discount and points deduction — placeholder (requires PromotionCalculationService)
-        BigDecimal discountAmount = BigDecimal.ZERO;
-        BigDecimal pointsDeductionAmount = BigDecimal.ZERO;
+        BigDecimal discountAmount = calculateDiscountAmount(userId, request.getCouponIds(), promotionItems);
+        BigDecimal prePointsAmount = MonetaryUtil.add(itemTotal, shippingFee);
+        prePointsAmount = MonetaryUtil.add(prePointsAmount, packagingFee);
+        prePointsAmount = MonetaryUtil.subtract(prePointsAmount, discountAmount);
+        if (prePointsAmount.compareTo(BigDecimal.ZERO) < 0) {
+            prePointsAmount = BigDecimal.ZERO;
+        }
 
-        // Payable amount = itemTotal + shippingFee + packagingFee - discountAmount - pointsDeduction
-        BigDecimal payableAmount = MonetaryUtil.add(itemTotal, shippingFee);
-        payableAmount = MonetaryUtil.add(payableAmount, packagingFee);
-        payableAmount = MonetaryUtil.subtract(payableAmount, discountAmount);
-        payableAmount = MonetaryUtil.subtract(payableAmount, pointsDeductionAmount);
+        BigDecimal pointsDeductionAmount = calculatePointsDeduction(userId, request.getRedeemPoints(), prePointsAmount);
 
+        BigDecimal payableAmount = MonetaryUtil.subtract(prePointsAmount, pointsDeductionAmount);
         if (payableAmount.compareTo(BigDecimal.ZERO) < 0) {
             payableAmount = BigDecimal.ZERO;
         }
@@ -249,57 +208,88 @@ public class CartService {
         response.setPointsDeductionAmount(pointsDeductionAmount);
         response.setPayableAmount(payableAmount);
 
-        log.debug("Cart estimate: itemTotal={}, shipping={}, packaging={}, payable={}",
-                itemTotal, shippingFee, packagingFee, payableAmount);
+        log.debug("Cart estimate: itemTotal={}, shipping={}, packaging={}, discount={}, points={}, payable={}",
+                itemTotal, shippingFee, packagingFee, discountAmount, pointsDeductionAmount, payableAmount);
         return response;
     }
 
     // ---- private helpers ----
 
-    private Cart getOrCreateCart(Long userId) {
-        return cartRepository.findByUserId(userId)
-                .orElseGet(() -> {
-                    Cart cart = new Cart(userId);
-                    cart = cartRepository.save(cart);
-                    log.debug("Created new cart for userId={}, cartId={}", userId, cart.getId());
-                    return cart;
-                });
+    private CartData getOrCreateCart(Long userId) {
+        CartData cart = cartCacheManager.getCart(userId);
+        return cart != null ? cart : new CartData(userId);
     }
 
-    private Cart findCartByUserId(Long userId) {
-        return cartRepository.findByUserId(userId)
-                .orElseThrow(() -> new ResourceNotFoundException("Cart for user " + userId + " not found"));
+    private CartData findCartByUserId(Long userId) {
+        CartData cart = cartCacheManager.getCart(userId);
+        if (cart == null) {
+            throw new com.ecommerce.common.exception.ResourceNotFoundException("Cart for user " + userId + " not found");
+        }
+        return cart;
     }
 
-    private CartItem findCartItemBySkuId(Long cartId, Long skuId) {
-        List<CartItem> items = cartItemRepository.findByCartId(cartId);
-        return items.stream()
+    private CartItemData findCartItemBySkuId(CartData cart, Long skuId) {
+        return cart.getItems().stream()
                 .filter(item -> item.getSkuId().equals(skuId))
                 .findFirst()
-                .orElseThrow(() -> new ResourceNotFoundException(
-                        "CartItem for skuId " + skuId + " not found in cart " + cartId));
+                .orElseThrow(() -> new com.ecommerce.common.exception.ResourceNotFoundException(
+                        "CartItem for skuId " + skuId + " not found in cart for user " + cart.getUserId()));
     }
 
-    private CartResponse buildCartResponse(List<CartItem> items) {
+    private CartResponse buildCartResponse(List<CartItemData> items) {
         List<CartItemResponse> itemResponses = new ArrayList<>();
         BigDecimal totalAmount = BigDecimal.ZERO;
         int totalItems = 0;
 
-        for (CartItem item : items) {
-            BigDecimal subtotal = MonetaryUtil.multiply(item.getPrice(),
-                    BigDecimal.valueOf(item.getQuantity()));
-            CartItemResponse itemResponse = new CartItemResponse(
-                    item.getSkuId(), item.getSkuName(), item.getPrice(),
-                    item.getQuantity(), subtotal);
+        for (CartItemData item : items) {
+            CartItemResponse itemResponse = toCartItemResponse(item);
             itemResponses.add(itemResponse);
             totalItems += item.getQuantity();
-            totalAmount = MonetaryUtil.add(totalAmount, subtotal);
+            totalAmount = MonetaryUtil.add(totalAmount, itemResponse.getSubtotal());
         }
 
         return new CartResponse(itemResponses, totalItems, totalAmount);
     }
 
+    private CartItemResponse toCartItemResponse(CartItemData item) {
+        BigDecimal subtotal = MonetaryUtil.multiply(item.getPrice(), BigDecimal.valueOf(item.getQuantity()));
+        return new CartItemResponse(item.getSkuId(), item.getSkuName(), item.getPrice(), item.getQuantity(), subtotal);
+    }
+
     private CartResponse buildEmptyCartResponse() {
         return new CartResponse(new ArrayList<>(), 0, BigDecimal.ZERO);
+    }
+
+    private CartEstimateResponse emptyEstimateResponse() {
+        CartEstimateResponse empty = new CartEstimateResponse();
+        empty.setItemTotal(BigDecimal.ZERO);
+        empty.setShippingFee(BigDecimal.ZERO);
+        empty.setPackagingFee(BigDecimal.ZERO);
+        empty.setDiscountAmount(BigDecimal.ZERO);
+        empty.setPointsDeductionAmount(BigDecimal.ZERO);
+        empty.setPayableAmount(BigDecimal.ZERO);
+        return empty;
+    }
+
+    private BigDecimal calculateDiscountAmount(Long userId, List<Long> couponIds,
+                                               List<PromotionDiscountCalculator.Item> promotionItems) {
+        BigDecimal discount = promotionDiscountCalculator.calculateDiscount(userId, promotionItems, couponIds);
+        return discount != null ? discount : BigDecimal.ZERO;
+    }
+
+    private BigDecimal calculatePointsDeduction(Long userId, Integer requestedPoints, BigDecimal prePointsAmount) {
+        if (requestedPoints == null || requestedPoints <= 0 || prePointsAmount.compareTo(BigDecimal.ZERO) <= 0) {
+            return BigDecimal.ZERO;
+        }
+        int redeemable = pointsRedeemEstimator.estimateRedeemPoints(prePointsAmount, userId);
+        int actualPoints = Math.min(requestedPoints, redeemable);
+        if (actualPoints <= 0) {
+            return BigDecimal.ZERO;
+        }
+        BigDecimal deduction = MonetaryUtil.multiply(BigDecimal.valueOf(actualPoints), POINTS_TO_YUAN_RATE);
+        if (deduction.compareTo(prePointsAmount) > 0) {
+            return prePointsAmount;
+        }
+        return deduction;
     }
 }

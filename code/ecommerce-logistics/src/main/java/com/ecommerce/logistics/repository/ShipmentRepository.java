@@ -21,4 +21,9 @@ public interface ShipmentRepository extends JpaRepository<Shipment, Long> {
      * Find a shipment by its unique shipment number.
      */
     Optional<Shipment> findByShipmentNo(String shipmentNo);
+
+    /**
+     * Find a shipment by carrier tracking number.
+     */
+    Optional<Shipment> findByTrackingNo(String trackingNo);
 }

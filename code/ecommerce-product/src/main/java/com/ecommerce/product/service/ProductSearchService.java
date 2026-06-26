@@ -27,9 +27,8 @@ import java.util.stream.Collectors;
 /**
  * Handles product search with keyword, category, brand, price range, and tag filters.
  *
- * <p>The default search behavior includes OFF_SHELF and DRAFT products
- * (excluding only DELETED). This happens because {@link ProductSearchRequest#isOnlyOnShelf()}
- * defaults to {@code false}.
+ * <p>The default public search behavior returns only ON_SHELF products because
+ * {@link ProductSearchRequest#isOnlyOnShelf()} defaults to {@code true}.
  */
 @Service
 public class ProductSearchService {
@@ -48,16 +47,14 @@ public class ProductSearchService {
     /**
      * Searches for products matching the given criteria.
      *
-     * <p>When {@code onlyOnShelf} is {@code false} (the default),
-     * the search returns all non-DELETED SKUs, including OFF_SHELF and DRAFT.
+     * <p>By default the public search returns only ON_SHELF SKUs.
      */
     @Transactional(readOnly = true)
     public PageResponse<ProductListResponse> search(ProductSearchRequest request) {
         log.debug("Product search: keyword={}, categoryId={}, onlyOnShelf={}",
                 request.getKeyword(), request.getCategoryId(), request.isOnlyOnShelf());
 
-        // Build status filter — when onlyOnShelf defaults to false,
-        // we include OFF_SHELF and DRAFT products. Only DELETED are excluded.
+        // Build status filter. By default public listing/search only returns ON_SHELF products.
         Specification<ProductSku> spec = buildSpecification(request);
 
         PageRequest pageRequest = PageRequest.of(

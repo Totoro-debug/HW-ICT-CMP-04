@@ -1,75 +1,99 @@
 package com.ecommerce.logistics.service;
 
+import com.ecommerce.common.exception.AuthorizationException;
+import com.ecommerce.common.exception.ResourceNotFoundException;
 import com.ecommerce.logistics.dto.LogisticsCallbackRequest;
+import com.ecommerce.logistics.entity.Shipment;
+import com.ecommerce.logistics.entity.ShipmentStatus;
 import com.ecommerce.logistics.repository.ShipmentRepository;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
-import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
 import java.time.LocalDateTime;
+import java.util.Optional;
 
-import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
-import static org.mockito.Mockito.verifyNoInteractions;
+import static org.mockito.Mockito.when;
 
 /**
  * Unit tests for {@link LogisticsCallbackService}.
- *
- * <p>The {@code processCallback} method only logs the callback data
- * and does NOT update the shipment status or create tracking records in the database.
- * All carrier status updates are silently discarded.
  */
 @ExtendWith(MockitoExtension.class)
 class LogisticsCallbackServiceTest {
 
+    private static final String SECRET = "shophub-logistics-callback-secret";
+
     @Mock
     private ShipmentRepository shipmentRepository;
 
-    @InjectMocks
+    @Mock
+    private ShipmentService shipmentService;
+
     private LogisticsCallbackService callbackService;
 
-    /**
-     * Verifies callback processing interactions.
-     */
+    @BeforeEach
+    void setUp() {
+        callbackService = new LogisticsCallbackService(shipmentRepository, shipmentService, SECRET);
+    }
+
     @Test
-    void testProcessCallback_processesRequest() {
-        LogisticsCallbackRequest request = new LogisticsCallbackRequest();
-        request.setTrackingNo("TN12345");
-        request.setStatus("DELIVERED");
-        request.setLocation("Shanghai Distribution Center");
-        request.setDescription("Package delivered to recipient");
-        request.setEventTime(LocalDateTime.now());
-        request.setSignature("RECIPIENT_SIGNATURE");
+    void processCallback_validSignature_updatesShipmentStatus() {
+        LogisticsCallbackRequest request = callback("TN12345", "DELIVERED");
+        Shipment shipment = new Shipment();
+        shipment.setId(1L);
+        shipment.setTrackingNo("TN12345");
+        when(shipmentRepository.findByTrackingNo("TN12345")).thenReturn(Optional.of(shipment));
 
         callbackService.processCallback(request);
 
-        // The callback is only logged — no DB operations occur.
-        // Verify that ShipmentRepository is NEVER used (no save, no findById, etc.)
-        verifyNoInteractions(shipmentRepository);
+        verify(shipmentService).updateStatus(1L, ShipmentStatus.DELIVERED,
+                "Shanghai Distribution Center", "Package delivered to recipient");
     }
 
     @Test
-    void testProcessCallback_doesNotThrow() {
-        LogisticsCallbackRequest request = new LogisticsCallbackRequest();
-        request.setTrackingNo("TN99999");
-        request.setStatus("IN_TRANSIT");
-        request.setLocation("Beijing Sort Center");
+    void processCallback_missingSignature_rejectsAndDoesNotUpdate() {
+        LogisticsCallbackRequest request = callback("TN99999", "IN_TRANSIT");
+        request.setSignature(null);
 
-        assertDoesNotThrow(() -> callbackService.processCallback(request));
+        assertThrows(AuthorizationException.class, () -> callbackService.processCallback(request));
 
-        verifyNoInteractions(shipmentRepository);
+        verify(shipmentRepository, never()).findByTrackingNo("TN99999");
+        verify(shipmentService, never()).updateStatus(org.mockito.ArgumentMatchers.anyLong(),
+                org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any(),
+                org.mockito.ArgumentMatchers.any());
     }
 
     @Test
-    void testProcessCallback_nullFields_doesNotThrow() {
+    void processCallback_invalidSignature_rejectsAndDoesNotUpdate() {
+        LogisticsCallbackRequest request = callback("TN99999", "IN_TRANSIT");
+        request.setSignature("bad-signature");
+
+        assertThrows(AuthorizationException.class, () -> callbackService.processCallback(request));
+
+        verify(shipmentRepository, never()).findByTrackingNo("TN99999");
+    }
+
+    @Test
+    void processCallback_unknownTrackingNo_throwsNotFound() {
+        LogisticsCallbackRequest request = callback("TN404", "COLLECTED");
+        when(shipmentRepository.findByTrackingNo("TN404")).thenReturn(Optional.empty());
+
+        assertThrows(ResourceNotFoundException.class, () -> callbackService.processCallback(request));
+    }
+
+    private LogisticsCallbackRequest callback(String trackingNo, String status) {
         LogisticsCallbackRequest request = new LogisticsCallbackRequest();
-        // All fields are null
-
-        assertDoesNotThrow(() -> callbackService.processCallback(request));
-
-        verifyNoInteractions(shipmentRepository);
+        request.setTrackingNo(trackingNo);
+        request.setStatus(status);
+        request.setLocation("Shanghai Distribution Center");
+        request.setDescription("Package delivered to recipient");
+        request.setEventTime(LocalDateTime.of(2024, 6, 1, 12, 0));
+        request.setSignature(SECRET);
+        return request;
     }
 }

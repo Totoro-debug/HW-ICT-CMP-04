@@ -2,32 +2,27 @@ package com.ecommerce.loyalty.service;
 
 import com.ecommerce.loyalty.entity.LoyaltyAccount;
 import com.ecommerce.loyalty.entity.MemberLevel;
+import com.ecommerce.loyalty.query.AnnualConsumptionQueryService;
 import com.ecommerce.loyalty.repository.LoyaltyAccountRepository;
-import com.ecommerce.loyalty.repository.OrderDataFetcher;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.beans.factory.ObjectProvider;
 
 import java.math.BigDecimal;
 import java.util.Optional;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
-import static org.junit.jupiter.api.Assertions.assertSame;
-import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 /**
  * Unit tests for {@link MemberLevelService}.
- *
- * <p>The service uses {@link OrderDataFetcher} which queries
- * order data lookup dependency.
- * OrderQueryService interface.
  */
 @ExtendWith(MockitoExtension.class)
 class MemberLevelServiceTest {
@@ -36,13 +31,17 @@ class MemberLevelServiceTest {
     private LoyaltyAccountRepository accountRepository;
 
     @Mock
-    private OrderDataFetcher orderDataFetcher;
+    private ObjectProvider<AnnualConsumptionQueryService> annualConsumptionQueryServiceProvider;
+
+    @Mock
+    private AnnualConsumptionQueryService annualConsumptionQueryService;
 
     private MemberLevelService service;
 
     @BeforeEach
     void setUp() {
-        service = new MemberLevelService(accountRepository, orderDataFetcher);
+        when(annualConsumptionQueryServiceProvider.getIfAvailable()).thenReturn(annualConsumptionQueryService);
+        service = new MemberLevelService(accountRepository, annualConsumptionQueryServiceProvider);
     }
 
     @Test
@@ -50,7 +49,7 @@ class MemberLevelServiceTest {
         Long userId = 1L;
         LoyaltyAccount account = createAccount(userId, MemberLevel.SILVER);
         when(accountRepository.findByUserId(userId)).thenReturn(Optional.of(account));
-        when(orderDataFetcher.getAnnualConsumption(userId)).thenReturn(new BigDecimal("25000"));
+        when(annualConsumptionQueryService.getAnnualConsumption(userId)).thenReturn(new BigDecimal("25000"));
 
         MemberLevel result = service.evaluateAndUpgrade(userId);
 
@@ -68,7 +67,7 @@ class MemberLevelServiceTest {
         Long userId = 2L;
         LoyaltyAccount account = createAccount(userId, MemberLevel.SILVER);
         when(accountRepository.findByUserId(userId)).thenReturn(Optional.of(account));
-        when(orderDataFetcher.getAnnualConsumption(userId)).thenReturn(new BigDecimal("6000"));
+        when(annualConsumptionQueryService.getAnnualConsumption(userId)).thenReturn(new BigDecimal("6000"));
 
         MemberLevel result = service.evaluateAndUpgrade(userId);
 
@@ -86,7 +85,7 @@ class MemberLevelServiceTest {
         Long userId = 3L;
         LoyaltyAccount account = createAccount(userId, MemberLevel.NORMAL);
         when(accountRepository.findByUserId(userId)).thenReturn(Optional.of(account));
-        when(orderDataFetcher.getAnnualConsumption(userId)).thenReturn(new BigDecimal("1500"));
+        when(annualConsumptionQueryService.getAnnualConsumption(userId)).thenReturn(new BigDecimal("1500"));
 
         MemberLevel result = service.evaluateAndUpgrade(userId);
 
@@ -104,7 +103,7 @@ class MemberLevelServiceTest {
         Long userId = 4L;
         LoyaltyAccount account = createAccount(userId, MemberLevel.NORMAL);
         when(accountRepository.findByUserId(userId)).thenReturn(Optional.of(account));
-        when(orderDataFetcher.getAnnualConsumption(userId)).thenReturn(new BigDecimal("500"));
+        when(annualConsumptionQueryService.getAnnualConsumption(userId)).thenReturn(new BigDecimal("500"));
 
         MemberLevel result = service.evaluateAndUpgrade(userId);
 
@@ -117,31 +116,18 @@ class MemberLevelServiceTest {
                 "Account member level should stay NORMAL");
     }
 
-    /**
-     * Verifies that MemberLevelService uses OrderDataFetcher
-     * Verifies order data lookup.
-     * The service is constructed with an OrderDataFetcher dependency,
-     * which queries the orders table via JdbcTemplate, creating tight
-     * coupling to the order module's database schema.
-     */
     @Test
-    void testLevelCalculation_usesLocalDataFetcher() {
+    void testLevelCalculation_usesAnnualConsumptionPort() {
         Long userId = 5L;
         LoyaltyAccount account = createAccount(userId, MemberLevel.SILVER);
         when(accountRepository.findByUserId(userId)).thenReturn(Optional.of(account));
-        when(orderDataFetcher.getAnnualConsumption(userId)).thenReturn(new BigDecimal("8000"));
+        when(annualConsumptionQueryService.getAnnualConsumption(userId)).thenReturn(new BigDecimal("8000"));
 
         MemberLevel result = service.evaluateAndUpgrade(userId);
 
-        // Verify OrderDataFetcher interaction.
-        verify(orderDataFetcher).getAnnualConsumption(eq(userId));
-
+        verify(annualConsumptionQueryService).getAnnualConsumption(eq(userId));
         assertEquals(MemberLevel.GOLD, result);
-
-        // Confirm the service holds a direct reference to OrderDataFetcher
-        // (the existence of this mock dependency itself proves the coupling)
-        assertNotNull(orderDataFetcher,
-                "MemberLevelService order data dependency");
+        assertNotNull(annualConsumptionQueryService, "MemberLevelService order data port");
     }
 
     private LoyaltyAccount createAccount(Long userId, MemberLevel level) {

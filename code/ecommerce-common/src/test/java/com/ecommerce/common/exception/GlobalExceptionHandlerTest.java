@@ -36,6 +36,21 @@ class GlobalExceptionHandlerTest {
     }
 
     @Test
+    @DisplayName("handles forbidden business error codes with HTTP 403")
+    void testBusinessException_forbiddenCodes_return403() {
+        assertBusinessExceptionStatus("USER_NOT_ACTIVE", HttpStatus.FORBIDDEN);
+        assertBusinessExceptionStatus("USER_FROZEN", HttpStatus.FORBIDDEN);
+        assertBusinessExceptionStatus("REVIEW_PURCHASE_REQUIRED", HttpStatus.FORBIDDEN);
+    }
+
+    @Test
+    @DisplayName("handles conflict business error codes with HTTP 409")
+    void testBusinessException_conflictCodes_return409() {
+        assertBusinessExceptionStatus("ORDER_STATUS_CONFLICT", HttpStatus.CONFLICT);
+        assertBusinessExceptionStatus("REFUND_WAITING_WAREHOUSE_ACCEPT", HttpStatus.CONFLICT);
+    }
+
+    @Test
     @DisplayName("handles ResourceNotFoundException with HTTP 404")
     void testResourceNotFound_returns404() {
         ResourceNotFoundException ex = new ResourceNotFoundException("Product", "SKU-12345");
@@ -157,5 +172,18 @@ class GlobalExceptionHandlerTest {
         assertThat(response.getBody()).isNotNull();
         assertThat(response.getBody().getCode()).isEqualTo("VALIDATION_FAILED");
         assertThat(response.getBody().getDetails()).containsKeys("email", "password");
+    }
+
+    private void assertBusinessExceptionStatus(String code, HttpStatus expectedStatus) {
+        BusinessException ex = new BusinessException(code, "Business rule failed");
+
+        ResponseEntity<ApiError> response = handler.handleBusiness(ex);
+
+        assertThat(response.getStatusCode()).isEqualTo(expectedStatus);
+        assertThat(response.getBody()).isNotNull();
+        assertThat(response.getBody().getCode()).isEqualTo(code);
+        assertThat(response.getBody().getMessage()).isEqualTo("Business rule failed");
+        assertThat(response.getBody().getTraceId()).isNotNull().isNotEmpty();
+        assertThat(response.getBody().getDetails()).isEmpty();
     }
 }

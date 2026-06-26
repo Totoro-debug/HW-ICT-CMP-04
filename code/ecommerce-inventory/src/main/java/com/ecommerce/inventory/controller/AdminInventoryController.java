@@ -4,7 +4,6 @@ import com.ecommerce.inventory.dto.InboundRequest;
 import com.ecommerce.inventory.dto.StockWarningResponse;
 import com.ecommerce.inventory.dto.WarehouseCreateRequest;
 import com.ecommerce.inventory.entity.InventoryStock;
-import com.ecommerce.inventory.entity.OutboundOrder;
 import com.ecommerce.inventory.entity.StockAdjustment;
 import com.ecommerce.inventory.entity.Warehouse;
 import com.ecommerce.inventory.service.InventoryService;
@@ -14,7 +13,6 @@ import com.ecommerce.inventory.service.WarehouseService;
 import jakarta.validation.Valid;
 import org.springframework.http.HttpStatus;
 import org.springframework.web.bind.annotation.GetMapping;
-import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -73,20 +71,8 @@ public class AdminInventoryController {
         return stockAdjustmentService.create(warehouseId, skuId, afterQty, reason);
     }
 
-    @GetMapping("/inventory/adjustments")
-    public List<StockAdjustment> listAdjustments(@RequestParam Long warehouseId) {
-        return stockAdjustmentService.list(warehouseId);
-    }
-
     @GetMapping("/inventory/warnings")
     public List<StockWarningResponse> getWarnings() {
         return stockWarningService.getWarnings();
-    }
-
-    @PostMapping("/inventory/warnings/rule")
-    public void setWarningRule(@RequestParam Long skuId,
-                               @RequestParam(required = false) Long warehouseId,
-                               @RequestParam int warningThreshold) {
-        stockWarningService.setWarningRule(skuId, warehouseId, warningThreshold);
     }
 }
