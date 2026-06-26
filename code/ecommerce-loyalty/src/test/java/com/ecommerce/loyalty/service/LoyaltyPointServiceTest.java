@@ -1,5 +1,6 @@
 package com.ecommerce.loyalty.service;
 
+import com.ecommerce.common.exception.BusinessException;
 import com.ecommerce.loyalty.entity.LoyaltyAccount;
 import com.ecommerce.loyalty.entity.MemberLevel;
 import com.ecommerce.loyalty.entity.PointsTransaction;
@@ -19,6 +20,7 @@ import java.util.Optional;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -39,7 +41,7 @@ class LoyaltyPointServiceTest {
 
     @BeforeEach
     void setUp() {
-        service = new LoyaltyPointService(accountRepository, transactionRepository);
+        service = new LoyaltyPointService(accountRepository, transactionRepository, new MemberBenefitService());
     }
 
     // ======================== calcOrderPoints ========================
@@ -178,6 +180,37 @@ class LoyaltyPointServiceTest {
 
         LoyaltyAccount retrieved = service.getAccountByUserId(2L);
         assertEquals(1200, retrieved.getAvailablePoints(), "Account retrieved should have correct balance");
+    }
+
+    // ======================== freeze / unfreeze / consume frozen ========================
+
+    @Test
+    void testFreezeUnfreezeAndConsumeFrozenPoints() {
+        LoyaltyAccount account = createAccount(1L, MemberLevel.NORMAL, 5000, 5000);
+        when(accountRepository.findByUserId(1L)).thenReturn(Optional.of(account));
+
+        service.freezePoints(1L, 1000, "ORDER", "100", "Freeze for order");
+        assertEquals(4000, account.getAvailablePoints());
+        assertEquals(1000, account.getFrozenPoints());
+
+        service.unfreezePoints(1L, 400, "ORDER", "100", "Release order points");
+        assertEquals(4400, account.getAvailablePoints());
+        assertEquals(600, account.getFrozenPoints());
+
+        service.consumeFrozenPoints(1L, 600, "ORDER", "100", "Consume order points");
+        assertEquals(4400, account.getAvailablePoints());
+        assertEquals(0, account.getFrozenPoints());
+        assertEquals(600, account.getRedeemedPoints());
+        assertEquals(4400, account.getTotalPoints());
+    }
+
+    @Test
+    void testFreezePoints_exceedsAvailable_fails() {
+        LoyaltyAccount account = createAccount(1L, MemberLevel.NORMAL, 500, 500);
+        when(accountRepository.findByUserId(1L)).thenReturn(Optional.of(account));
+
+        assertThrows(BusinessException.class,
+                () -> service.freezePoints(1L, 1000, "ORDER", "100", "Freeze for order"));
     }
 
     // ======================== helpers ========================

@@ -1,5 +1,6 @@
 package com.ecommerce.promotion.service;
 
+import com.ecommerce.common.integration.PromotionDiscountCalculator;
 import com.ecommerce.common.money.MonetaryUtil;
 import com.ecommerce.common.test.RuntimeConfigRegistry;
 import com.ecommerce.promotion.dto.PromotionCalculateRequest;
@@ -20,7 +21,7 @@ import java.util.Optional;
  * the final payable amount after all promotions.
  */
 @Service
-public class PromotionCalculationService {
+public class PromotionCalculationService implements PromotionDiscountCalculator {
 
     private final FullReductionService fullReductionService;
     private final CouponService couponService;
@@ -40,43 +41,50 @@ public class PromotionCalculationService {
         this.couponTemplateRepository = couponTemplateRepository;
     }
 
+    @Override
+    public BigDecimal calculateDiscount(Long userId, List<PromotionDiscountCalculator.Item> items,
+                                        List<Long> couponIds) {
+        PromotionCalculateRequest request = new PromotionCalculateRequest();
+        request.setUserId(userId);
+        request.setCouponIds(couponIds);
+        request.setItems(items.stream()
+                .map(item -> {
+                    PromotionCalculateRequest.CalculateItem calculateItem =
+                            new PromotionCalculateRequest.CalculateItem();
+                    calculateItem.setSkuId(item.getSkuId());
+                    calculateItem.setPrice(item.getPrice());
+                    calculateItem.setQuantity(item.getQuantity());
+                    return calculateItem;
+                })
+                .toList());
+        PromotionCalculateResponse response = calculate(request);
+        return response.getTotalDiscount() != null ? response.getTotalDiscount() : BigDecimal.ZERO;
+    }
+
     /**
      * Calculate all applicable promotions for an order.
      */
     public PromotionCalculateResponse calculate(PromotionCalculateRequest request) {
-        // Compute item total
         BigDecimal itemTotal = computeItemTotal(request.getItems());
 
-        // Apply member-level discount.
-        BigDecimal memberDiscount = calculateMemberDiscount(request.getUserId(), itemTotal);
-        BigDecimal afterMember = MonetaryUtil.subtract(itemTotal, memberDiscount);
+        StackingContext context = new StackingContext(itemTotal);
 
-        // Apply full reduction.
-        BigDecimal fullReductionDiscount =
-                fullReductionService.calculateBestReduction(afterMember)
-                        .orElse(BigDecimal.ZERO);
-        BigDecimal afterFullReduction = MonetaryUtil.subtract(afterMember, fullReductionDiscount);
-
-        // Apply coupons.
-        BigDecimal couponDiscount = calculateCouponDiscount(request.getUserId(),
-                request.getCouponIds(), afterFullReduction);
-
-        BigDecimal totalDiscount = MonetaryUtil.add(
-                MonetaryUtil.add(memberDiscount, fullReductionDiscount), couponDiscount);
-        BigDecimal finalAmount = MonetaryUtil.subtract(itemTotal, totalDiscount);
-
-        if (finalAmount.compareTo(BigDecimal.ZERO) < 0) {
-            finalAmount = BigDecimal.ZERO;
-        }
+        context.applyMemberDiscount(calculateMemberDiscount(request.getUserId(), context.currentAmount()));
+        context.applyFullReduction(fullReductionService.calculateBestReduction(context.currentAmount())
+                .orElse(BigDecimal.ZERO));
+        context.applyTierPrice(calculateTierPriceDiscount(request, context.currentAmount()));
+        CouponApplicationResult couponResult = calculateCouponDiscount(request.getUserId(),
+                request.getCouponIds(), context.currentAmount());
+        context.applyCoupon(couponResult.discount());
 
         PromotionCalculateResponse response = new PromotionCalculateResponse();
         response.setItemTotal(itemTotal);
-        response.setFullReductionDiscount(fullReductionDiscount);
-        response.setCouponDiscount(couponDiscount);
-        response.setMemberDiscount(memberDiscount);
-        response.setTotalDiscount(totalDiscount);
-        response.setFinalAmount(finalAmount);
-        response.setApplicableCoupons(new ArrayList<>());
+        response.setFullReductionDiscount(context.fullReductionDiscount());
+        response.setCouponDiscount(context.couponDiscount());
+        response.setMemberDiscount(context.memberDiscount());
+        response.setTotalDiscount(context.totalDiscount());
+        response.setFinalAmount(context.currentAmount());
+        response.setApplicableCoupons(couponResult.applicableCoupons());
 
         return response;
     }
@@ -108,22 +116,36 @@ public class PromotionCalculationService {
         return MonetaryUtil.subtract(amount, afterDiscount);
     }
 
-    private BigDecimal calculateCouponDiscount(Long userId, List<Long> couponIds,
-                                                BigDecimal currentAmount) {
+    /**
+     * Internal tier-price mount point. There is currently no persisted rule source
+     * and the frozen API exposes no tier-price fields, so this step is a no-op
+     * extension point while keeping the calculation pipeline explicit.
+     */
+    private BigDecimal calculateTierPriceDiscount(PromotionCalculateRequest request,
+                                                  BigDecimal currentAmount) {
+        return BigDecimal.ZERO;
+    }
+
+    private CouponApplicationResult calculateCouponDiscount(Long userId, List<Long> couponIds,
+                                                            BigDecimal currentAmount) {
         if (userId == null || couponIds == null || couponIds.isEmpty()
                 || currentAmount == null || currentAmount.compareTo(BigDecimal.ZERO) <= 0) {
-            return BigDecimal.ZERO;
+            return CouponApplicationResult.empty();
         }
 
-        BigDecimal totalCouponDiscount = BigDecimal.ZERO;
+        BigDecimal bestDiscount = BigDecimal.ZERO;
+        PromotionCalculateResponse.ApplicableCoupon bestCoupon = null;
+
         for (Long couponId : couponIds) {
             Optional<UserCoupon> userCouponOpt = userCouponRepository.findById(couponId);
             if (!userCouponOpt.isPresent()) {
                 continue;
             }
             UserCoupon userCoupon = userCouponOpt.get();
+            if (!userId.equals(userCoupon.getUserId())) {
+                continue;
+            }
 
-            // Validate the coupon (minimal validation)
             couponValidator.validate(userCoupon);
 
             Optional<CouponTemplate> templateOpt =
@@ -132,9 +154,109 @@ public class PromotionCalculationService {
                 continue;
             }
 
-            BigDecimal discount = couponService.calculateDiscount(currentAmount, templateOpt.get());
-            totalCouponDiscount = MonetaryUtil.add(totalCouponDiscount, discount);
+            CouponTemplate template = templateOpt.get();
+            BigDecimal discount = couponService.calculateDiscount(currentAmount, template);
+            if (discount.compareTo(currentAmount) > 0) {
+                discount = currentAmount;
+            }
+            if (discount.compareTo(bestDiscount) > 0) {
+                bestDiscount = discount;
+                bestCoupon = toApplicableCoupon(userCoupon, template, discount);
+            }
         }
-        return totalCouponDiscount;
+
+        if (bestCoupon == null) {
+            return CouponApplicationResult.empty();
+        }
+        return new CouponApplicationResult(bestDiscount, List.of(bestCoupon));
+    }
+
+    private PromotionCalculateResponse.ApplicableCoupon toApplicableCoupon(UserCoupon userCoupon,
+                                                                           CouponTemplate template,
+                                                                           BigDecimal discount) {
+        PromotionCalculateResponse.ApplicableCoupon applicableCoupon =
+                new PromotionCalculateResponse.ApplicableCoupon();
+        applicableCoupon.setCouponId(userCoupon.getId());
+        applicableCoupon.setCouponCode(userCoupon.getCouponCode());
+        applicableCoupon.setName(template.getName());
+        applicableCoupon.setDiscountAmount(discount);
+        return applicableCoupon;
+    }
+
+    /**
+     * Centralized stacking model: member discount -> full reduction -> tier price
+     * extension point -> best single coupon. Each step is capped by the remaining
+     * amount so discounts cannot drive payable amount below zero.
+     */
+    private static class StackingContext {
+        private BigDecimal currentAmount;
+        private BigDecimal memberDiscount = BigDecimal.ZERO;
+        private BigDecimal fullReductionDiscount = BigDecimal.ZERO;
+        private BigDecimal tierPriceDiscount = BigDecimal.ZERO;
+        private BigDecimal couponDiscount = BigDecimal.ZERO;
+
+        StackingContext(BigDecimal itemTotal) {
+            this.currentAmount = itemTotal;
+        }
+
+        void applyMemberDiscount(BigDecimal discount) {
+            memberDiscount = cap(discount);
+            currentAmount = MonetaryUtil.subtract(currentAmount, memberDiscount);
+        }
+
+        void applyFullReduction(BigDecimal discount) {
+            fullReductionDiscount = cap(discount);
+            currentAmount = MonetaryUtil.subtract(currentAmount, fullReductionDiscount);
+        }
+
+        void applyTierPrice(BigDecimal discount) {
+            tierPriceDiscount = cap(discount);
+            currentAmount = MonetaryUtil.subtract(currentAmount, tierPriceDiscount);
+        }
+
+        void applyCoupon(BigDecimal discount) {
+            couponDiscount = cap(discount);
+            currentAmount = MonetaryUtil.subtract(currentAmount, couponDiscount);
+        }
+
+        BigDecimal currentAmount() {
+            return currentAmount;
+        }
+
+        BigDecimal memberDiscount() {
+            return memberDiscount;
+        }
+
+        BigDecimal fullReductionDiscount() {
+            return fullReductionDiscount;
+        }
+
+        BigDecimal couponDiscount() {
+            return couponDiscount;
+        }
+
+        BigDecimal totalDiscount() {
+            return MonetaryUtil.add(MonetaryUtil.add(memberDiscount, fullReductionDiscount),
+                    MonetaryUtil.add(tierPriceDiscount, couponDiscount));
+        }
+
+        private BigDecimal cap(BigDecimal discount) {
+            if (discount == null || discount.compareTo(BigDecimal.ZERO) <= 0) {
+                return BigDecimal.ZERO;
+            }
+            if (discount.compareTo(currentAmount) > 0) {
+                return currentAmount;
+            }
+            return discount;
+        }
+    }
+
+    private record CouponApplicationResult(
+            BigDecimal discount,
+            List<PromotionCalculateResponse.ApplicableCoupon> applicableCoupons) {
+
+        static CouponApplicationResult empty() {
+            return new CouponApplicationResult(BigDecimal.ZERO, new ArrayList<>());
+        }
     }
 }

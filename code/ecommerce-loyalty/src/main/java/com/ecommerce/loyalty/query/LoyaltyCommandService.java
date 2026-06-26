@@ -34,6 +34,21 @@ public interface LoyaltyCommandService {
     int redeemPoints(Long userId, int points, BigDecimal orderAmount);
 
     /**
+     * Freeze available points for an internal business operation.
+     */
+    void freezePoints(Long userId, int points, String bizType, String bizId, String description);
+
+    /**
+     * Release previously frozen points back to available balance.
+     */
+    void unfreezePoints(Long userId, int points, String bizType, String bizId, String description);
+
+    /**
+     * Consume previously frozen points after the business operation succeeds.
+     */
+    void consumeFrozenPoints(Long userId, int points, String bizType, String bizId, String description);
+
+    /**
      * Process expired points. Points older than the configured expire-months
      * should be moved from available to expired balance.
      */

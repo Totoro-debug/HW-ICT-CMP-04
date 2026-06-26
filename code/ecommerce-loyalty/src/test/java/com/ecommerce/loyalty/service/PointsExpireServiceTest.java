@@ -1,52 +1,109 @@
 package com.ecommerce.loyalty.service;
 
+import com.ecommerce.loyalty.entity.LoyaltyAccount;
+import com.ecommerce.loyalty.entity.MemberLevel;
+import com.ecommerce.loyalty.entity.PointsTransaction;
+import com.ecommerce.loyalty.entity.PointsTransactionType;
+import com.ecommerce.loyalty.repository.LoyaltyAccountRepository;
+import com.ecommerce.loyalty.repository.PointsTransactionRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.ArgumentCaptor;
+import org.mockito.Mock;
+import org.mockito.junit.jupiter.MockitoExtension;
 
-import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
+import java.time.LocalDateTime;
+import java.util.List;
+import java.util.Optional;
+
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.when;
 
 /**
  * Unit tests for {@link PointsExpireService}.
- *
- * <p>The {@link PointsExpireService#expire()} method has an
- * empty body — it is a complete no-op. No points are ever expired, no
- * transactions are created, and no account balances are updated.
  */
+@ExtendWith(MockitoExtension.class)
 class PointsExpireServiceTest {
+
+    @Mock
+    private PointsTransactionRepository transactionRepository;
+
+    @Mock
+    private LoyaltyAccountRepository accountRepository;
 
     private PointsExpireService pointsExpireService;
 
     @BeforeEach
     void setUp() {
-        pointsExpireService = new PointsExpireService();
+        pointsExpireService = new PointsExpireService(transactionRepository, accountRepository);
     }
 
-    /**
-     * expire() has an empty method body.
-     * Calling it does NOT actually expire any points or change any balance.
-     * This test captures the current no-op behavior.
-     */
     @Test
-    void testExpire_doesNotChangeBalance() {
-        // expire() is a no-op — it does not read accounts,
-        // does not scan for expired transactions, and does not update
-        // any account balances. Calling it should complete without error
-        // but leaves all expired points untouched.
-        assertDoesNotThrow(() -> pointsExpireService.expire(),
-                "expire() runs without error but does not actually expire any points");
+    void testExpire_deductsExpiredEarnAndRecordsTransaction() {
+        PointsTransaction earn = earnTransaction(11L, 1L, 500);
+        LoyaltyAccount account = account(1L, 1000);
+
+        when(transactionRepository.findByTypeAndExpiresAtLessThanEqual(eq(PointsTransactionType.EARN), any(LocalDateTime.class)))
+                .thenReturn(List.of(earn));
+        when(transactionRepository.existsByTypeAndBizTypeAndBizId(PointsTransactionType.EXPIRE, "POINTS_EXPIRE", "11"))
+                .thenReturn(false);
+        when(accountRepository.findByUserId(1L)).thenReturn(Optional.of(account));
+
+        pointsExpireService.expire();
+
+        assertEquals(500, account.getAvailablePoints());
+        assertEquals(500, account.getExpiredPoints());
+        assertEquals(500, account.getTotalPoints());
+        verify(accountRepository).save(account);
+
+        ArgumentCaptor<PointsTransaction> txCaptor = ArgumentCaptor.forClass(PointsTransaction.class);
+        verify(transactionRepository).save(txCaptor.capture());
+        PointsTransaction expire = txCaptor.getValue();
+        assertEquals(PointsTransactionType.EXPIRE, expire.getType());
+        assertEquals(-500, expire.getAmount());
+        assertEquals(500, expire.getBalance());
+        assertEquals("POINTS_EXPIRE", expire.getBizType());
+        assertEquals("11", expire.getBizId());
     }
 
-    /**
-     * expire() creates no records.
-     * The service has no dependencies on any repository, so there is no
-     * way for it to create transaction records or update account balances.
-     */
     @Test
-    void testExpire_noSideEffects() {
-        // Since expire() has an empty body and the service
-        // has no injected repositories, calling expire() creates no
-        // side effects — no EXPIRE transactions, no balance changes.
-        assertDoesNotThrow(() -> pointsExpireService.expire(),
-                "expire() produces no side effects — no records are created");
+    void testExpire_skipsAlreadyProcessedEarn() {
+        PointsTransaction earn = earnTransaction(11L, 1L, 500);
+        when(transactionRepository.findByTypeAndExpiresAtLessThanEqual(eq(PointsTransactionType.EARN), any(LocalDateTime.class)))
+                .thenReturn(List.of(earn));
+        when(transactionRepository.existsByTypeAndBizTypeAndBizId(PointsTransactionType.EXPIRE, "POINTS_EXPIRE", "11"))
+                .thenReturn(true);
+
+        pointsExpireService.expire();
+
+        verify(accountRepository, never()).save(any());
+        verify(transactionRepository, never()).save(any(PointsTransaction.class));
+    }
+
+    private PointsTransaction earnTransaction(Long id, Long userId, int amount) {
+        PointsTransaction tx = new PointsTransaction();
+        tx.setId(id);
+        tx.setUserId(userId);
+        tx.setType(PointsTransactionType.EARN);
+        tx.setAmount(amount);
+        tx.setExpiresAt(LocalDateTime.now().minusDays(1));
+        return tx;
+    }
+
+    private LoyaltyAccount account(Long userId, int availablePoints) {
+        LoyaltyAccount account = new LoyaltyAccount();
+        account.setUserId(userId);
+        account.setMemberLevel(MemberLevel.NORMAL);
+        account.setTotalPoints(availablePoints);
+        account.setAvailablePoints(availablePoints);
+        account.setFrozenPoints(0);
+        account.setRedeemedPoints(0);
+        account.setExpiredPoints(0);
+        return account;
     }
 }

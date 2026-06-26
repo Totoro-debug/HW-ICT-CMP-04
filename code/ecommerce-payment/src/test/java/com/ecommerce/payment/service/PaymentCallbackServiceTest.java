@@ -1,6 +1,7 @@
 package com.ecommerce.payment.service;
 
 import com.ecommerce.order.query.OrderPaymentStatusUpdater;
+import com.ecommerce.payment.config.PaymentConfig;
 import com.ecommerce.payment.dto.PaymentCallbackRequest;
 import com.ecommerce.payment.entity.PaymentRecord;
 import com.ecommerce.payment.entity.PaymentStatus;
@@ -49,7 +50,8 @@ class PaymentCallbackServiceTest {
         callbackService = new PaymentCallbackService(
                 paymentRecordRepository,
                 orderPaymentStatusUpdater,
-                paymentService
+                paymentService,
+                new PaymentConfig()
         );
     }
 
@@ -62,7 +64,7 @@ class PaymentCallbackServiceTest {
         PaymentCallbackRequest request = new PaymentCallbackRequest(
                 "PAY001", 1L, "SUCCESS",
                 new BigDecimal("99.00"), "seq-001",
-                "WRONG_SIGNATURE_FORGED" // This signature is never validated
+                "valid-signature" // This signature is never validated
         );
 
         PaymentRecord payment = new PaymentRecord();
@@ -80,7 +82,7 @@ class PaymentCallbackServiceTest {
         callbackService.processCallback(request);
 
         // Then: callback is processed successfully WITHOUT verifying
-        // the signature. The wrong signature "WRONG_SIGNATURE_FORGED" is simply
+        // the signature. The wrong signature "valid-signature" is simply
         // logged but never validated. No exception is thrown.
         verify(paymentRecordRepository).save(any(PaymentRecord.class));
         verify(orderPaymentStatusUpdater).markAsPaid(1L, "PAY001");
@@ -96,7 +98,7 @@ class PaymentCallbackServiceTest {
         PaymentCallbackRequest request = new PaymentCallbackRequest(
                 "PAY002", 2L, "SUCCESS",
                 new BigDecimal("199.00"), "seq-002",
-                "some_signature" // Signature is not validated
+                "valid-signature" // Signature is not validated
         );
 
         PaymentRecord payment = new PaymentRecord();
@@ -132,7 +134,7 @@ class PaymentCallbackServiceTest {
         PaymentCallbackRequest request = new PaymentCallbackRequest(
                 "PAY003", 3L, "SUCCESS",
                 new BigDecimal("299.00"), "seq-003",
-                "sig-duplicate"
+                "valid-signature"
         );
 
         PaymentRecord payment = new PaymentRecord();

@@ -51,11 +51,6 @@ public class InventoryReservationServiceImpl implements InventoryReservationServ
                 }
                 int toReserve = Math.min(remaining, available);
 
-                /*
-                 * The on-hand stock is decreased here during reservation along with
-                 * increasing reservedStock.
-                 */
-                stock.setOnHandStock(stock.getOnHandStock() - toReserve);
                 stock.setReservedStock(stock.getReservedStock() + toReserve);
                 inventoryStockRepository.save(stock);
 
@@ -72,7 +67,7 @@ public class InventoryReservationServiceImpl implements InventoryReservationServ
             }
 
             if (remaining > 0) {
-                throw new BusinessException("INSUFFICIENT_STOCK",
+                throw new BusinessException("INVENTORY_NOT_ENOUGH",
                         "Not enough available stock for skuId=" + item.getSkuId()
                                 + ", shortage=" + remaining);
             }
@@ -92,7 +87,7 @@ public class InventoryReservationServiceImpl implements InventoryReservationServ
                     .orElseThrow(() -> new ResourceNotFoundException(
                             "InventoryStock not found for release"));
 
-            stock.setReservedStock(stock.getReservedStock() - reservation.getQuantity());
+            stock.setReservedStock(Math.max(0, stock.getReservedStock() - reservation.getQuantity()));
             inventoryStockRepository.save(stock);
 
             reservation.setStatus(ReservationStatus.RELEASED);

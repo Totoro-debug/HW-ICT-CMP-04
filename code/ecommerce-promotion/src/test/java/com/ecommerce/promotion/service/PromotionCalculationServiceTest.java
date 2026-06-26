@@ -210,18 +210,12 @@ class PromotionCalculationServiceTest {
         }
 
         @Test
-        @DisplayName("testCalculate_multipleCoupons_appliesEach: " +
-                "each coupon discount is applied independently to the same base amount")
+        @DisplayName("testCalculate_multipleCoupons_usesBestSingleCoupon")
         void testCalculate_multipleCoupons_appliesEach() {
             /*
-             * Two DISCOUNT coupons, each at 0.8, applied to the same base = 85.00
-             * (after member 5% and full reduction 10.00).
-             *
-             * Coupon 1 on 85.00: discount = 68.00
-             * Coupon 2 on 85.00: discount = 68.00
-             * Total coupon discount = 136.00
-             * Total discount = 5.00 + 10.00 + 136.00 = 151.00
-             * Final = max(0, 100 - 151) = 0.00
+             * Multiple coupons are evaluated under the centralized stacking rule,
+             * but only the best single coupon is applied to prevent unconditional
+             * over-stacking.
              */
 
             request.setCouponIds(List.of(1L, 2L));
@@ -265,9 +259,11 @@ class PromotionCalculationServiceTest {
             assertThat(response.getItemTotal()).isEqualByComparingTo(new BigDecimal("100.00"));
             assertThat(response.getMemberDiscount()).isEqualByComparingTo(new BigDecimal("5.00"));
             assertThat(response.getFullReductionDiscount()).isEqualByComparingTo(new BigDecimal("10.00"));
-            assertThat(response.getCouponDiscount()).isEqualByComparingTo(new BigDecimal("136.00"));
-            assertThat(response.getTotalDiscount()).isEqualByComparingTo(new BigDecimal("151.00"));
-            assertThat(response.getFinalAmount()).isEqualByComparingTo(BigDecimal.ZERO);
+            assertThat(response.getCouponDiscount()).isEqualByComparingTo(new BigDecimal("68.00"));
+            assertThat(response.getTotalDiscount()).isEqualByComparingTo(new BigDecimal("83.00"));
+            assertThat(response.getFinalAmount()).isEqualByComparingTo(new BigDecimal("17.00"));
+            assertThat(response.getApplicableCoupons()).hasSize(1);
+            assertThat(response.getApplicableCoupons().get(0).getCouponId()).isEqualTo(1L);
         }
 
         @Test

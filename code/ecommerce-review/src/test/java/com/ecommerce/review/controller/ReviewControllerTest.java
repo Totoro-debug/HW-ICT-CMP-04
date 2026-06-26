@@ -1,5 +1,6 @@
 package com.ecommerce.review.controller;
 
+import com.ecommerce.common.exception.BusinessException;
 import com.ecommerce.common.exception.GlobalExceptionHandler;
 import com.ecommerce.review.dto.ReviewAppendRequest;
 import com.ecommerce.review.dto.ReviewCreateRequest;
@@ -133,6 +134,21 @@ class ReviewControllerTest {
                     .andExpect(jsonPath("$.rating").value(5))
                     .andExpect(jsonPath("$.status").value("PENDING_REVIEW"));
         }
+
+        @Test
+        @DisplayName("createReview: purchase gate failure returns 403 REVIEW_PURCHASE_REQUIRED")
+        void testCreateReview_purchaseGateFailure_returns403() throws Exception {
+            setupMockAuthentication("1", "ROLE_USER");
+            when(reviewService.createReview(eq(1L), any(ReviewCreateRequest.class)))
+                    .thenThrow(new BusinessException("REVIEW_PURCHASE_REQUIRED",
+                            "User must purchase and receive the product before creating a review"));
+
+            mockMvc.perform(post("/api/v1/reviews")
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content(objectMapper.writeValueAsString(createRequest)))
+                    .andExpect(status().isForbidden())
+                    .andExpect(jsonPath("$.code").value("REVIEW_PURCHASE_REQUIRED"));
+        }
     }
 
     // -----------------------------------------------------------------------
@@ -176,8 +192,6 @@ class ReviewControllerTest {
         void testGetProductReviews_anonymous_returns200() throws Exception {
             ReviewListResponse listResponse = new ReviewListResponse(
                     0, 10, 1, Collections.singletonList(reviewResponse));
-            listResponse.setAverageRating(5.0);
-            listResponse.setTotalReviews(1L);
 
             when(reviewService.getProductReviews(eq(100L), anyInt(), anyInt()))
                     .thenReturn(listResponse);
@@ -188,7 +202,8 @@ class ReviewControllerTest {
                     .andExpect(status().isOk())
                     .andExpect(jsonPath("$.items[0].id").value(1))
                     .andExpect(jsonPath("$.total").value(1))
-                    .andExpect(jsonPath("$.averageRating").value(5.0));
+                    .andExpect(jsonPath("$.averageRating").doesNotExist())
+                    .andExpect(jsonPath("$.totalReviews").doesNotExist());
         }
     }
 

@@ -74,23 +74,29 @@ public class ShipmentService {
 
         log.info("Creating shipment for orderId={}, userId={}", orderId, userId);
 
+        Shipment existing = shipmentRepository.findByOrderId(orderId).orElse(null);
+        if (existing != null) {
+            log.info("Shipment already exists for orderId={}, shipmentId={}", orderId, existing.getId());
+            return existing;
+        }
+
         Shipment shipment = new Shipment();
         shipment.setShipmentNo(generateShipmentNo());
         shipment.setOrderId(orderId);
         shipment.setUserId(userId);
-        shipment.setStatus(ShipmentStatus.OUTBOUND);
+        shipment.setStatus(ShipmentStatus.CREATED);
         shipment.setFreightAmount(freightAmount != null ? freightAmount : BigDecimal.ZERO);
         shipment.setAddressSnapshot(addressSnapshot);
 
         shipment = shipmentRepository.save(shipment);
 
         // Record tracking event
-        recordTracking(shipment.getId(), "OUTBOUND", "Warehouse",
-                "Shipment status updated", null);
+        recordTracking(shipment.getId(), "CREATED", "Warehouse",
+                "Shipment created", null);
 
         // Update order logistics status
         try {
-            orderLogisticsStatusUpdater.updateLogisticsStatus(orderId, "OUTBOUND");
+            orderLogisticsStatusUpdater.updateLogisticsStatus(orderId, "CREATED");
         } catch (Exception e) {
             log.warn("Failed to update order logistics status for orderId={}: {}", orderId, e.getMessage());
         }
@@ -159,8 +165,9 @@ public class ShipmentService {
         }
 
         shipmentRepository.save(shipment);
+        String operator = pickerId == null ? "ADMIN" : pickerId.toString();
         recordTracking(shipmentId, "PICKING", "Warehouse",
-                "Picking started by operator " + pickerId, pickerId.toString());
+                "Picking started by operator " + operator, operator);
 
         try {
             orderLogisticsStatusUpdater.updateLogisticsStatus(

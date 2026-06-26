@@ -1,5 +1,6 @@
 package com.ecommerce.promotion.controller;
 
+import com.ecommerce.common.exception.AuthorizationException;
 import com.ecommerce.promotion.dto.CouponClaimRequest;
 import com.ecommerce.promotion.dto.CouponResponse;
 import com.ecommerce.promotion.dto.PromotionCalculateRequest;
@@ -14,6 +15,8 @@ import com.ecommerce.promotion.service.PromotionCalculationService;
 import jakarta.validation.Valid;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.core.Authentication;
+import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
@@ -100,21 +103,33 @@ public class PromotionController {
     @PostMapping("/calculate")
     public ResponseEntity<PromotionCalculateResponse> calculate(
             @Valid @RequestBody PromotionCalculateRequest request) {
-        // Ensure userId is set if not provided
-        if (request.getUserId() == null) {
-            request.setUserId(extractUserId());
-        }
+        request.setUserId(extractUserId());
         PromotionCalculateResponse response = promotionCalculationService.calculate(request);
         return ResponseEntity.ok(response);
     }
 
     /**
-     * Extract the current user ID.
-     * In production, this would read from SecurityContextHolder.
+     * Extract the current user ID from the authenticated JWT principal.
      */
     private Long extractUserId() {
-        // Placeholder: would be replaced with actual security context extraction
-        // e.g. SecurityContextHolder.getContext().getAuthentication().getPrincipal()
-        return 1L;
+        Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
+        if (authentication == null || !authentication.isAuthenticated()) {
+            throw AuthorizationException.unauthorized("Authentication required");
+        }
+
+        Object principal = authentication.getPrincipal();
+        if (principal instanceof Long userId) {
+            return userId;
+        }
+        if (principal instanceof Number number) {
+            return number.longValue();
+        }
+
+        String name = authentication.getName();
+        try {
+            return Long.parseLong(name);
+        } catch (NumberFormatException ex) {
+            throw AuthorizationException.unauthorized("Invalid authenticated user");
+        }
     }
 }

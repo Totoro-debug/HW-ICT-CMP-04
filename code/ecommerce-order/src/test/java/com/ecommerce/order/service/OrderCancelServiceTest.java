@@ -119,36 +119,20 @@ class OrderCancelServiceTest {
     // ======================== Cancel PAID order ========================
 
     @Test
-    @DisplayName("cancel PAID order with refund")
-    void testCancel_paidOrder_withRefund() {
-        // Verify cancellation result for a paid order.
+    @DisplayName("cancel PAID order enters merchant review")
+    void testCancel_paidOrder_entersReview() {
         when(orderRepository.findById(2L)).thenReturn(Optional.of(paidOrder));
-        // stateMachine.validateTransition() is mocked void, won't throw
         when(orderRepository.save(any(Order.class))).thenReturn(paidOrder);
 
         CancelOrderResponse response = orderCancelService.cancel(100L, 2L, "Changed my mind");
 
         assertThat(response.getOrderId()).isEqualTo(2L);
-        // Verify final status.
-        assertThat(response.getStatus()).isEqualTo(OrderStatus.CANCELLED.name());
-        assertThat(response.getMessage()).contains("full refund");
+        assertThat(response.getStatus()).isEqualTo(OrderStatus.CANCEL_REVIEWING.name());
+        assertThat(response.getMessage()).contains("merchant review");
+        assertThat(paidOrder.getPaidAmount()).isEqualTo(new BigDecimal("200.00"));
+        assertThat(paidOrder.getStatus()).isEqualTo(OrderStatus.CANCEL_REVIEWING);
 
-        // Verify inventory reservation interaction.
         verify(inventoryReservationService, never()).release(anyLong());
-    }
-
-    @Test
-    @DisplayName("cancel PAID order: paid amount is zeroed out (full refund)")
-    void testCancel_paidOrder_fullRefund() {
-        when(orderRepository.findById(2L)).thenReturn(Optional.of(paidOrder));
-        // stateMachine.validateTransition() is mocked void, won't throw
-        when(orderRepository.save(any(Order.class))).thenReturn(paidOrder);
-
-        orderCancelService.cancel(100L, 2L, "Refund please");
-
-        // Paid amount is zeroed — full refund without handling fee deduction
-        assertThat(paidOrder.getPaidAmount()).isEqualTo(BigDecimal.ZERO);
-        assertThat(paidOrder.getStatus()).isEqualTo(OrderStatus.CANCELLED);
     }
 
     // ======================== Cancel SHIPPED order ========================

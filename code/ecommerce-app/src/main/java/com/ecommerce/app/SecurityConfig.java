@@ -60,8 +60,6 @@ public class SecurityConfig {
                         .requestMatchers("/api/v1/payment/callback").permitAll()
                         .requestMatchers("/api/v1/logistics/callback").permitAll()
                         .requestMatchers("/api/v1/reviews/product/**").permitAll()
-                        .requestMatchers("/api/v1/admin/system/reset-sandbox").permitAll()
-                        .requestMatchers("/api/v1/admin/system/bootstrap-admin").permitAll()
                         .requestMatchers("/api/v1/admin/**").hasRole("ADMIN")
                         .requestMatchers("/api/v1/**").hasRole("USER")
                         .anyRequest().permitAll()

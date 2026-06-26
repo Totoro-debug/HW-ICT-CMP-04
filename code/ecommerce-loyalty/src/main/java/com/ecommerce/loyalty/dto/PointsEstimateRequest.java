@@ -1,5 +1,9 @@
 package com.ecommerce.loyalty.dto;
 
+import jakarta.validation.constraints.Min;
+import jakarta.validation.constraints.NotNull;
+import jakarta.validation.constraints.Positive;
+
 import java.math.BigDecimal;
 
 /**
@@ -7,7 +11,11 @@ import java.math.BigDecimal;
  */
 public class PointsEstimateRequest {
 
+    @NotNull
+    @Positive
     private BigDecimal orderAmount;
+
+    @Min(0)
     private int redeemPoints;
 
     public PointsEstimateRequest() {

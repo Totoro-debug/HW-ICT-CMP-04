@@ -2,7 +2,6 @@ package com.ecommerce.promotion.service;
 
 import com.ecommerce.common.exception.BusinessException;
 import com.ecommerce.common.exception.ResourceNotFoundException;
-import com.ecommerce.common.exception.ValidationException;
 import com.ecommerce.common.money.MonetaryUtil;
 import com.ecommerce.promotion.entity.CouponStatus;
 import com.ecommerce.promotion.entity.CouponTemplate;
@@ -40,9 +39,7 @@ public class CouponService {
         CouponTemplate template = couponTemplateRepository.findById(templateId)
                 .orElseThrow(() -> new ResourceNotFoundException("CouponTemplate", templateId));
 
-        if (!"ACTIVE".equals(template.getStatus())) {
-            throw new BusinessException("COUPON_INACTIVE", "Coupon template is not active");
-        }
+        validateTemplateAvailable(template, LocalDateTime.now());
 
         // Check per-user limit
         long userClaimCount = userCouponRepository.countByUserIdAndCouponTemplateId(userId, templateId);
@@ -117,6 +114,18 @@ public class CouponService {
 
             default:
                 return BigDecimal.ZERO;
+        }
+    }
+
+    private void validateTemplateAvailable(CouponTemplate template, LocalDateTime now) {
+        if (!"ACTIVE".equals(template.getStatus())) {
+            throw new BusinessException("COUPON_EXPIRED", "Coupon template is not active");
+        }
+        if (template.getStartTime() != null && now.isBefore(template.getStartTime())) {
+            throw new BusinessException("COUPON_EXPIRED", "Coupon is not yet effective");
+        }
+        if (template.getEndTime() != null && now.isAfter(template.getEndTime())) {
+            throw new BusinessException("COUPON_EXPIRED", "Coupon has expired");
         }
     }
 

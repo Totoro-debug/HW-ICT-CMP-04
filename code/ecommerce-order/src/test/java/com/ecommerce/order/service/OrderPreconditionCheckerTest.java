@@ -48,21 +48,35 @@ class OrderPreconditionCheckerTest {
     }
 
     @Test
-    @DisplayName("check passes for frozen user — frozen user NOT blocked")
-    void testCheck_userFrozen_stillPasses() {
-        // Verify behavior for a frozen user.
-        // but the check() method only validates user != null. It never calls
-        // userQueryService.isFrozen().
-
+    @DisplayName("check rejects frozen user with USER_FROZEN")
+    void testCheck_userFrozen_throwsUserFrozen() {
         UserDto frozenUser = new UserDto();
         frozenUser.setUserId(2L);
         frozenUser.setStatus("FROZEN");
 
         when(userQueryService.getUserById(2L)).thenReturn(frozenUser);
 
-        // Even though the user is frozen, the check passes.
-        assertThatCode(() -> preconditionChecker.check(2L, 1))
-                .doesNotThrowAnyException();
+        assertThatThrownBy(() -> preconditionChecker.check(2L, 1))
+                .isInstanceOf(BusinessException.class)
+                .hasMessageContaining("User is frozen")
+                .extracting(ex -> ((BusinessException) ex).getCode())
+                .isEqualTo("USER_FROZEN");
+    }
+
+    @Test
+    @DisplayName("check rejects non-active user with USER_NOT_ACTIVE")
+    void testCheck_userNotActive_throwsUserNotActive() {
+        UserDto pendingUser = new UserDto();
+        pendingUser.setUserId(4L);
+        pendingUser.setStatus("PENDING_ACTIVATION");
+
+        when(userQueryService.getUserById(4L)).thenReturn(pendingUser);
+
+        assertThatThrownBy(() -> preconditionChecker.check(4L, 1))
+                .isInstanceOf(BusinessException.class)
+                .hasMessageContaining("not active")
+                .extracting(ex -> ((BusinessException) ex).getCode())
+                .isEqualTo("USER_NOT_ACTIVE");
     }
 
     @Test
@@ -80,6 +94,7 @@ class OrderPreconditionCheckerTest {
     void testCheck_emptyItems_throwsException() {
         UserDto user = new UserDto();
         user.setUserId(3L);
+        user.setStatus("ACTIVE");
         when(userQueryService.getUserById(3L)).thenReturn(user);
 
         assertThatThrownBy(() -> preconditionChecker.check(3L, 0))

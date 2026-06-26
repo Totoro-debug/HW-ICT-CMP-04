@@ -164,7 +164,7 @@ public class InventoryService implements InventoryQueryService,
                         "InventoryStock", "warehouse=" + warehouseId + ", sku=" + skuId));
 
         if (stock.getOnHandStock() < quantity) {
-            throw new BusinessException("INSUFFICIENT_STOCK",
+            throw new BusinessException("INVENTORY_NOT_ENOUGH",
                     "Not enough on-hand stock for skuId=" + skuId + " in warehouseId=" + warehouseId);
         }
 

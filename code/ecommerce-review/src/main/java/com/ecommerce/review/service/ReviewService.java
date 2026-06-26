@@ -3,6 +3,8 @@ package com.ecommerce.review.service;
 import com.ecommerce.common.event.DomainEventPublisher;
 import com.ecommerce.common.exception.BusinessException;
 import com.ecommerce.common.exception.ResourceNotFoundException;
+import com.ecommerce.order.dto.VerifyPurchaseResponse;
+import com.ecommerce.order.query.OrderQueryService;
 import com.ecommerce.review.dto.ReviewAppendRequest;
 import com.ecommerce.review.dto.ReviewCreateRequest;
 import com.ecommerce.review.dto.ReviewListResponse;
@@ -38,15 +40,18 @@ public class ReviewService {
     private final ReviewAppendRepository reviewAppendRepository;
     private final SensitiveWordFilter sensitiveWordFilter;
     private final DomainEventPublisher eventPublisher;
+    private final OrderQueryService orderQueryService;
 
     public ReviewService(ReviewRepository reviewRepository,
                          ReviewAppendRepository reviewAppendRepository,
                          SensitiveWordFilter sensitiveWordFilter,
-                         DomainEventPublisher eventPublisher) {
+                         DomainEventPublisher eventPublisher,
+                         OrderQueryService orderQueryService) {
         this.reviewRepository = reviewRepository;
         this.reviewAppendRepository = reviewAppendRepository;
         this.sensitiveWordFilter = sensitiveWordFilter;
         this.eventPublisher = eventPublisher;
+        this.orderQueryService = orderQueryService;
     }
 
     /**
@@ -63,6 +68,8 @@ public class ReviewService {
             throw new BusinessException("INVALID_RATING",
                     "Rating must be between 1 and 5, got: " + request.getRating());
         }
+
+        verifyReviewEligibility(userId, request);
 
         // Check for duplicate review on the same order item
         reviewRepository.findByUserIdAndOrderItemId(userId, request.getOrderItemId())
@@ -99,6 +106,16 @@ public class ReviewService {
         eventPublisher.publish(new ReviewApprovedEvent(this, saved.getId(), userId));
 
         return toResponse(saved);
+    }
+
+    private void verifyReviewEligibility(Long userId, ReviewCreateRequest request) {
+        VerifyPurchaseResponse verification = orderQueryService.verifyPurchase(userId, request.getProductId());
+        if (verification == null
+                || !verification.isPurchased()
+                || !request.getOrderId().equals(verification.getOrderId())) {
+            throw new BusinessException("REVIEW_PURCHASE_REQUIRED",
+                    "User must purchase and receive the product before creating a review");
+        }
     }
 
     /**
@@ -165,11 +182,8 @@ public class ReviewService {
                 .map(this::toResponse)
                 .collect(Collectors.toList());
 
-        ReviewListResponse response = new ReviewListResponse(
+        return new ReviewListResponse(
                 page, size, reviewPage.getTotalElements(), items);
-        response.setAverageRating(calculateAverageRating(productId));
-        response.setTotalReviews(reviewPage.getTotalElements());
-        return response;
     }
 
     /**
@@ -191,22 +205,6 @@ public class ReviewService {
         ReviewListResponse response = new ReviewListResponse(
                 page, size, reviewPage.getTotalElements(), items);
         return response;
-    }
-
-    /**
-     * Calculate the average rating for a product.
-     */
-    private Double calculateAverageRating(Long productId) {
-        Page<Review> page = reviewRepository.findByProductIdAndStatus(
-                productId, ReviewStatus.APPROVED, PageRequest.of(0, Integer.MAX_VALUE));
-        if (page.getTotalElements() == 0) {
-            return 0.0;
-        }
-        double avg = page.getContent().stream()
-                .mapToInt(Review::getRating)
-                .average()
-                .orElse(0.0);
-        return Math.round(avg * 10.0) / 10.0;
     }
 
     /**

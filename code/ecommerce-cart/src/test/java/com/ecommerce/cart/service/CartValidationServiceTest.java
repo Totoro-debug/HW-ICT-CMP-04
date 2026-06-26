@@ -68,11 +68,11 @@ class CartValidationServiceTest {
         when(productQueryService.getSkuForSale(SKU_ID)).thenReturn(offShelf);
 
         // BusinessException message: "SKU <id> is not available for sale, current status: <status>"
-        // BusinessException code: "SKU_NOT_AVAILABLE"
+        // BusinessException code: "PRODUCT_NOT_FOR_SALE"
         assertThatThrownBy(() -> cartValidationService.validateSku(SKU_ID))
                 .isInstanceOf(BusinessException.class)
                 .hasMessageContaining("is not available for sale")
-                .hasFieldOrPropertyWithValue("code", "SKU_NOT_AVAILABLE");
+                .hasFieldOrPropertyWithValue("code", "PRODUCT_NOT_FOR_SALE");
     }
 
     @Test
@@ -101,11 +101,11 @@ class CartValidationServiceTest {
         when(inventoryQueryService.getStockSummary(SKU_ID)).thenReturn(stock);
 
         // BusinessException message: "Insufficient stock for SKU <id>: requested=<qty>, available=<stock>"
-        // BusinessException code: "INSUFFICIENT_STOCK"
+        // BusinessException code: "INVENTORY_NOT_ENOUGH"
         assertThatThrownBy(() -> cartValidationService.validateStock(SKU_ID, 5))
                 .isInstanceOf(BusinessException.class)
                 .hasMessageContaining("Insufficient stock for SKU")
-                .hasFieldOrPropertyWithValue("code", "INSUFFICIENT_STOCK");
+                .hasFieldOrPropertyWithValue("code", "INVENTORY_NOT_ENOUGH");
     }
 
     @Test
@@ -114,11 +114,11 @@ class CartValidationServiceTest {
         when(inventoryQueryService.getStockSummary(SKU_ID)).thenReturn(null);
 
         // BusinessException message: "Insufficient stock for SKU <id>: requested=<qty>, available=0"
-        // BusinessException code: "INSUFFICIENT_STOCK"
+        // BusinessException code: "INVENTORY_NOT_ENOUGH"
         assertThatThrownBy(() -> cartValidationService.validateStock(SKU_ID, 1))
                 .isInstanceOf(BusinessException.class)
                 .hasMessageContaining("Insufficient stock for SKU")
-                .hasFieldOrPropertyWithValue("code", "INSUFFICIENT_STOCK");
+                .hasFieldOrPropertyWithValue("code", "INVENTORY_NOT_ENOUGH");
     }
 
     @Test

@@ -105,11 +105,12 @@ class PaymentControllerTest {
         );
 
         mockMvc.perform(post("/api/v1/payment/callback")
+                        .header("X-Payment-Signature", "valid-signature")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(request)))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$").value("OK"));
 
-        verify(paymentCallbackService).processCallback(any(PaymentCallbackRequest.class));
+        verify(paymentCallbackService).processCallback(any(PaymentCallbackRequest.class), any(String.class));
     }
 }

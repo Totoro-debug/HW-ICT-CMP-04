@@ -55,8 +55,8 @@ class InventoryReservationServiceImplTest {
     // ---- reserve tests ----
 
     @Test
-    @DisplayName("reserve decreases onHandStock and increases reservedStock")
-    void testReserve_decreasesOnHandStock() {
+    @DisplayName("reserve only increases reservedStock")
+    void testReserve_onlyIncreasesReservedStock() {
         when(stockRepo.findBySkuId(100L)).thenReturn(List.of(stock));
         when(stockRepo.save(any(InventoryStock.class))).thenReturn(stock);
         when(stockReservationRepo.save(any(StockReservation.class)))
@@ -66,11 +66,9 @@ class InventoryReservationServiceImplTest {
         reservationService.reserve(1L, items);
 
         // Verify stock values after reservation.
-        assertThat(stock.getOnHandStock()).isEqualTo(160); // 200 - 40
-        // reservedStock is correctly increased
+        assertThat(stock.getOnHandStock()).isEqualTo(200);
         assertThat(stock.getReservedStock()).isEqualTo(40);
-        // availableStock = onHandStock - reservedStock = 160 - 40 = 120
-        assertThat(stock.getAvailableStock()).isEqualTo(120);
+        assertThat(stock.getAvailableStock()).isEqualTo(160);
     }
 
     @Test
@@ -93,11 +91,11 @@ class InventoryReservationServiceImplTest {
         // Second warehouse: max 50, reserves 50.
         reservationService.reserve(1L, items);
 
-        // Warehouse 1: onHand = 200-200 = 0, reserved = 200
-        assertThat(stock.getOnHandStock()).isEqualTo(0);
+        // Warehouse 1: onHand unchanged, reserved = 200
+        assertThat(stock.getOnHandStock()).isEqualTo(200);
         assertThat(stock.getReservedStock()).isEqualTo(200);
-        // Warehouse 2: onHand = 50-50 = 0, reserved = 50
-        assertThat(stock2.getOnHandStock()).isEqualTo(0);
+        // Warehouse 2: onHand unchanged, reserved = 50
+        assertThat(stock2.getOnHandStock()).isEqualTo(50);
         assertThat(stock2.getReservedStock()).isEqualTo(50);
     }
 
@@ -110,8 +108,8 @@ class InventoryReservationServiceImplTest {
 
         assertThatThrownBy(() -> reservationService.reserve(1L, items))
                 .isInstanceOf(BusinessException.class)
-                .matches(ex -> ((BusinessException) ex).getCode().equals("INSUFFICIENT_STOCK"),
-                        "should have code INSUFFICIENT_STOCK");
+                .matches(ex -> ((BusinessException) ex).getCode().equals("INVENTORY_NOT_ENOUGH"),
+                        "should have code INVENTORY_NOT_ENOUGH");
     }
 
     @Test
@@ -136,17 +134,17 @@ class InventoryReservationServiceImplTest {
         assertThat(emptyStock.getOnHandStock()).isEqualTo(10);
         assertThat(emptyStock.getReservedStock()).isEqualTo(10);
         // stock should handle the full quantity
-        assertThat(stock.getOnHandStock()).isEqualTo(160);
+        assertThat(stock.getOnHandStock()).isEqualTo(200);
         assertThat(stock.getReservedStock()).isEqualTo(40);
     }
 
     // ---- release tests ----
 
     @Test
-    @DisplayName("release decreases reservedStock (onHandStock stays decreased due to L2-03)")
+    @DisplayName("release only decreases reservedStock and keeps onHandStock unchanged")
     void testRelease_increasesAvailableStock() {
-        // Simulate post-reserve state (onHand decreased during reserve)
-        stock.setOnHandStock(160);
+        // Simulate post-reserve state: onHand unchanged, reserved increased.
+        stock.setOnHandStock(200);
         stock.setReservedStock(40);
 
         StockReservation reservation = new StockReservation();
@@ -168,11 +166,37 @@ class InventoryReservationServiceImplTest {
 
         // reservedStock decreased to 0
         assertThat(stock.getReservedStock()).isEqualTo(0);
-        // onHandStock stays at 160 (not restored — L2-03 side effect)
-        assertThat(stock.getOnHandStock()).isEqualTo(160);
-        // availableStock = 160 - 0 = 160
-        assertThat(stock.getAvailableStock()).isEqualTo(160);
+        assertThat(stock.getOnHandStock()).isEqualTo(200);
+        assertThat(stock.getAvailableStock()).isEqualTo(200);
         // reservation status updated to RELEASED
+        assertThat(reservation.getStatus()).isEqualTo(ReservationStatus.RELEASED);
+    }
+
+    @Test
+    @DisplayName("release clamps reservedStock at zero when reservation quantity exceeds current reserved")
+    void testRelease_preventsNegativeReservedStock() {
+        stock.setOnHandStock(200);
+        stock.setReservedStock(10);
+
+        StockReservation reservation = new StockReservation();
+        reservation.setId(1L);
+        reservation.setOrderId(1L);
+        reservation.setSkuId(100L);
+        reservation.setWarehouseId(1L);
+        reservation.setQuantity(40);
+        reservation.setStatus(ReservationStatus.RESERVED);
+
+        when(stockReservationRepo.findByOrderIdAndStatus(1L, ReservationStatus.RESERVED))
+                .thenReturn(List.of(reservation));
+        when(stockRepo.findByWarehouseIdAndSkuId(1L, 100L)).thenReturn(Optional.of(stock));
+        when(stockRepo.save(any(InventoryStock.class))).thenReturn(stock);
+        when(stockReservationRepo.save(any(StockReservation.class)))
+                .thenAnswer(inv -> inv.getArgument(0));
+
+        reservationService.release(1L);
+
+        assertThat(stock.getReservedStock()).isZero();
+        assertThat(stock.getOnHandStock()).isEqualTo(200);
         assertThat(reservation.getStatus()).isEqualTo(ReservationStatus.RELEASED);
     }
 
@@ -212,8 +236,8 @@ class InventoryReservationServiceImplTest {
     @Test
     @DisplayName("deductAfterPayment decreases both onHandStock and reservedStock")
     void testDeductAfterPayment_adjustsBothStocks() {
-        // Simulate post-reserve state (onHand decreased during reserve)
-        stock.setOnHandStock(160);
+        // Simulate post-reserve state: onHand unchanged, reserved increased.
+        stock.setOnHandStock(200);
         stock.setReservedStock(40);
 
         StockReservation reservation = new StockReservation();
@@ -233,12 +257,9 @@ class InventoryReservationServiceImplTest {
 
         reservationService.deductAfterPayment(1L);
 
-        // onHandStock: 160 - 40 = 120 (decreased AGAIN — cumulative L2-03 effect)
-        assertThat(stock.getOnHandStock()).isEqualTo(120);
-        // reservedStock: 40 - 40 = 0
+        assertThat(stock.getOnHandStock()).isEqualTo(160);
         assertThat(stock.getReservedStock()).isEqualTo(0);
-        // availableStock = 120 - 0 = 120
-        assertThat(stock.getAvailableStock()).isEqualTo(120);
+        assertThat(stock.getAvailableStock()).isEqualTo(160);
         // reservation status updated to DEDUCTED
         assertThat(reservation.getStatus()).isEqualTo(ReservationStatus.DEDUCTED);
     }
@@ -265,7 +286,7 @@ class InventoryReservationServiceImplTest {
     // ---- full cycle test ----
 
     @Test
-    @DisplayName("full reserve-release-deduct cycle produces correct final state")
+    @DisplayName("full reserve-release-deduct cycle keeps reservation and deduction semantics consistent")
     void testFullReserveReleaseDeductCycle() {
         // ---- Setup: stock with 200 on-hand, 0 reserved ----
         when(stockRepo.findBySkuId(100L)).thenReturn(List.of(stock));
@@ -300,35 +321,31 @@ class InventoryReservationServiceImplTest {
         // ---- Step 1: Reserve orderId=1, quantity=50 ----
         reservationService.reserve(1L, List.of(new ReserveItem(100L, 50)));
 
-        // onHandStock decreased during reserve
-        assertThat(stock.getOnHandStock()).isEqualTo(150); // 200 - 50
+        assertThat(stock.getOnHandStock()).isEqualTo(200);
         assertThat(stock.getReservedStock()).isEqualTo(50);
-        assertThat(stock.getAvailableStock()).isEqualTo(100); // 150 - 50
+        assertThat(stock.getAvailableStock()).isEqualTo(150);
 
         // ---- Step 2: Release orderId=1 ----
         reservationService.release(1L);
 
-        // reservedStock back to 0, but onHandStock stays at 150 (not restored — L2-03)
-        assertThat(stock.getOnHandStock()).isEqualTo(150);
+        assertThat(stock.getOnHandStock()).isEqualTo(200);
         assertThat(stock.getReservedStock()).isEqualTo(0);
-        assertThat(stock.getAvailableStock()).isEqualTo(150); // 150 - 0
+        assertThat(stock.getAvailableStock()).isEqualTo(200);
         assertThat(res1.getStatus()).isEqualTo(ReservationStatus.RELEASED);
 
         // ---- Step 3: Reserve orderId=2, quantity=50 ----
         reservationService.reserve(2L, List.of(new ReserveItem(100L, 50)));
 
-        // onHandStock decreased again: 150 - 50 = 100
-        assertThat(stock.getOnHandStock()).isEqualTo(100);
+        assertThat(stock.getOnHandStock()).isEqualTo(200);
         assertThat(stock.getReservedStock()).isEqualTo(50);
-        assertThat(stock.getAvailableStock()).isEqualTo(50); // 100 - 50
+        assertThat(stock.getAvailableStock()).isEqualTo(150);
 
         // ---- Step 4: Deduct after payment for orderId=2 ----
         reservationService.deductAfterPayment(2L);
 
-        // Both decrease: onHand 50, reserved 0
-        assertThat(stock.getOnHandStock()).isEqualTo(50); // 100 - 50
-        assertThat(stock.getReservedStock()).isEqualTo(0); // 50 - 50
-        assertThat(stock.getAvailableStock()).isEqualTo(50); // 50 - 0
+        assertThat(stock.getOnHandStock()).isEqualTo(150);
+        assertThat(stock.getReservedStock()).isEqualTo(0);
+        assertThat(stock.getAvailableStock()).isEqualTo(150);
         assertThat(res2.getStatus()).isEqualTo(ReservationStatus.DEDUCTED);
     }
 }

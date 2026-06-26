@@ -19,27 +19,33 @@ class OrderValidatorTest {
     // ======================== validateAmount ========================
 
     @Test
-    @DisplayName("validateAmount with zero amount throws exception")
-    void testValidateAmount_zero_throwsIllegalArgumentException() {
+    @DisplayName("validateAmount with zero amount throws ORDER_INVALID_AMOUNT")
+    void testValidateAmount_zero_throwsOrderInvalidAmount() {
         assertThatThrownBy(() -> validator.validateAmount(BigDecimal.ZERO))
-                .isInstanceOf(IllegalArgumentException.class)
-                .hasMessageContaining("Order amount must be positive");
+                .isInstanceOf(com.ecommerce.common.exception.BusinessException.class)
+                .hasMessageContaining("Order amount must be positive")
+                .extracting(ex -> ((com.ecommerce.common.exception.BusinessException) ex).getCode())
+                .isEqualTo("ORDER_INVALID_AMOUNT");
     }
 
     @Test
-    @DisplayName("validateAmount with negative amount throws IllegalArgumentException (should throw OrderValidationException)")
-    void testValidateAmount_negative_throwsIllegalArgumentException() {
+    @DisplayName("validateAmount with negative amount throws ORDER_INVALID_AMOUNT")
+    void testValidateAmount_negative_throwsOrderInvalidAmount() {
         assertThatThrownBy(() -> validator.validateAmount(new BigDecimal("-50.00")))
-                .isInstanceOf(IllegalArgumentException.class)
-                .hasMessageContaining("Order amount must be positive");
+                .isInstanceOf(com.ecommerce.common.exception.BusinessException.class)
+                .hasMessageContaining("Order amount must be positive")
+                .extracting(ex -> ((com.ecommerce.common.exception.BusinessException) ex).getCode())
+                .isEqualTo("ORDER_INVALID_AMOUNT");
     }
 
     @Test
-    @DisplayName("validateAmount with null amount throws IllegalArgumentException (should throw OrderValidationException)")
-    void testValidateAmount_null_throwsIllegalArgumentException() {
+    @DisplayName("validateAmount with null amount throws ORDER_INVALID_AMOUNT")
+    void testValidateAmount_null_throwsOrderInvalidAmount() {
         assertThatThrownBy(() -> validator.validateAmount(null))
-                .isInstanceOf(IllegalArgumentException.class)
-                .hasMessageContaining("Order amount must be positive");
+                .isInstanceOf(com.ecommerce.common.exception.BusinessException.class)
+                .hasMessageContaining("Order amount must be positive")
+                .extracting(ex -> ((com.ecommerce.common.exception.BusinessException) ex).getCode())
+                .isEqualTo("ORDER_INVALID_AMOUNT");
     }
 
     @Test

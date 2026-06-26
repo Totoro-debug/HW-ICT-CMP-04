@@ -107,10 +107,8 @@ class CouponValidatorTest {
         }
 
         @Test
-        @DisplayName("testValidate_expiredCoupon_stillReturnsTrue: " +
-                "no time check, so expired coupons pass validation")
-        void testValidate_expiredCoupon_stillReturnsTrue() {
-            // Create a user coupon linked to an expired template
+        @DisplayName("testValidate_expiredCoupon_throwsCouponExpired")
+        void testValidate_expiredCoupon_throwsCouponExpired() {
             UserCoupon expiredUserCoupon = new UserCoupon();
             expiredUserCoupon.setId(20L);
             expiredUserCoupon.setUserId(1L);
@@ -120,15 +118,15 @@ class CouponValidatorTest {
 
             when(couponTemplateRepository.findById(2L)).thenReturn(Optional.of(expiredTemplate));
 
-            // Expired coupon still passes because no time check is done
-            assertThatCode(() -> couponValidator.validate(expiredUserCoupon))
-                    .doesNotThrowAnyException();
+            assertThatThrownBy(() -> couponValidator.validate(expiredUserCoupon))
+                    .isInstanceOf(BusinessException.class)
+                    .extracting("code")
+                    .isEqualTo("COUPON_EXPIRED");
         }
 
         @Test
-        @DisplayName("testValidate_usedCoupon_stillReturnsTrue: " +
-                "no status check, so USED coupons also pass")
-        void testValidate_usedCoupon_stillReturnsTrue() {
+        @DisplayName("testValidate_usedCoupon_throwsCouponExpired")
+        void testValidate_usedCoupon_throwsCouponExpired() {
             UserCoupon usedCoupon = new UserCoupon();
             usedCoupon.setId(30L);
             usedCoupon.setUserId(1L);
@@ -138,9 +136,10 @@ class CouponValidatorTest {
 
             when(couponTemplateRepository.findById(1L)).thenReturn(Optional.of(existingTemplate));
 
-            // USED coupon still passes validation
-            assertThatCode(() -> couponValidator.validate(usedCoupon))
-                    .doesNotThrowAnyException();
+            assertThatThrownBy(() -> couponValidator.validate(usedCoupon))
+                    .isInstanceOf(BusinessException.class)
+                    .extracting("code")
+                    .isEqualTo("COUPON_EXPIRED");
         }
 
         @Test
@@ -152,9 +151,8 @@ class CouponValidatorTest {
         }
 
         @Test
-        @DisplayName("testValidate_couponWithFutureStartTime_stillPasses: " +
-                "no time check, future-start coupons pass")
-        void testValidate_couponWithFutureStartTime_stillPasses() {
+        @DisplayName("testValidate_couponWithFutureStartTime_throwsCouponExpired")
+        void testValidate_couponWithFutureStartTime_throwsCouponExpired() {
             CouponTemplate futureTemplate = new CouponTemplate();
             futureTemplate.setId(3L);
             futureTemplate.setName("Future Coupon");
@@ -173,9 +171,10 @@ class CouponValidatorTest {
 
             when(couponTemplateRepository.findById(3L)).thenReturn(Optional.of(futureTemplate));
 
-            // No time validation — future coupon passes
-            assertThatCode(() -> couponValidator.validate(futureUserCoupon))
-                    .doesNotThrowAnyException();
+            assertThatThrownBy(() -> couponValidator.validate(futureUserCoupon))
+                    .isInstanceOf(BusinessException.class)
+                    .extracting("code")
+                    .isEqualTo("COUPON_EXPIRED");
         }
     }
 }

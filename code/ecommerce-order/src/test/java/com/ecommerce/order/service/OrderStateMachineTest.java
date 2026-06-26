@@ -19,15 +19,13 @@ class OrderStateMachineTest {
 
     private final OrderStateMachine stateMachine = new OrderStateMachine();
 
-    // ======================== PAID -> CANCELLED allowed ========================
+    // ======================== PAID -> CANCELLED requires review ========================
 
     @Test
-    @DisplayName("PAID to CANCELLED is allowed but should NOT be")
-    void testPaidToCancelled_allowed() {
-        // PAID -> CANCELLED IS allowed, but should NOT be.
-        // The correct transition is PAID -> CANCEL_REVIEWING -> CANCELLED.
+    @DisplayName("PAID to CANCELLED is not allowed directly")
+    void testPaidToCancelled_notAllowedDirectly() {
         assertThat(stateMachine.canTransition(OrderStatus.PAID, OrderStatus.CANCELLED))
-                .isTrue();
+                .isFalse();
     }
 
     // ======================== CREATED transitions ========================
@@ -177,10 +175,10 @@ class OrderStateMachineTest {
                 new Object[]{OrderStatus.PAYING, OrderStatus.PAID, true},
                 new Object[]{OrderStatus.PAYING, OrderStatus.CANCELLED, true},
 
-                // PAID -> ... (includes PAID->CANCELLED path)
+                // PAID -> ... (cancellation must enter review first)
                 new Object[]{OrderStatus.PAID, OrderStatus.PICKING, true},
                 new Object[]{OrderStatus.PAID, OrderStatus.CANCEL_REVIEWING, true},
-                new Object[]{OrderStatus.PAID, OrderStatus.CANCELLED, true},
+                new Object[]{OrderStatus.PAID, OrderStatus.CANCELLED, false},
 
                 // PICKING -> ...
                 new Object[]{OrderStatus.PICKING, OrderStatus.SHIPPED, true},

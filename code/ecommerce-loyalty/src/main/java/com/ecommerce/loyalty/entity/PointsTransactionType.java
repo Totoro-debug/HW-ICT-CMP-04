@@ -11,6 +11,15 @@ public enum PointsTransactionType {
     /** Points consumed to offset order payment. */
     REDEEM,
 
+    /** Points moved from available balance to frozen balance. */
+    FREEZE,
+
+    /** Points moved from frozen balance back to available balance. */
+    UNFREEZE,
+
+    /** Frozen points finally consumed by the business operation. */
+    CONSUME_FROZEN,
+
     /** Points removed due to expiry. */
     EXPIRE,
 

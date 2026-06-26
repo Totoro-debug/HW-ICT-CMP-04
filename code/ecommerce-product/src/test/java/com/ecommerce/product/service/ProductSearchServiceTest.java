@@ -97,23 +97,20 @@ class ProductSearchServiceTest {
     }
 
     @Test
-    @DisplayName("search without onlyOnShelf returns all non-DELETED SKUs including OFF_SHELF and DRAFT")
-    void testSearch_withoutOnlyOnShelf_returnsAllNonDeletedSkus() {
-        // When onlyOnShelf is false (DEFAULT), the query excludes only DELETED,
-        // Verify search result filtering.
-        List<ProductSku> nonDeletedSkus = List.of(onShelfSku, offShelfSku, draftSku);
-        Page<ProductSku> page = new PageImpl<>(nonDeletedSkus);
+    @DisplayName("search defaults to only ON_SHELF products")
+    void testSearch_defaultOnlyOnShelf_returnsOnlyOnShelfSkus() {
+        Page<ProductSku> page = new PageImpl<>(List.of(onShelfSku));
         when(skuRepository.findAll(any(Specification.class), any(Pageable.class))).thenReturn(page);
         when(spuRepository.findAllById(any())).thenReturn(List.of(spu));
 
         ProductSearchRequest request = new ProductSearchRequest();
-        // onlyOnShelf defaults to false — we do NOT set it
+        assertThat(request.isOnlyOnShelf()).isTrue();
+
         PageResponse<ProductListResponse> result = productSearchService.search(request);
 
-        // OFF_SHELF included in results
-        assertThat(result.getItems()).hasSize(3);
+        assertThat(result.getItems()).hasSize(1);
         assertThat(result.getItems().stream().map(ProductListResponse::getStatus))
-                .contains("ON_SHELF", "OFF_SHELF", "DRAFT");
+                .containsExactly("ON_SHELF");
     }
 
     @Test

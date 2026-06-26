@@ -2,6 +2,7 @@ package com.ecommerce.order.service;
 
 import com.ecommerce.common.exception.BusinessException;
 import com.ecommerce.common.exception.ResourceNotFoundException;
+import com.ecommerce.loyalty.query.AnnualConsumptionQueryService;
 import com.ecommerce.order.dto.VerifyPurchaseResponse;
 import com.ecommerce.order.entity.Order;
 import com.ecommerce.order.entity.OrderItem;
@@ -22,6 +23,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
+import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.List;
 
@@ -35,7 +37,7 @@ import java.util.List;
  */
 @Service
 @Transactional(readOnly = true)
-public class OrderQueryServiceImpl implements OrderQueryService, OrderPaymentStatusUpdater {
+public class OrderQueryServiceImpl implements OrderQueryService, OrderPaymentStatusUpdater, AnnualConsumptionQueryService {
 
     private static final Logger log = LoggerFactory.getLogger(OrderQueryServiceImpl.class);
 
@@ -106,6 +108,15 @@ public class OrderQueryServiceImpl implements OrderQueryService, OrderPaymentSta
         Order order = orderRepository.findById(orderId)
                 .orElseThrow(() -> new ResourceNotFoundException("Order not found: " + orderId));
         return order.getPayableAmount();
+    }
+
+    @Override
+    public BigDecimal getAnnualConsumption(Long userId) {
+        LocalDateTime startOfYear = LocalDate.now().withDayOfYear(1).atStartOfDay();
+        return orderRepository.sumPayableAmountByUserIdAndStatusInAndPaidAtAfter(
+                userId,
+                List.of(OrderStatus.PAID, OrderStatus.SHIPPED, OrderStatus.DELIVERED, OrderStatus.COMPLETED),
+                startOfYear);
     }
 
     // ======================== OrderPaymentStatusUpdater ========================

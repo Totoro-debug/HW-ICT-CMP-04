@@ -3,8 +3,10 @@ package com.ecommerce.loyalty.event;
 import com.ecommerce.loyalty.service.LoyaltyPointService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.context.event.EventListener;
+import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Component;
+import org.springframework.transaction.event.TransactionPhase;
+import org.springframework.transaction.event.TransactionalEventListener;
 
 /**
  * Listens for {@link OrderPaidEvent} and awards loyalty points for the order.
@@ -26,7 +28,8 @@ public class OrderPaidEventListener {
         this.loyaltyPointService = loyaltyPointService;
     }
 
-    @EventListener
+    @Async
+    @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
     public void onOrderPaid(OrderPaidEvent event) {
         log.info("Received OrderPaidEvent: orderId={}, userId={}, amount={}",
                 event.getOrderId(), event.getUserId(), event.getPayableAmount());

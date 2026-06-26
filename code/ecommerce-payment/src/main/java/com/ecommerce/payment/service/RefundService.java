@@ -108,7 +108,12 @@ public class RefundService {
         }
 
         if (request.isApproved()) {
-            approveRefund(refund.getId(), reviewerId, request.getNote());
+            refund.setStatus(RefundStatus.WAITING_WAREHOUSE_ACCEPT);
+            refund.setReviewerId(reviewerId);
+            refund.setReviewNote(request.getNote());
+            refundRecordRepository.save(refund);
+
+            log.info("Refund approved and waiting for warehouse acceptance: refundNo={}", refund.getRefundNo());
         } else {
             refund.setStatus(RefundStatus.REJECTED);
             refund.setReviewerId(reviewerId);
@@ -122,21 +127,6 @@ public class RefundService {
     }
 
     /**
-     * Approves a refund.
-     */
-    private void approveRefund(Long refundId, Long reviewerId, String note) {
-        RefundRecord refund = refundRecordRepository.findById(refundId)
-                .orElseThrow(() -> new ResourceNotFoundException("RefundRecord", refundId));
-
-        refund.setStatus(RefundStatus.APPROVED);
-        refund.setReviewerId(reviewerId);
-        refund.setReviewNote(note);
-        refundRecordRepository.save(refund);
-
-        processRefund(refund);
-    }
-
-    /**
      * Warehouse accepts returned goods.
      */
     @Transactional
@@ -147,9 +137,8 @@ public class RefundService {
                 .orElseThrow(() -> new ResourceNotFoundException("RefundRecord", refundId));
 
         if (refund.getStatus() != RefundStatus.WAITING_WAREHOUSE_ACCEPT) {
-            throw new BusinessException("REFUND_STATUS_INVALID",
-                    "Refund must be WAITING_WAREHOUSE_ACCEPT to accept, current: "
-                            + refund.getStatus());
+            throw new BusinessException("REFUND_WAITING_WAREHOUSE_ACCEPT",
+                    "Refund must pass review and wait for warehouse acceptance before completion");
         }
 
         refund.setStatus(RefundStatus.WAREHOUSE_ACCEPTED);

@@ -56,7 +56,6 @@ class ShipmentServiceTest {
     // ==================== createShipment ====================
 
     /**
-     * The new shipment status is OUTBOUND, not CREATED/PICKING/LABEL_PRINTED.
      * Per the design spec, the correct progression is:
      * CREATED -> PICKING -> LABEL_PRINTED -> OUTBOUND.
      * Verifies the status recorded for a newly created shipment.
@@ -79,9 +78,7 @@ class ShipmentServiceTest {
         assertEquals(new BigDecimal("8.00"), result.getFreightAmount());
         assertEquals("{\"province\":\"Beijing\"}", result.getAddressSnapshot());
         assertNotNull(result.getShipmentNo());
-        // Status is OUTBOUND, not CREATED or PICKING
-        assertEquals(ShipmentStatus.OUTBOUND, result.getStatus(),
-                "createShipment sets status to OUTBOUND, skipping PICKING and LABEL_PRINTED");
+        assertEquals(ShipmentStatus.CREATED, result.getStatus());
     }
 
     @Test
@@ -119,6 +116,25 @@ class ShipmentServiceTest {
         Shipment saved = captor.getValue();
         assertEquals(ShipmentStatus.PICKING, saved.getStatus());
         assertEquals(10L, saved.getPickListId());
+    }
+
+    @Test
+    void testPick_nullPicker_usesAdminOperator() {
+        Shipment shipment = createShipment(6L, ShipmentStatus.CREATED);
+        when(shipmentRepository.findById(6L)).thenReturn(Optional.of(shipment));
+        when(pickListRepository.save(any(PickList.class))).thenAnswer(inv -> {
+            PickList pl = inv.getArgument(0);
+            pl.setId(12L);
+            return pl;
+        });
+        when(trackingRepository.save(any(ShipmentTracking.class))).thenAnswer(inv -> inv.getArgument(0));
+
+        shipmentService.pick(6L, null);
+
+        ArgumentCaptor<ShipmentTracking> trackingCaptor = ArgumentCaptor.forClass(ShipmentTracking.class);
+        verify(trackingRepository).save(trackingCaptor.capture());
+        assertEquals("ADMIN", trackingCaptor.getValue().getOperator());
+        assertEquals("Picking started by operator ADMIN", trackingCaptor.getValue().getDescription());
     }
 
     @Test

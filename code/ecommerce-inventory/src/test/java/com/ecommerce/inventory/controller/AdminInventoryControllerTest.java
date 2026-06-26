@@ -5,7 +5,6 @@ import com.ecommerce.inventory.dto.StockWarningResponse;
 import com.ecommerce.inventory.dto.WarehouseCreateRequest;
 import com.ecommerce.inventory.entity.InventoryStock;
 import com.ecommerce.inventory.entity.StockAdjustment;
-import com.ecommerce.inventory.entity.StockWarningRule;
 import com.ecommerce.inventory.entity.Warehouse;
 import com.ecommerce.inventory.service.InventoryService;
 import com.ecommerce.inventory.service.StockAdjustmentService;
@@ -24,9 +23,6 @@ import org.springframework.test.web.servlet.MockMvc;
 import java.util.List;
 
 import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.ArgumentMatchers.anyInt;
-import static org.mockito.ArgumentMatchers.anyLong;
-import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.ArgumentMatchers.isNull;
 import static org.mockito.Mockito.verify;
@@ -193,33 +189,11 @@ class AdminInventoryControllerTest {
     }
 
     @Test
-    @DisplayName("GET /api/v1/admin/inventory/adjustments returns adjustments for warehouse")
-    void testListAdjustments_returnsList() throws Exception {
-        StockAdjustment adj1 = new StockAdjustment();
-        adj1.setId(1L);
-        adj1.setWarehouseId(1L);
-        adj1.setSkuId(100L);
-        adj1.setBeforeQty(100);
-        adj1.setAfterQty(80);
-        adj1.setReason("Count 1");
-
-        StockAdjustment adj2 = new StockAdjustment();
-        adj2.setId(2L);
-        adj2.setWarehouseId(1L);
-        adj2.setSkuId(200L);
-        adj2.setBeforeQty(50);
-        adj2.setAfterQty(60);
-        adj2.setReason("Count 2");
-
-        when(stockAdjustmentService.list(1L)).thenReturn(List.of(adj1, adj2));
-
+    @DisplayName("GET /api/v1/admin/inventory/adjustments is not exposed")
+    void testListAdjustments_notExposed() throws Exception {
         mockMvc.perform(get("/api/v1/admin/inventory/adjustments")
                         .param("warehouseId", "1"))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$[0].id").value(1))
-                .andExpect(jsonPath("$[0].reason").value("Count 1"))
-                .andExpect(jsonPath("$[1].id").value(2))
-                .andExpect(jsonPath("$[1].reason").value("Count 2"));
+                .andExpect(status().isMethodNotAllowed());
     }
 
     // ---- warnings tests ----
@@ -246,34 +220,12 @@ class AdminInventoryControllerTest {
     }
 
     @Test
-    @DisplayName("POST /api/v1/admin/inventory/warnings/rule sets a warning rule and returns 200")
-    void testSetWarningRule_returnsOk() throws Exception {
-        StockWarningRule rule = new StockWarningRule();
-        rule.setId(1L);
-        rule.setSkuId(100L);
-        rule.setWarehouseId(1L);
-        rule.setWarningThreshold(15);
-        rule.setEnabled(true);
-
-        when(stockWarningService.setWarningRule(eq(100L), eq(1L), eq(15))).thenReturn(rule);
-
+    @DisplayName("POST /api/v1/admin/inventory/warnings/rule is not exposed")
+    void testSetWarningRule_notExposed() throws Exception {
         mockMvc.perform(post("/api/v1/admin/inventory/warnings/rule")
                         .param("skuId", "100")
                         .param("warehouseId", "1")
                         .param("warningThreshold", "15"))
-                .andExpect(status().isOk());
-
-        verify(stockWarningService).setWarningRule(100L, 1L, 15);
-    }
-
-    @Test
-    @DisplayName("POST /api/v1/admin/inventory/warnings/rule with null warehouseId sets global rule")
-    void testSetWarningRule_nullWarehouseId() throws Exception {
-        mockMvc.perform(post("/api/v1/admin/inventory/warnings/rule")
-                        .param("skuId", "100")
-                        .param("warningThreshold", "10"))
-                .andExpect(status().isOk());
-
-        verify(stockWarningService).setWarningRule(eq(100L), isNull(), eq(10));
+                .andExpect(status().isNotFound());
     }
 }

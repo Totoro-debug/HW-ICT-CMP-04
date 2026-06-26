@@ -63,6 +63,10 @@ class AddressControllerTest {
         return "Bearer " + jwtTokenProvider.generateToken(1L, List.of("USER"));
     }
 
+    private String adminAuthHeader() {
+        return "Bearer " + jwtTokenProvider.generateToken(1L, List.of("ADMIN"));
+    }
+
     private AddressRequest addressRequest() {
         AddressRequest request = new AddressRequest();
         request.setProvince("浙江");
@@ -110,6 +114,16 @@ class AddressControllerTest {
     @DisplayName("returns 403 Forbidden when creating address without authentication")
     void testCreateAddress_unauthenticated_returns403() throws Exception {
         mockMvc.perform(post("/api/v1/users/addresses")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(addressRequest())))
+                .andExpect(status().isForbidden());
+    }
+
+    @Test
+    @DisplayName("returns 403 Forbidden when ADMIN creates a user-only address")
+    void testCreateAddress_adminRole_returns403() throws Exception {
+        mockMvc.perform(post("/api/v1/users/addresses")
+                        .header("Authorization", adminAuthHeader())
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(addressRequest())))
                 .andExpect(status().isForbidden());

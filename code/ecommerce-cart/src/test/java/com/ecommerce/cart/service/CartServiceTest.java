@@ -1,398 +1,230 @@
 package com.ecommerce.cart.service;
 
+import com.ecommerce.cart.cache.CartCacheManager;
+import com.ecommerce.cart.cache.CartData;
 import com.ecommerce.cart.dto.AddCartItemRequest;
 import com.ecommerce.cart.dto.CartEstimateRequest;
 import com.ecommerce.cart.dto.CartEstimateResponse;
 import com.ecommerce.cart.dto.CartItemResponse;
 import com.ecommerce.cart.dto.CartResponse;
 import com.ecommerce.cart.dto.UpdateCartItemRequest;
-import com.ecommerce.cart.entity.Cart;
-import com.ecommerce.cart.entity.CartItem;
-import com.ecommerce.cart.repository.CartItemRepository;
-import com.ecommerce.cart.repository.CartRepository;
 import com.ecommerce.common.exception.BusinessException;
 import com.ecommerce.common.exception.ResourceNotFoundException;
-import com.ecommerce.product.query.InventoryQueryService;
-import com.ecommerce.product.query.ProductQueryService;
+import com.ecommerce.common.integration.PointsRedeemEstimator;
+import com.ecommerce.common.integration.PromotionDiscountCalculator;
 import com.ecommerce.product.query.SkuDto;
-import com.ecommerce.product.query.StockSummaryDto;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
-import org.mockito.ArgumentCaptor;
-import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.mockito.junit.jupiter.MockitoSettings;
+import org.mockito.quality.Strictness;
 
 import java.math.BigDecimal;
-import java.util.Collections;
 import java.util.List;
-import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.ArgumentMatchers.anyInt;
-import static org.mockito.ArgumentMatchers.anyLong;
-import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.doNothing;
-import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.doReturn;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 @DisplayName("CartService")
 @ExtendWith(MockitoExtension.class)
+@MockitoSettings(strictness = Strictness.LENIENT)
 class CartServiceTest {
 
     @Mock
-    private CartRepository cartRepository;
-
-    @Mock
-    private CartItemRepository cartItemRepository;
-
-    @Mock
-    private ProductQueryService productQueryService;
-
-    @Mock
-    private InventoryQueryService inventoryQueryService;
+    private CartCacheManager cartCacheManager;
 
     @Mock
     private CartValidationService cartValidationService;
 
-    @InjectMocks
+    @Mock
+    private PromotionDiscountCalculator promotionDiscountCalculator;
+
+    @Mock
+    private PointsRedeemEstimator pointsRedeemEstimator;
+
     private CartService cartService;
 
     private static final Long USER_ID = 1L;
     private static final Long SKU_ID = 100L;
-    private static final Long CART_ID = 10L;
 
     private SkuDto skuDto;
-    private StockSummaryDto stockSummaryDto;
 
     @BeforeEach
     void setUp() {
+        cartService = new CartService(cartCacheManager, cartValidationService,
+                promotionDiscountCalculator, pointsRedeemEstimator);
         skuDto = new SkuDto();
         skuDto.setSkuId(SKU_ID);
         skuDto.setName("Test SKU");
         skuDto.setPrice(new BigDecimal("25.00"));
         skuDto.setStatus("ON_SHELF");
-
-        stockSummaryDto = new StockSummaryDto(100, 0);
     }
 
     @Test
-    @DisplayName("addItem creates a new CartItem when SKU is not already in cart")
-    void testAddItem_newSku_createsCartItem() {
+    @DisplayName("addItem writes a new item to Caffeine cart cache")
+    void testAddItem_newSku_usesCache() {
         AddCartItemRequest request = new AddCartItemRequest(SKU_ID, 3);
-        Cart cart = new Cart(USER_ID);
-        cart.setId(CART_ID);
 
         doNothing().when(cartValidationService).validateQuantity(3);
         when(cartValidationService.validateSku(SKU_ID)).thenReturn(skuDto);
         doNothing().when(cartValidationService).validateStock(SKU_ID, 3);
-        when(cartRepository.findByUserId(USER_ID)).thenReturn(Optional.empty());
-        when(cartRepository.save(any(Cart.class))).thenReturn(cart);
-        when(cartItemRepository.findByCartId(CART_ID)).thenReturn(Collections.emptyList());
+        when(cartCacheManager.getCart(USER_ID)).thenReturn(null);
         doNothing().when(cartValidationService).validateCartSize(0, 1);
-        when(cartItemRepository.save(any(CartItem.class))).thenAnswer(invocation -> invocation.getArgument(0));
 
         CartItemResponse response = cartService.addItem(USER_ID, request);
 
-        assertThat(response).isNotNull();
         assertThat(response.getSkuId()).isEqualTo(SKU_ID);
         assertThat(response.getSkuName()).isEqualTo("Test SKU");
         assertThat(response.getQuantity()).isEqualTo(3);
-        assertThat(response.getPrice()).isEqualByComparingTo(new BigDecimal("25.00"));
-        assertThat(response.getSubtotal()).isNotNull();
+        assertThat(response.getSubtotal()).isEqualByComparingTo(new BigDecimal("75.00"));
+        verify(cartCacheManager).saveCart(any(CartData.class));
     }
 
     @Test
-    @DisplayName("adding same SKU updates quantity")
+    @DisplayName("adding same SKU replaces quantity in cached cart")
     void testAddItem_existingSku_replacesQuantity() {
-        // First: add item with quantity 3
-        Cart cart = new Cart(USER_ID);
-        cart.setId(CART_ID);
-
-        AddCartItemRequest firstRequest = new AddCartItemRequest(SKU_ID, 3);
-
-        doNothing().when(cartValidationService).validateQuantity(3);
-        when(cartValidationService.validateSku(SKU_ID)).thenReturn(skuDto);
-        doNothing().when(cartValidationService).validateStock(SKU_ID, 3);
-        when(cartRepository.findByUserId(USER_ID)).thenReturn(Optional.empty());
-        when(cartRepository.save(any(Cart.class))).thenReturn(cart);
-        when(cartItemRepository.findByCartId(CART_ID)).thenReturn(Collections.emptyList());
-        doNothing().when(cartValidationService).validateCartSize(0, 1);
-        when(cartItemRepository.save(any(CartItem.class))).thenAnswer(invocation -> invocation.getArgument(0));
-
-        CartItemResponse firstResponse = cartService.addItem(USER_ID, firstRequest);
-        assertThat(firstResponse.getQuantity()).isEqualTo(3);
-
-        // Now the existing item is in the cart
-        CartItem existingItem = new CartItem();
-        existingItem.setCart(cart);
-        existingItem.setSkuId(SKU_ID);
-        existingItem.setSkuName("Test SKU");
-        existingItem.setPrice(new BigDecimal("25.00"));
-        existingItem.setQuantity(3);
-
-        List<CartItem> existingItems = List.of(existingItem);
-
-        // Second: add SAME SKU with quantity 2
-        AddCartItemRequest secondRequest = new AddCartItemRequest(SKU_ID, 2);
+        CartData cart = new CartData(USER_ID);
+        cart.getItems().add(new com.ecommerce.cart.cache.CartItemData(SKU_ID, "Old SKU", new BigDecimal("20.00"), 3));
+        AddCartItemRequest request = new AddCartItemRequest(SKU_ID, 2);
 
         doNothing().when(cartValidationService).validateQuantity(2);
         when(cartValidationService.validateSku(SKU_ID)).thenReturn(skuDto);
         doNothing().when(cartValidationService).validateStock(SKU_ID, 2);
-        when(cartRepository.findByUserId(USER_ID)).thenReturn(Optional.of(cart));
-        when(cartItemRepository.findByCartId(CART_ID)).thenReturn(existingItems);
+        when(cartCacheManager.getCart(USER_ID)).thenReturn(cart);
 
-        CartItemResponse secondResponse = cartService.addItem(USER_ID, secondRequest);
+        CartItemResponse response = cartService.addItem(USER_ID, request);
 
-        // Verify final quantity after adding the same SKU again.
-        assertThat(secondResponse.getQuantity()).isEqualTo(2);
-        assertThat(secondResponse.getQuantity()).isNotEqualTo(5);
+        assertThat(response.getQuantity()).isEqualTo(2);
+        assertThat(response.getPrice()).isEqualByComparingTo(new BigDecimal("25.00"));
+        assertThat(cart.getItems()).hasSize(1);
+        verify(cartCacheManager).saveCart(cart);
     }
 
     @Test
-    @DisplayName("getCart returns all items with computed totalItems and totalAmount")
-    void testGetCart_returnsAllItemsWithTotals() {
-        Cart cart = new Cart(USER_ID);
-        cart.setId(CART_ID);
-
-        CartItem item1 = new CartItem();
-        item1.setCart(cart);
-        item1.setSkuId(100L);
-        item1.setSkuName("Item A");
-        item1.setPrice(new BigDecimal("10.00"));
-        item1.setQuantity(2);
-
-        CartItem item2 = new CartItem();
-        item2.setCart(cart);
-        item2.setSkuId(200L);
-        item2.setSkuName("Item B");
-        item2.setPrice(new BigDecimal("15.00"));
-        item2.setQuantity(1);
-
-        when(cartRepository.findByUserId(USER_ID)).thenReturn(Optional.of(cart));
-        when(cartItemRepository.findByCartId(CART_ID)).thenReturn(List.of(item1, item2));
+    @DisplayName("getCart returns cached items with computed totals")
+    void testGetCart_returnsCachedItemsWithTotals() {
+        CartData cart = new CartData(USER_ID);
+        cart.getItems().add(new com.ecommerce.cart.cache.CartItemData(100L, "Item A", new BigDecimal("10.00"), 2));
+        cart.getItems().add(new com.ecommerce.cart.cache.CartItemData(200L, "Item B", new BigDecimal("15.00"), 1));
+        when(cartCacheManager.getCart(USER_ID)).thenReturn(cart);
 
         CartResponse response = cartService.getCart(USER_ID);
 
-        assertThat(response).isNotNull();
         assertThat(response.getItems()).hasSize(2);
-        assertThat(response.getTotalItems()).isEqualTo(3); // 2 + 1
-        // totalAmount = 10*2 + 15*1 = 35.00
+        assertThat(response.getTotalItems()).isEqualTo(3);
         assertThat(response.getTotalAmount()).isEqualByComparingTo(new BigDecimal("35.00"));
-
-        CartItemResponse firstItem = response.getItems().get(0);
-        assertThat(firstItem.getSkuId()).isEqualTo(100L);
-        assertThat(firstItem.getSkuName()).isEqualTo("Item A");
-        assertThat(firstItem.getQuantity()).isEqualTo(2);
-        assertThat(firstItem.getSubtotal()).isEqualByComparingTo(new BigDecimal("20.00"));
     }
 
     @Test
-    @DisplayName("updateItem changes the quantity of an existing cart item")
-    void testUpdateItem_changesQuantity() {
-        Cart cart = new Cart(USER_ID);
-        cart.setId(CART_ID);
-
-        CartItem item = new CartItem();
-        item.setCart(cart);
-        item.setSkuId(SKU_ID);
-        item.setSkuName("Test SKU");
-        item.setPrice(new BigDecimal("25.00"));
-        item.setQuantity(1);
-
+    @DisplayName("updateItem revalidates SKU and stock before updating cache")
+    void testUpdateItem_revalidatesAndUpdatesCache() {
+        CartData cart = new CartData(USER_ID);
+        cart.getItems().add(new com.ecommerce.cart.cache.CartItemData(SKU_ID, "Test SKU", new BigDecimal("25.00"), 1));
         UpdateCartItemRequest request = new UpdateCartItemRequest(5);
 
         doNothing().when(cartValidationService).validateQuantity(5);
+        when(cartValidationService.validateSku(SKU_ID)).thenReturn(skuDto);
         doNothing().when(cartValidationService).validateStock(SKU_ID, 5);
-        when(cartRepository.findByUserId(USER_ID)).thenReturn(Optional.of(cart));
-        when(cartItemRepository.findByCartId(CART_ID)).thenReturn(List.of(item));
-        when(cartItemRepository.save(any(CartItem.class))).thenAnswer(invocation -> invocation.getArgument(0));
+        when(cartCacheManager.getCart(USER_ID)).thenReturn(cart);
 
         CartItemResponse response = cartService.updateItem(USER_ID, SKU_ID, request);
 
-        assertThat(response).isNotNull();
         assertThat(response.getQuantity()).isEqualTo(5);
-        assertThat(response.getSkuId()).isEqualTo(SKU_ID);
+        verify(cartValidationService).validateSku(SKU_ID);
+        verify(cartValidationService).validateStock(SKU_ID, 5);
+        verify(cartCacheManager).saveCart(cart);
     }
 
     @Test
-    @DisplayName("removeItem deletes the item from the cart")
-    void testRemoveItem_deletesItem() {
-        Cart cart = new Cart(USER_ID);
-        cart.setId(CART_ID);
-
-        CartItem item = new CartItem();
-        item.setCart(cart);
-        item.setSkuId(SKU_ID);
-        item.setSkuName("Test SKU");
-        item.setPrice(new BigDecimal("25.00"));
-        item.setQuantity(1);
-
-        when(cartRepository.findByUserId(USER_ID)).thenReturn(Optional.of(cart));
-        when(cartItemRepository.findByCartId(CART_ID)).thenReturn(List.of(item));
+    @DisplayName("removeItem removes cache entry when last item is removed")
+    void testRemoveItem_lastItem_removesCartCache() {
+        CartData cart = new CartData(USER_ID);
+        cart.getItems().add(new com.ecommerce.cart.cache.CartItemData(SKU_ID, "Test SKU", new BigDecimal("25.00"), 1));
+        when(cartCacheManager.getCart(USER_ID)).thenReturn(cart);
 
         cartService.removeItem(USER_ID, SKU_ID);
 
-        verify(cartItemRepository).delete(item);
+        assertThat(cart.getItems()).isEmpty();
+        verify(cartCacheManager).removeCart(USER_ID);
     }
 
     @Test
     @DisplayName("removeItem throws ResourceNotFoundException when cart does not exist")
     void testRemoveItem_cartNotFound_throwsException() {
-        when(cartRepository.findByUserId(USER_ID)).thenReturn(Optional.empty());
+        when(cartCacheManager.getCart(USER_ID)).thenReturn(null);
 
         assertThatThrownBy(() -> cartService.removeItem(USER_ID, SKU_ID))
                 .isInstanceOf(ResourceNotFoundException.class);
     }
 
     @Test
-    @DisplayName("clearCart removes all items from the existing cart")
-    void testClearCart_removesAllItems() {
-        Cart cart = new Cart(USER_ID);
-        cart.setId(CART_ID);
-
-        when(cartRepository.findByUserId(USER_ID)).thenReturn(Optional.of(cart));
-
+    @DisplayName("clearCart removes the cached cart")
+    void testClearCart_removesCache() {
         cartService.clearCart(USER_ID);
 
-        verify(cartItemRepository).deleteByCartId(CART_ID);
+        verify(cartCacheManager).removeCart(USER_ID);
     }
 
     @Test
-    @DisplayName("clearCart does nothing when cart does not exist")
-    void testClearCart_noCart_doesNothing() {
-        when(cartRepository.findByUserId(USER_ID)).thenReturn(Optional.empty());
+    @DisplayName("estimate revalidates cart, applies promotion discounts and points")
+    void testEstimate_appliesPromotionAndPoints() {
+        CartData cart = new CartData(USER_ID);
+        cart.getItems().add(new com.ecommerce.cart.cache.CartItemData(SKU_ID, "Cached SKU", new BigDecimal("10.00"), 2));
+        when(cartCacheManager.getCart(USER_ID)).thenReturn(cart);
+        when(cartValidationService.validateSku(SKU_ID)).thenReturn(skuDto);
+        doNothing().when(cartValidationService).validateStock(SKU_ID, 2);
 
-        cartService.clearCart(USER_ID);
-
-        verify(cartItemRepository, never()).deleteByCartId(anyLong());
-    }
-
-    @Test
-    @DisplayName("estimate calculates correct total with shippingFee 8.00 and packagingFee 2.00 when itemTotal < 199")
-    void testEstimate_calculatesCorrectTotal() {
-        Cart cart = new Cart(USER_ID);
-        cart.setId(CART_ID);
-
-        CartItem item1 = new CartItem();
-        item1.setCart(cart);
-        item1.setSkuId(100L);
-        item1.setSkuName("Item A");
-        item1.setPrice(new BigDecimal("10.00"));
-        item1.setQuantity(2);
-
-        CartItem item2 = new CartItem();
-        item2.setCart(cart);
-        item2.setSkuId(200L);
-        item2.setSkuName("Item B");
-        item2.setPrice(new BigDecimal("15.00"));
-        item2.setQuantity(1);
-
-        when(cartRepository.findByUserId(USER_ID)).thenReturn(Optional.of(cart));
-        when(cartItemRepository.findByCartId(CART_ID)).thenReturn(List.of(item1, item2));
-
-        SkuDto skuDto1 = new SkuDto();
-        skuDto1.setSkuId(100L);
-        skuDto1.setPrice(new BigDecimal("50.00"));
-        SkuDto skuDto2 = new SkuDto();
-        skuDto2.setSkuId(200L);
-        skuDto2.setPrice(new BigDecimal("30.00"));
-
-        when(productQueryService.getSkuForSale(100L)).thenReturn(skuDto1);
-        when(productQueryService.getSkuForSale(200L)).thenReturn(skuDto2);
+        doReturn(new BigDecimal("10.00")).when(promotionDiscountCalculator).calculateDiscount(any(), any(), any());
+        doReturn(500).when(pointsRedeemEstimator).estimateRedeemPoints(any(), any());
 
         CartEstimateRequest request = new CartEstimateRequest();
+        request.setCouponIds(List.of(1L));
+        request.setRedeemPoints(300);
+
         CartEstimateResponse response = cartService.estimate(USER_ID, request);
 
-        // itemTotal = 50*2 + 30*1 = 130.00
-        assertThat(response.getItemTotal()).isEqualByComparingTo(new BigDecimal("130.00"));
-        // shipping = 8.00 (since 130 < 199)
+        assertThat(response.getItemTotal()).isEqualByComparingTo(new BigDecimal("50.00"));
         assertThat(response.getShippingFee()).isEqualByComparingTo(new BigDecimal("8.00"));
-        // packaging = 2.00
         assertThat(response.getPackagingFee()).isEqualByComparingTo(new BigDecimal("2.00"));
-        // discount = 0
-        assertThat(response.getDiscountAmount()).isEqualByComparingTo(BigDecimal.ZERO);
-        // points = 0
-        assertThat(response.getPointsDeductionAmount()).isEqualByComparingTo(BigDecimal.ZERO);
-        // payable = 130 + 8 + 2 = 140.00
-        assertThat(response.getPayableAmount()).isEqualByComparingTo(new BigDecimal("140.00"));
+        assertThat(response.getDiscountAmount()).isEqualByComparingTo(new BigDecimal("10.00"));
+        assertThat(response.getPointsDeductionAmount()).isEqualByComparingTo(new BigDecimal("3.00"));
+        assertThat(response.getPayableAmount()).isEqualByComparingTo(new BigDecimal("47.00"));
     }
 
     @Test
-    @DisplayName("estimate applies free shipping when itemTotal >= 199")
-    void testEstimate_freeShippingOver199() {
-        Cart cart = new Cart(USER_ID);
-        cart.setId(CART_ID);
-
-        CartItem item = new CartItem();
-        item.setCart(cart);
-        item.setSkuId(100L);
-        item.setSkuName("Expensive Item");
-        item.setPrice(new BigDecimal("100.00"));
-        item.setQuantity(2);
-
-        when(cartRepository.findByUserId(USER_ID)).thenReturn(Optional.of(cart));
-        when(cartItemRepository.findByCartId(CART_ID)).thenReturn(List.of(item));
-
-        SkuDto skuDtoExpensive = new SkuDto();
-        skuDtoExpensive.setSkuId(100L);
-        skuDtoExpensive.setPrice(new BigDecimal("100.00"));
-        when(productQueryService.getSkuForSale(100L)).thenReturn(skuDtoExpensive);
-
-        CartEstimateRequest request = new CartEstimateRequest();
-        CartEstimateResponse response = cartService.estimate(USER_ID, request);
-
-        // itemTotal = 100*2 = 200.00
-        assertThat(response.getItemTotal()).isEqualByComparingTo(new BigDecimal("200.00"));
-        // shipping = 0 (since 200 >= 199)
-        assertThat(response.getShippingFee()).isEqualByComparingTo(BigDecimal.ZERO);
-        // packaging = 2.00
-        assertThat(response.getPackagingFee()).isEqualByComparingTo(new BigDecimal("2.00"));
-        // payable = 200 + 0 + 2 = 202.00
-        assertThat(response.getPayableAmount()).isEqualByComparingTo(new BigDecimal("202.00"));
-    }
-
-    @Test
-    @DisplayName("estimate returns zero for empty cart")
+    @DisplayName("estimate returns zero for empty cached cart")
     void testEstimate_emptyCart_returnsZero() {
-        when(cartRepository.findByUserId(USER_ID)).thenReturn(Optional.empty());
+        when(cartCacheManager.getCart(USER_ID)).thenReturn(null);
 
-        CartEstimateRequest request = new CartEstimateRequest();
-        CartEstimateResponse response = cartService.estimate(USER_ID, request);
+        CartEstimateResponse response = cartService.estimate(USER_ID, new CartEstimateRequest());
 
         assertThat(response.getItemTotal()).isEqualByComparingTo(BigDecimal.ZERO);
         assertThat(response.getShippingFee()).isEqualByComparingTo(BigDecimal.ZERO);
         assertThat(response.getPackagingFee()).isEqualByComparingTo(BigDecimal.ZERO);
+        assertThat(response.getDiscountAmount()).isEqualByComparingTo(BigDecimal.ZERO);
+        assertThat(response.getPointsDeductionAmount()).isEqualByComparingTo(BigDecimal.ZERO);
         assertThat(response.getPayableAmount()).isEqualByComparingTo(BigDecimal.ZERO);
     }
 
     @Test
-    @DisplayName("CartService persists cart data")
-    void testCart_storedInDatabase() {
-        AddCartItemRequest request = new AddCartItemRequest(SKU_ID, 1);
-        Cart cart = new Cart(USER_ID);
-        cart.setId(CART_ID);
+    @DisplayName("estimate propagates standardized validation errors")
+    void testEstimate_validationError_propagatesStandardCode() {
+        CartData cart = new CartData(USER_ID);
+        cart.getItems().add(new com.ecommerce.cart.cache.CartItemData(SKU_ID, "Cached SKU", new BigDecimal("10.00"), 2));
+        when(cartCacheManager.getCart(USER_ID)).thenReturn(cart);
+        when(cartValidationService.validateSku(SKU_ID))
+                .thenThrow(new BusinessException("PRODUCT_NOT_FOR_SALE", "not for sale"));
 
-        doNothing().when(cartValidationService).validateQuantity(1);
-        when(cartValidationService.validateSku(SKU_ID)).thenReturn(skuDto);
-        doNothing().when(cartValidationService).validateStock(SKU_ID, 1);
-        when(cartRepository.findByUserId(USER_ID)).thenReturn(Optional.empty());
-        when(cartRepository.save(any(Cart.class))).thenReturn(cart);
-        when(cartItemRepository.findByCartId(CART_ID)).thenReturn(Collections.emptyList());
-        doNothing().when(cartValidationService).validateCartSize(0, 1);
-        when(cartItemRepository.save(any(CartItem.class))).thenAnswer(invocation -> invocation.getArgument(0));
-
-        cartService.addItem(USER_ID, request);
-
-        // Verify persistence interactions.
-        verify(cartRepository).findByUserId(USER_ID);
-        verify(cartRepository).save(any(Cart.class));
-        verify(cartItemRepository).findByCartId(CART_ID);
-        verify(cartItemRepository).save(any(CartItem.class));
+        assertThatThrownBy(() -> cartService.estimate(USER_ID, new CartEstimateRequest()))
+                .isInstanceOf(BusinessException.class)
+                .hasFieldOrPropertyWithValue("code", "PRODUCT_NOT_FOR_SALE");
     }
 }

@@ -2,10 +2,11 @@ package com.ecommerce.loyalty.service;
 
 import com.ecommerce.loyalty.entity.LoyaltyAccount;
 import com.ecommerce.loyalty.entity.MemberLevel;
+import com.ecommerce.loyalty.query.AnnualConsumptionQueryService;
 import com.ecommerce.loyalty.repository.LoyaltyAccountRepository;
-import com.ecommerce.loyalty.repository.OrderDataFetcher;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -25,13 +26,12 @@ public class MemberLevelService {
     private static final BigDecimal SILVER_THRESHOLD = new BigDecimal("1000");
 
     private final LoyaltyAccountRepository accountRepository;
-
-    private final OrderDataFetcher orderDataFetcher;
+    private final ObjectProvider<AnnualConsumptionQueryService> annualConsumptionQueryServiceProvider;
 
     public MemberLevelService(LoyaltyAccountRepository accountRepository,
-                              OrderDataFetcher orderDataFetcher) {
+                              ObjectProvider<AnnualConsumptionQueryService> annualConsumptionQueryServiceProvider) {
         this.accountRepository = accountRepository;
-        this.orderDataFetcher = orderDataFetcher;
+        this.annualConsumptionQueryServiceProvider = annualConsumptionQueryServiceProvider;
     }
 
     /**
@@ -51,7 +51,7 @@ public class MemberLevelService {
      */
     @Transactional
     public MemberLevel evaluateAndUpgrade(Long userId) {
-        BigDecimal annual = orderDataFetcher.getAnnualConsumption(userId);
+        BigDecimal annual = getAnnualConsumption(userId);
 
         MemberLevel newLevel;
         if (annual.compareTo(PLATINUM_THRESHOLD) >= 0) {
@@ -75,6 +75,15 @@ public class MemberLevelService {
         }
 
         return newLevel;
+    }
+
+    private BigDecimal getAnnualConsumption(Long userId) {
+        AnnualConsumptionQueryService queryService = annualConsumptionQueryServiceProvider.getIfAvailable();
+        if (queryService == null) {
+            log.debug("AnnualConsumptionQueryService is unavailable, using zero annual consumption for user {}", userId);
+            return BigDecimal.ZERO;
+        }
+        return queryService.getAnnualConsumption(userId);
     }
 
     private LoyaltyAccount getOrCreateAccount(Long userId) {
