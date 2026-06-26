@@ -1,5 +1,6 @@
 package com.ecommerce.review.event;
 
+import com.ecommerce.common.event.ReviewApprovedEvent;
 import com.ecommerce.review.service.ReviewApprovedEventListener;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;

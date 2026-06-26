@@ -10,9 +10,11 @@ import com.ecommerce.cart.dto.CartItemResponse;
 import com.ecommerce.cart.dto.CartResponse;
 import com.ecommerce.cart.dto.UpdateCartItemRequest;
 import com.ecommerce.common.integration.PointsRedeemEstimator;
-import com.ecommerce.common.integration.PromotionDiscountCalculator;
 import com.ecommerce.common.money.MonetaryUtil;
 import com.ecommerce.product.query.SkuDto;
+import com.ecommerce.promotion.dto.PromotionCalculateRequest;
+import com.ecommerce.promotion.dto.PromotionCalculateResponse;
+import com.ecommerce.promotion.service.PromotionCalculationService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
@@ -41,16 +43,16 @@ public class CartService {
 
     private final CartCacheManager cartCacheManager;
     private final CartValidationService cartValidationService;
-    private final PromotionDiscountCalculator promotionDiscountCalculator;
+    private final PromotionCalculationService promotionCalculationService;
     private final PointsRedeemEstimator pointsRedeemEstimator;
 
     public CartService(CartCacheManager cartCacheManager,
                        CartValidationService cartValidationService,
-                       PromotionDiscountCalculator promotionDiscountCalculator,
+                       PromotionCalculationService promotionCalculationService,
                        PointsRedeemEstimator pointsRedeemEstimator) {
         this.cartCacheManager = cartCacheManager;
         this.cartValidationService = cartValidationService;
-        this.promotionDiscountCalculator = promotionDiscountCalculator;
+        this.promotionCalculationService = promotionCalculationService;
         this.pointsRedeemEstimator = pointsRedeemEstimator;
     }
 
@@ -159,7 +161,7 @@ public class CartService {
         }
 
         BigDecimal itemTotal = BigDecimal.ZERO;
-        List<PromotionDiscountCalculator.Item> promotionItems = new ArrayList<>();
+        List<PromotionCalculateRequest.CalculateItem> promotionItems = new ArrayList<>();
         List<CartItemData> refreshedItems = new ArrayList<>();
         for (CartItemData item : cart.getItems()) {
             SkuDto sku = cartValidationService.validateSku(item.getSkuId());
@@ -172,7 +174,7 @@ public class CartService {
             BigDecimal lineTotal = MonetaryUtil.multiply(sku.getPrice(), BigDecimal.valueOf(item.getQuantity()));
             itemTotal = MonetaryUtil.add(itemTotal, lineTotal);
 
-            PromotionDiscountCalculator.Item promotionItem = new PromotionDiscountCalculator.Item();
+            PromotionCalculateRequest.CalculateItem promotionItem = new PromotionCalculateRequest.CalculateItem();
             promotionItem.setSkuId(sku.getSkuId());
             promotionItem.setPrice(sku.getPrice());
             promotionItem.setQuantity(item.getQuantity());
@@ -272,8 +274,13 @@ public class CartService {
     }
 
     private BigDecimal calculateDiscountAmount(Long userId, List<Long> couponIds,
-                                               List<PromotionDiscountCalculator.Item> promotionItems) {
-        BigDecimal discount = promotionDiscountCalculator.calculateDiscount(userId, promotionItems, couponIds);
+                                               List<PromotionCalculateRequest.CalculateItem> promotionItems) {
+        PromotionCalculateRequest request = new PromotionCalculateRequest();
+        request.setUserId(userId);
+        request.setCouponIds(couponIds);
+        request.setItems(promotionItems);
+        PromotionCalculateResponse response = promotionCalculationService.calculate(request);
+        BigDecimal discount = response != null ? response.getTotalDiscount() : null;
         return discount != null ? discount : BigDecimal.ZERO;
     }
 

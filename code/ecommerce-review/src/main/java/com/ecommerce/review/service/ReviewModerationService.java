@@ -1,11 +1,11 @@
 package com.ecommerce.review.service;
 
 import com.ecommerce.common.event.DomainEventPublisher;
+import com.ecommerce.common.event.ReviewApprovedEvent;
 import com.ecommerce.common.exception.BusinessException;
 import com.ecommerce.common.exception.ResourceNotFoundException;
 import com.ecommerce.review.entity.Review;
 import com.ecommerce.review.entity.ReviewStatus;
-import com.ecommerce.review.event.ReviewApprovedEvent;
 import com.ecommerce.review.repository.ReviewRepository;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;

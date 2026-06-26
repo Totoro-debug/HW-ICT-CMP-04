@@ -24,8 +24,6 @@ import org.springframework.data.domain.PageRequest;
 
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
-import java.util.Arrays;
-import java.util.Collections;
 import java.util.List;
 import java.util.Optional;
 
@@ -52,6 +50,9 @@ class OrderQueryServiceImplTest {
 
     @Mock
     private ProductQueryService productQueryService;
+
+    @Mock
+    private OrderPaymentEventHandler paymentEventHandler;
 
     @InjectMocks
     private OrderQueryServiceImpl orderQueryService;
@@ -97,8 +98,6 @@ class OrderQueryServiceImplTest {
         deliveredOrder.setUpdatedAt(LocalDateTime.now());
     }
 
-    // ======================== getOrder ========================
-
     @Test
     @DisplayName("getOrder returns OrderDto for existing order")
     void testGetOrder_existing_returnsDto() {
@@ -109,7 +108,7 @@ class OrderQueryServiceImplTest {
         assertThat(result).isNotNull();
         assertThat(result.getOrderId()).isEqualTo(1L);
         assertThat(result.getOrderNo()).isEqualTo("SO202606070001");
-        assertThat(result.getStatus()).isEqualTo(OrderStatus.CREATED);
+        assertThat(result.getStatus()).isEqualTo("CREATED");
         assertThat(result.getPayableAmount()).isEqualTo(new BigDecimal("97.00"));
     }
 
@@ -123,8 +122,6 @@ class OrderQueryServiceImplTest {
                 .hasMessageContaining("Order not found");
     }
 
-    // ======================== getPayableOrder ========================
-
     @Test
     @DisplayName("getPayableOrder returns OrderDto for CREATED order")
     void testGetPayableOrder_created_returnsDto() {
@@ -133,7 +130,7 @@ class OrderQueryServiceImplTest {
         OrderDto result = orderQueryService.getPayableOrder(1L);
 
         assertThat(result).isNotNull();
-        assertThat(result.getStatus()).isEqualTo(OrderStatus.CREATED);
+        assertThat(result.getStatus()).isEqualTo("CREATED");
     }
 
     @Test
@@ -160,8 +157,6 @@ class OrderQueryServiceImplTest {
                 .hasMessageContaining("cannot be paid");
     }
 
-    // ======================== getOrderAmount ========================
-
     @Test
     @DisplayName("getOrderAmount returns payable amount")
     void testGetOrderAmount_returnsPayableAmount() {
@@ -180,8 +175,6 @@ class OrderQueryServiceImplTest {
         assertThatThrownBy(() -> orderQueryService.getOrderAmount(999L))
                 .isInstanceOf(ResourceNotFoundException.class);
     }
-
-    // ======================== verifyPurchase ========================
 
     @Test
     @DisplayName("verifyPurchase returns purchased=true when DELIVERED order contains product")
@@ -214,7 +207,7 @@ class OrderQueryServiceImplTest {
 
         SkuDto sku = new SkuDto();
         sku.setSkuId(50L);
-        sku.setSpuId(999L); // Different product
+        sku.setSpuId(999L);
 
         Page<Order> orderPage = new PageImpl<>(List.of(deliveredOrder));
         when(orderRepository.findByUserId(eq(100L), any(PageRequest.class))).thenReturn(orderPage);
@@ -229,7 +222,7 @@ class OrderQueryServiceImplTest {
     @Test
     @DisplayName("verifyPurchase skips non-DELIVERED and non-COMPLETED orders")
     void testVerifyPurchase_skipsNonDeliveredOrders() {
-        Page<Order> orderPage = new PageImpl<>(List.of(order)); // CREATED order
+        Page<Order> orderPage = new PageImpl<>(List.of(order));
         when(orderRepository.findByUserId(eq(100L), any(PageRequest.class))).thenReturn(orderPage);
 
         VerifyPurchaseResponse response = orderQueryService.verifyPurchase(100L, 200L);
@@ -238,31 +231,21 @@ class OrderQueryServiceImplTest {
         verify(orderItemRepository, never()).findByOrderId(any());
     }
 
-    // ======================== markAsPaid ========================
-
     @Test
-    @DisplayName("markAsPaid transitions CREATED order to PAID")
-    void testMarkAsPaid_created_transitionsToPaid() {
+    @DisplayName("markAsPaid delegates to payment event handler")
+    void testMarkAsPaid_delegatesToHandler() {
         when(orderRepository.findById(1L)).thenReturn(Optional.of(order));
 
         orderQueryService.markAsPaid(1L, "PAY202606070001");
 
-        assertThat(order.getStatus()).isEqualTo(OrderStatus.PAID);
-        assertThat(order.getPaymentNo()).isEqualTo("PAY202606070001");
-        assertThat(order.getPaidAmount()).isEqualTo(new BigDecimal("97.00"));
-        verify(orderRepository).save(order);
+        verify(paymentEventHandler).handlePaymentSuccess(1L, "PAY202606070001", new BigDecimal("97.00"));
     }
 
     @Test
-    @DisplayName("markAsPaid throws for SHIPPED order")
-    void testMarkAsPaid_shipped_throwsException() {
-        Order shippedOrder = new Order();
-        shippedOrder.setId(6L);
-        shippedOrder.setStatus(OrderStatus.SHIPPED);
-        when(orderRepository.findById(6L)).thenReturn(Optional.of(shippedOrder));
+    @DisplayName("markPaymentFailed delegates to payment event handler")
+    void testMarkPaymentFailed_delegatesToHandler() {
+        orderQueryService.markPaymentFailed(1L);
 
-        assertThatThrownBy(() -> orderQueryService.markAsPaid(6L, "PAY001"))
-                .isInstanceOf(BusinessException.class)
-                .hasMessageContaining("Cannot mark order");
+        verify(paymentEventHandler).handlePaymentFailure(1L);
     }
 }

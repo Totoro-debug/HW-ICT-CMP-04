@@ -2,15 +2,14 @@ package com.ecommerce.loyalty.service;
 
 import com.ecommerce.loyalty.entity.LoyaltyAccount;
 import com.ecommerce.loyalty.entity.MemberLevel;
-import com.ecommerce.loyalty.query.AnnualConsumptionQueryService;
 import com.ecommerce.loyalty.repository.LoyaltyAccountRepository;
+import com.ecommerce.order.query.OrderQueryService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
-import org.springframework.beans.factory.ObjectProvider;
 
 import java.math.BigDecimal;
 import java.util.Optional;
@@ -31,17 +30,13 @@ class MemberLevelServiceTest {
     private LoyaltyAccountRepository accountRepository;
 
     @Mock
-    private ObjectProvider<AnnualConsumptionQueryService> annualConsumptionQueryServiceProvider;
-
-    @Mock
-    private AnnualConsumptionQueryService annualConsumptionQueryService;
+    private OrderQueryService orderQueryService;
 
     private MemberLevelService service;
 
     @BeforeEach
     void setUp() {
-        when(annualConsumptionQueryServiceProvider.getIfAvailable()).thenReturn(annualConsumptionQueryService);
-        service = new MemberLevelService(accountRepository, annualConsumptionQueryServiceProvider);
+        service = new MemberLevelService(accountRepository, orderQueryService);
     }
 
     @Test
@@ -49,7 +44,7 @@ class MemberLevelServiceTest {
         Long userId = 1L;
         LoyaltyAccount account = createAccount(userId, MemberLevel.SILVER);
         when(accountRepository.findByUserId(userId)).thenReturn(Optional.of(account));
-        when(annualConsumptionQueryService.getAnnualConsumption(userId)).thenReturn(new BigDecimal("25000"));
+        when(orderQueryService.getAnnualConsumption(userId)).thenReturn(new BigDecimal("25000"));
 
         MemberLevel result = service.evaluateAndUpgrade(userId);
 
@@ -67,7 +62,7 @@ class MemberLevelServiceTest {
         Long userId = 2L;
         LoyaltyAccount account = createAccount(userId, MemberLevel.SILVER);
         when(accountRepository.findByUserId(userId)).thenReturn(Optional.of(account));
-        when(annualConsumptionQueryService.getAnnualConsumption(userId)).thenReturn(new BigDecimal("6000"));
+        when(orderQueryService.getAnnualConsumption(userId)).thenReturn(new BigDecimal("6000"));
 
         MemberLevel result = service.evaluateAndUpgrade(userId);
 
@@ -85,7 +80,7 @@ class MemberLevelServiceTest {
         Long userId = 3L;
         LoyaltyAccount account = createAccount(userId, MemberLevel.NORMAL);
         when(accountRepository.findByUserId(userId)).thenReturn(Optional.of(account));
-        when(annualConsumptionQueryService.getAnnualConsumption(userId)).thenReturn(new BigDecimal("1500"));
+        when(orderQueryService.getAnnualConsumption(userId)).thenReturn(new BigDecimal("1500"));
 
         MemberLevel result = service.evaluateAndUpgrade(userId);
 
@@ -103,7 +98,7 @@ class MemberLevelServiceTest {
         Long userId = 4L;
         LoyaltyAccount account = createAccount(userId, MemberLevel.NORMAL);
         when(accountRepository.findByUserId(userId)).thenReturn(Optional.of(account));
-        when(annualConsumptionQueryService.getAnnualConsumption(userId)).thenReturn(new BigDecimal("500"));
+        when(orderQueryService.getAnnualConsumption(userId)).thenReturn(new BigDecimal("500"));
 
         MemberLevel result = service.evaluateAndUpgrade(userId);
 
@@ -121,13 +116,13 @@ class MemberLevelServiceTest {
         Long userId = 5L;
         LoyaltyAccount account = createAccount(userId, MemberLevel.SILVER);
         when(accountRepository.findByUserId(userId)).thenReturn(Optional.of(account));
-        when(annualConsumptionQueryService.getAnnualConsumption(userId)).thenReturn(new BigDecimal("8000"));
+        when(orderQueryService.getAnnualConsumption(userId)).thenReturn(new BigDecimal("8000"));
 
         MemberLevel result = service.evaluateAndUpgrade(userId);
 
-        verify(annualConsumptionQueryService).getAnnualConsumption(eq(userId));
+        verify(orderQueryService).getAnnualConsumption(eq(userId));
         assertEquals(MemberLevel.GOLD, result);
-        assertNotNull(annualConsumptionQueryService, "MemberLevelService order data port");
+        assertNotNull(orderQueryService, "MemberLevelService order data port");
     }
 
     private LoyaltyAccount createAccount(Long userId, MemberLevel level) {

@@ -1,6 +1,8 @@
 package com.ecommerce.loyalty.service;
 
 import com.ecommerce.common.exception.BusinessException;
+import com.ecommerce.common.integration.LoyaltyCommandService;
+import com.ecommerce.common.integration.LoyaltyQueryService;
 import com.ecommerce.common.integration.PointsRedeemEstimator;
 import com.ecommerce.common.test.RuntimeConfigRegistry;
 import com.ecommerce.common.test.SystemClockService;
@@ -8,8 +10,6 @@ import com.ecommerce.loyalty.entity.LoyaltyAccount;
 import com.ecommerce.loyalty.entity.MemberLevel;
 import com.ecommerce.loyalty.entity.PointsTransaction;
 import com.ecommerce.loyalty.entity.PointsTransactionType;
-import com.ecommerce.loyalty.query.LoyaltyCommandService;
-import com.ecommerce.loyalty.query.LoyaltyQueryService;
 import com.ecommerce.loyalty.repository.LoyaltyAccountRepository;
 import com.ecommerce.loyalty.repository.PointsTransactionRepository;
 import org.slf4j.Logger;
@@ -56,7 +56,6 @@ public class LoyaltyPointService implements LoyaltyQueryService, LoyaltyCommandS
 
     // ======================== LoyaltyQueryService ========================
 
-    @Override
     public int getAvailablePoints(Long userId) {
         LoyaltyAccount account = getAccount(userId);
         return account.getAvailablePoints();
@@ -77,13 +76,11 @@ public class LoyaltyPointService implements LoyaltyQueryService, LoyaltyCommandS
         return Math.min(Math.min(available, MAX_REDEEM_POINTS), ratioCapped);
     }
 
-    @Override
     public MemberLevel getMemberLevel(Long userId) {
         LoyaltyAccount account = getAccount(userId);
         return account.getMemberLevel();
     }
 
-    @Override
     public double getMemberMultiplier(Long userId) {
         LoyaltyAccount account = getAccount(userId);
         return memberBenefitService.getPointsMultiplier(account.getMemberLevel());

@@ -1,6 +1,8 @@
 package com.ecommerce.inventory.controller;
 
 import com.ecommerce.inventory.dto.InboundRequest;
+import com.ecommerce.inventory.dto.OutboundRequest;
+import com.ecommerce.inventory.dto.StockAdjustmentRequest;
 import com.ecommerce.inventory.dto.StockWarningResponse;
 import com.ecommerce.inventory.dto.WarehouseCreateRequest;
 import com.ecommerce.inventory.entity.InventoryStock;
@@ -127,10 +129,14 @@ class AdminInventoryControllerTest {
 
         when(inventoryService.outbound(eq(1L), eq(100L), eq(30), isNull())).thenReturn(stock);
 
+        OutboundRequest request = new OutboundRequest();
+        request.setWarehouseId(1L);
+        request.setSkuId(100L);
+        request.setQuantity(30);
+
         mockMvc.perform(post("/api/v1/admin/inventory/outbound")
-                        .param("warehouseId", "1")
-                        .param("skuId", "100")
-                        .param("quantity", "30"))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(request)))
                 .andExpect(status().isCreated())
                 .andExpect(jsonPath("$.warehouseId").value(1))
                 .andExpect(jsonPath("$.skuId").value(100))
@@ -150,11 +156,15 @@ class AdminInventoryControllerTest {
 
         when(inventoryService.outbound(eq(1L), eq(100L), eq(20), eq(42L))).thenReturn(stock);
 
+        OutboundRequest request = new OutboundRequest();
+        request.setWarehouseId(1L);
+        request.setSkuId(100L);
+        request.setQuantity(20);
+        request.setOrderId(42L);
+
         mockMvc.perform(post("/api/v1/admin/inventory/outbound")
-                        .param("warehouseId", "1")
-                        .param("skuId", "100")
-                        .param("quantity", "20")
-                        .param("orderId", "42"))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(request)))
                 .andExpect(status().isCreated());
 
         verify(inventoryService).outbound(1L, 100L, 20, 42L);
@@ -176,11 +186,15 @@ class AdminInventoryControllerTest {
         when(stockAdjustmentService.create(eq(1L), eq(100L), eq(80), eq("Physical count")))
                 .thenReturn(adjustment);
 
+        StockAdjustmentRequest request = new StockAdjustmentRequest();
+        request.setWarehouseId(1L);
+        request.setSkuId(100L);
+        request.setAfterQty(80);
+        request.setReason("Physical count");
+
         mockMvc.perform(post("/api/v1/admin/inventory/adjustments")
-                        .param("warehouseId", "1")
-                        .param("skuId", "100")
-                        .param("afterQty", "80")
-                        .param("reason", "Physical count"))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(request)))
                 .andExpect(status().isCreated())
                 .andExpect(jsonPath("$.id").value(1))
                 .andExpect(jsonPath("$.beforeQty").value(100))

@@ -1,6 +1,7 @@
 package com.ecommerce.promotion.service;
 
 import com.ecommerce.common.exception.BusinessException;
+import com.ecommerce.common.exception.ConflictException;
 import com.ecommerce.common.exception.ResourceNotFoundException;
 import com.ecommerce.common.exception.ValidationException;
 import com.ecommerce.promotion.entity.SeckillActivity;
@@ -54,11 +55,11 @@ public class SeckillService {
         // Check time window
         LocalDateTime now = LocalDateTime.now();
         if (activity.getStartTime() != null && now.isBefore(activity.getStartTime())) {
-            throw new BusinessException("SECKILL_NOT_STARTED",
+            throw new BusinessException("COUPON_EXPIRED",
                     "Seckill activity has not started yet");
         }
         if (activity.getEndTime() != null && now.isAfter(activity.getEndTime())) {
-            throw new BusinessException("SECKILL_ENDED",
+            throw new BusinessException("COUPON_EXPIRED",
                     "Seckill activity has already ended");
         }
 
@@ -66,8 +67,7 @@ public class SeckillService {
         int availableStock = (activity.getStockQuantity() != null ? activity.getStockQuantity() : 0)
                 - (activity.getSoldQuantity() != null ? activity.getSoldQuantity() : 0);
         if (availableStock <= 0) {
-            throw new BusinessException("SECKILL_SOLD_OUT",
-                    "Seckill stock has been exhausted");
+            throw new ConflictException("Seckill stock has been exhausted");
         }
 
         return activity;

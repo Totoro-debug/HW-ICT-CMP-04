@@ -1,6 +1,7 @@
 package com.ecommerce.inventory.service;
 
 import com.ecommerce.common.exception.ResourceNotFoundException;
+import com.ecommerce.inventory.cache.InventorySummaryCache;
 import com.ecommerce.inventory.entity.InventoryStock;
 import com.ecommerce.inventory.entity.StockAdjustment;
 import com.ecommerce.inventory.repository.InventoryStockRepository;
@@ -44,6 +45,7 @@ public class StockAdjustmentService {
         adjustment.setAfterQty(afterQty);
         adjustment.setReason(reason);
         StockAdjustment saved = stockAdjustmentRepository.save(adjustment);
+        InventorySummaryCache.evict(skuId);
 
         log.info("Stock adjusted: warehouseId={}, skuId={}, {} -> {}, reason={}",
                 warehouseId, skuId, beforeQty, afterQty, reason);

@@ -16,11 +16,6 @@ import static org.mockito.Mockito.when;
 
 /**
  * Tests for {@link OrderPreconditionChecker}.
- *
- * <p>The {@link OrderPreconditionChecker#check(Long, int)} method
- * only verifies that the user exists (user != null), but does NOT check whether
- * user eligibility checks.
- * are allowed to create orders.
  */
 @ExtendWith(MockitoExtension.class)
 @DisplayName("OrderPreconditionChecker")
@@ -32,10 +27,8 @@ class OrderPreconditionCheckerTest {
     @InjectMocks
     private OrderPreconditionChecker preconditionChecker;
 
-    // ======================== user existence check ========================
-
     @Test
-    @DisplayName("check passes when user exists (user != null)")
+    @DisplayName("check passes when user exists and is ACTIVE")
     void testCheck_userExists_passes() {
         UserDto user = new UserDto();
         user.setUserId(1L);
@@ -80,17 +73,19 @@ class OrderPreconditionCheckerTest {
     }
 
     @Test
-    @DisplayName("check throws BusinessException when user is null")
+    @DisplayName("check throws RESOURCE_NOT_FOUND when user is null")
     void testCheck_userNull_throwsException() {
         when(userQueryService.getUserById(99L)).thenReturn(null);
 
         assertThatThrownBy(() -> preconditionChecker.check(99L, 2))
                 .isInstanceOf(BusinessException.class)
-                .hasMessageContaining("User not found");
+                .hasMessageContaining("User not found")
+                .extracting(ex -> ((BusinessException) ex).getCode())
+                .isEqualTo("RESOURCE_NOT_FOUND");
     }
 
     @Test
-    @DisplayName("check throws BusinessException when itemCount is zero or negative")
+    @DisplayName("check throws VALIDATION_FAILED when itemCount is zero or negative")
     void testCheck_emptyItems_throwsException() {
         UserDto user = new UserDto();
         user.setUserId(3L);
@@ -99,10 +94,14 @@ class OrderPreconditionCheckerTest {
 
         assertThatThrownBy(() -> preconditionChecker.check(3L, 0))
                 .isInstanceOf(BusinessException.class)
-                .hasMessageContaining("at least one item");
+                .hasMessageContaining("at least one item")
+                .extracting(ex -> ((BusinessException) ex).getCode())
+                .isEqualTo("VALIDATION_FAILED");
 
         assertThatThrownBy(() -> preconditionChecker.check(3L, -1))
                 .isInstanceOf(BusinessException.class)
-                .hasMessageContaining("at least one item");
+                .hasMessageContaining("at least one item")
+                .extracting(ex -> ((BusinessException) ex).getCode())
+                .isEqualTo("VALIDATION_FAILED");
     }
 }

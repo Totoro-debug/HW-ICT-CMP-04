@@ -1,5 +1,6 @@
 package com.ecommerce.product.service;
 
+import com.ecommerce.common.exception.BusinessException;
 import com.ecommerce.common.exception.ResourceNotFoundException;
 import com.ecommerce.product.dto.ProductDetailResponse;
 import com.ecommerce.product.entity.Brand;
@@ -7,6 +8,7 @@ import com.ecommerce.product.entity.Category;
 import com.ecommerce.product.entity.ProductSku;
 import com.ecommerce.product.entity.ProductSpu;
 import com.ecommerce.product.entity.SkuStatus;
+import com.ecommerce.product.query.InventoryQueryService;
 import com.ecommerce.product.query.StockSummaryDto;
 import com.ecommerce.product.repository.BrandRepository;
 import com.ecommerce.product.repository.CategoryRepository;
@@ -19,7 +21,6 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
-import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
@@ -33,6 +34,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 @DisplayName("ProductDetailService")
@@ -55,9 +57,8 @@ class ProductDetailServiceTest {
     private ObjectMapper objectMapper;
 
     @Mock
-    private StockInfoFetcher stockInfoFetcher;
+    private InventoryQueryService inventoryQueryService;
 
-    @InjectMocks
     private ProductDetailService productDetailService;
 
     private ProductSku sku;
@@ -68,6 +69,15 @@ class ProductDetailServiceTest {
 
     @BeforeEach
     void setUp() {
+        productDetailService = new ProductDetailService(
+                skuRepository,
+                spuRepository,
+                brandRepository,
+                categoryRepository,
+                objectMapper,
+                inventoryQueryService,
+                new ProductDetailCacheService());
+
         sku = new ProductSku();
         sku.setId(1L);
         sku.setSpuId(10L);
@@ -91,15 +101,15 @@ class ProductDetailServiceTest {
         category.setId(200L);
         category.setName("Test Category");
 
-        stockSummary = new StockSummaryDto(999, 0);
+        stockSummary = new StockSummaryDto(50, 3);
     }
 
     @Test
-    @DisplayName("getProductDetail returns SKU with stock summary from StockInfoFetcher")
+    @DisplayName("getProductDetail returns SKU with stock summary from InventoryQueryService")
     void testGetProductDetail_returnsSkuWithStockSummary() throws JsonProcessingException {
         when(skuRepository.findById(1L)).thenReturn(Optional.of(sku));
         when(spuRepository.findById(10L)).thenReturn(Optional.of(spu));
-        when(stockInfoFetcher.fetch(1L)).thenReturn(stockSummary);
+        when(inventoryQueryService.getStockSummary(1L)).thenReturn(stockSummary);
         when(brandRepository.findById(100L)).thenReturn(Optional.of(brand));
         when(categoryRepository.findById(200L)).thenReturn(Optional.of(category));
         when(objectMapper.readValue(eq("{\"color\":\"red\",\"size\":\"L\"}"), any(TypeReference.class)))
@@ -117,12 +127,26 @@ class ProductDetailServiceTest {
         assertThat(result.getSpuName()).isEqualTo("Test SPU");
         assertThat(result.getBrand()).isEqualTo("Test Brand");
         assertThat(result.getCategory()).isEqualTo("Test Category");
-        // Verify stock summary in product detail.
-        assertThat(result.getStockSummary().getAvailableStock()).isEqualTo(999);
-        assertThat(result.getStockSummary().getReservedStock()).isZero();
+        assertThat(result.getStockSummary().getAvailableStock()).isEqualTo(50);
+        assertThat(result.getStockSummary().getReservedStock()).isEqualTo(3);
 
-        // Verify StockInfoFetcher was used
-        verify(stockInfoFetcher).fetch(1L);
+        verify(inventoryQueryService).getStockSummary(1L);
+    }
+
+    @Test
+    @DisplayName("getProductDetail caches product detail by skuId")
+    void testGetProductDetail_usesCache() {
+        when(skuRepository.findById(1L)).thenReturn(Optional.of(sku));
+        when(spuRepository.findById(10L)).thenReturn(Optional.of(spu));
+        when(inventoryQueryService.getStockSummary(1L)).thenReturn(stockSummary);
+        when(brandRepository.findById(100L)).thenReturn(Optional.of(brand));
+        when(categoryRepository.findById(200L)).thenReturn(Optional.of(category));
+
+        ProductDetailResponse first = productDetailService.getProductDetail(1L);
+        ProductDetailResponse second = productDetailService.getProductDetail(1L);
+
+        assertThat(second).isSameAs(first);
+        verify(inventoryQueryService).getStockSummary(1L);
     }
 
     @Test
@@ -132,6 +156,20 @@ class ProductDetailServiceTest {
 
         assertThatThrownBy(() -> productDetailService.getProductDetail(999L))
                 .isInstanceOf(ResourceNotFoundException.class);
+    }
+
+    @Test
+    @DisplayName("getProductDetail throws BusinessException when SKU is not ON_SHELF")
+    void testGetProductDetail_throwsWhenSkuNotForSale() {
+        sku.setStatus(SkuStatus.OFF_SHELF);
+        when(skuRepository.findById(1L)).thenReturn(Optional.of(sku));
+
+        assertThatThrownBy(() -> productDetailService.getProductDetail(1L))
+                .isInstanceOf(BusinessException.class)
+                .hasMessageContaining("Product SKU is not for sale")
+                .extracting("code")
+                .isEqualTo("PRODUCT_NOT_FOR_SALE");
+        verifyNoInteractions(inventoryQueryService);
     }
 
     @Test
@@ -152,7 +190,7 @@ class ProductDetailServiceTest {
 
         when(skuRepository.findById(1L)).thenReturn(Optional.of(sku));
         when(spuRepository.findById(10L)).thenReturn(Optional.of(spu));
-        when(stockInfoFetcher.fetch(1L)).thenReturn(stockSummary);
+        when(inventoryQueryService.getStockSummary(1L)).thenReturn(stockSummary);
         when(objectMapper.readValue(eq("{\"color\":\"red\",\"size\":\"L\"}"), any(TypeReference.class)))
                 .thenReturn(Map.of("color", "red", "size", "L"));
         when(objectMapper.readValue(eq("[\"img1.jpg\",\"img2.jpg\"]"), any(TypeReference.class)))
@@ -172,7 +210,7 @@ class ProductDetailServiceTest {
 
         when(skuRepository.findById(1L)).thenReturn(Optional.of(sku));
         when(spuRepository.findById(10L)).thenReturn(Optional.of(spu));
-        when(stockInfoFetcher.fetch(1L)).thenReturn(stockSummary);
+        when(inventoryQueryService.getStockSummary(1L)).thenReturn(stockSummary);
         when(brandRepository.findById(100L)).thenReturn(Optional.of(brand));
         when(categoryRepository.findById(200L)).thenReturn(Optional.of(category));
 

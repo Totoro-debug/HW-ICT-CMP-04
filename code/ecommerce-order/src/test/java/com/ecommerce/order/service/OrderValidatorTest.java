@@ -16,8 +16,6 @@ class OrderValidatorTest {
 
     private final OrderValidator validator = new OrderValidator();
 
-    // ======================== validateAmount ========================
-
     @Test
     @DisplayName("validateAmount with zero amount throws ORDER_INVALID_AMOUNT")
     void testValidateAmount_zero_throwsOrderInvalidAmount() {
@@ -53,27 +51,28 @@ class OrderValidatorTest {
     void testValidateAmount_positive_noException() {
         assertThatCode(() -> validator.validateAmount(new BigDecimal("100.00")))
                 .doesNotThrowAnyException();
-
         assertThatCode(() -> validator.validateAmount(new BigDecimal("0.01")))
                 .doesNotThrowAnyException();
     }
 
-    // ======================== validateQuantity ========================
-
     @Test
-    @DisplayName("validateQuantity with zero throws BusinessException")
+    @DisplayName("validateQuantity with zero throws VALIDATION_FAILED")
     void testValidateQuantity_zero_throwsBusinessException() {
         assertThatThrownBy(() -> validator.validateQuantity(0))
                 .isInstanceOf(com.ecommerce.common.exception.BusinessException.class)
-                .hasMessageContaining("quantity must be positive");
+                .hasMessageContaining("quantity must be positive")
+                .extracting(ex -> ((com.ecommerce.common.exception.BusinessException) ex).getCode())
+                .isEqualTo("VALIDATION_FAILED");
     }
 
     @Test
-    @DisplayName("validateQuantity with negative throws BusinessException")
+    @DisplayName("validateQuantity with negative throws VALIDATION_FAILED")
     void testValidateQuantity_negative_throwsBusinessException() {
         assertThatThrownBy(() -> validator.validateQuantity(-1))
                 .isInstanceOf(com.ecommerce.common.exception.BusinessException.class)
-                .hasMessageContaining("quantity must be positive");
+                .hasMessageContaining("quantity must be positive")
+                .extracting(ex -> ((com.ecommerce.common.exception.BusinessException) ex).getCode())
+                .isEqualTo("VALIDATION_FAILED");
     }
 
     @Test
@@ -83,22 +82,24 @@ class OrderValidatorTest {
         assertThatCode(() -> validator.validateQuantity(10)).doesNotThrowAnyException();
     }
 
-    // ======================== validateItemsCount ========================
-
     @Test
-    @DisplayName("validateItemsCount with zero throws BusinessException")
+    @DisplayName("validateItemsCount with zero throws VALIDATION_FAILED")
     void testValidateItemsCount_zero_throwsBusinessException() {
         assertThatThrownBy(() -> validator.validateItemsCount(0))
                 .isInstanceOf(com.ecommerce.common.exception.BusinessException.class)
-                .hasMessageContaining("at least one item");
+                .hasMessageContaining("at least one item")
+                .extracting(ex -> ((com.ecommerce.common.exception.BusinessException) ex).getCode())
+                .isEqualTo("VALIDATION_FAILED");
     }
 
     @Test
-    @DisplayName("validateItemsCount with negative throws BusinessException")
+    @DisplayName("validateItemsCount with negative throws VALIDATION_FAILED")
     void testValidateItemsCount_negative_throwsBusinessException() {
         assertThatThrownBy(() -> validator.validateItemsCount(-5))
                 .isInstanceOf(com.ecommerce.common.exception.BusinessException.class)
-                .hasMessageContaining("at least one item");
+                .hasMessageContaining("at least one item")
+                .extracting(ex -> ((com.ecommerce.common.exception.BusinessException) ex).getCode())
+                .isEqualTo("VALIDATION_FAILED");
     }
 
     @Test

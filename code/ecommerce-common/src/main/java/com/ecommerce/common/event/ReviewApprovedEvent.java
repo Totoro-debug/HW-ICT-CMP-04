@@ -1,12 +1,8 @@
-package com.ecommerce.loyalty.event;
-
-import com.ecommerce.common.event.AbstractDomainEvent;
+package com.ecommerce.common.event;
 
 /**
- * Domain event published when a user's review is approved by an admin.
+ * Domain event published when a review is approved by an admin.
  * The loyalty module listens for this event to award review reward points.
- *
- * <p>This event is published by the review module after admin approval.
  */
 public class ReviewApprovedEvent extends AbstractDomainEvent {
 

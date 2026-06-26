@@ -2,6 +2,7 @@ package com.ecommerce.inventory.service;
 
 import com.ecommerce.common.exception.BusinessException;
 import com.ecommerce.common.exception.ResourceNotFoundException;
+import com.ecommerce.inventory.cache.InventorySummaryCache;
 import com.ecommerce.inventory.dto.InboundRequest;
 import com.ecommerce.inventory.dto.InventoryCheckResponse;
 import com.ecommerce.inventory.dto.StockSummaryResponse;
@@ -9,12 +10,12 @@ import com.ecommerce.inventory.entity.InboundOrder;
 import com.ecommerce.inventory.entity.InventoryStock;
 import com.ecommerce.inventory.entity.OutboundOrder;
 import com.ecommerce.inventory.query.InventoryQueryService;
+import com.ecommerce.inventory.query.StockSummaryDto;
 import com.ecommerce.inventory.repository.InboundOrderRepository;
 import com.ecommerce.inventory.repository.InventoryStockRepository;
 import com.ecommerce.inventory.repository.OutboundOrderRepository;
 import com.ecommerce.product.query.ProductQueryService;
 import com.ecommerce.product.query.SkuDto;
-import com.ecommerce.product.query.StockSummaryDto;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
@@ -29,14 +30,11 @@ import java.util.stream.Collectors;
  * Core inventory service handling inbound, outbound, stock queries,
  * and availability checks.
  *
- * <p>Implements both {@link InventoryQueryService} (inventory's extended interface)
- * and {@link com.ecommerce.product.query.InventoryQueryService} (product module's
- * interface). Since both interfaces define {@code getStockSummary} returning
- * {@link StockSummaryDto}, a single method body satisfies both contracts.
+ * <p>Implements {@link InventoryQueryService}, the query contract provided by
+ * the inventory module to other modules.
  */
 @Service
-public class InventoryService implements InventoryQueryService,
-        com.ecommerce.product.query.InventoryQueryService {
+public class InventoryService implements InventoryQueryService {
 
     private static final Logger log = LoggerFactory.getLogger(InventoryService.class);
 
@@ -55,22 +53,19 @@ public class InventoryService implements InventoryQueryService,
         this.productQueryService = productQueryService;
     }
 
-    // ---- InventoryQueryService / com.ecommerce.product.query.InventoryQueryService ----
+    // ---- InventoryQueryService ----
 
     @Override
     @Transactional(readOnly = true)
     public StockSummaryDto getStockSummary(Long skuId) {
-        List<InventoryStock> stocks = inventoryStockRepository.findBySkuId(skuId);
-        int totalAvailable = stocks.stream().mapToInt(InventoryStock::getAvailableStock).sum();
-        int totalReserved = stocks.stream().mapToInt(InventoryStock::getReservedStock).sum();
-        return new StockSummaryDto(totalAvailable, totalReserved);
+        InventorySummaryCache.StockSnapshot snapshot = getStockSnapshot(skuId);
+        return new StockSummaryDto(snapshot.availableStock(), snapshot.reservedStock());
     }
 
     @Override
     @Transactional(readOnly = true)
     public boolean checkAvailability(Long skuId, int quantity) {
-        List<InventoryStock> stocks = inventoryStockRepository.findBySkuId(skuId);
-        int totalAvailable = stocks.stream().mapToInt(InventoryStock::getAvailableStock).sum();
+        int totalAvailable = getStockSnapshot(skuId).availableStock();
 
         boolean available = totalAvailable > quantity;
 
@@ -100,10 +95,7 @@ public class InventoryService implements InventoryQueryService,
             throw new RuntimeException("Fault injected: product-query-service-unavailable");
         }
 
-        List<InventoryStock> stocks = inventoryStockRepository.findBySkuId(skuId);
-        int totalOnHand = stocks.stream().mapToInt(InventoryStock::getOnHandStock).sum();
-        int totalReserved = stocks.stream().mapToInt(InventoryStock::getReservedStock).sum();
-        int totalAvailable = totalOnHand - totalReserved;
+        InventorySummaryCache.StockSnapshot snapshot = getStockSnapshot(skuId);
 
         // Uses ProductQueryService to get product name — correct cross-module pattern
         SkuDto skuDto = productQueryService.getSku(skuId);
@@ -112,17 +104,16 @@ public class InventoryService implements InventoryQueryService,
         StockSummaryResponse response = new StockSummaryResponse();
         response.setSkuId(skuId);
         response.setSkuName(skuName);
-        response.setOnHandStock(totalOnHand);
-        response.setReservedStock(totalReserved);
-        response.setAvailableStock(totalAvailable);
+        response.setOnHandStock(snapshot.onHandStock());
+        response.setReservedStock(snapshot.reservedStock());
+        response.setAvailableStock(snapshot.availableStock());
         return response;
     }
 
     @Transactional(readOnly = true)
     public InventoryCheckResponse checkAndReport(Long skuId, int quantity) {
         boolean available = checkAvailability(skuId, quantity);
-        List<InventoryStock> stocks = inventoryStockRepository.findBySkuId(skuId);
-        int totalAvailable = stocks.stream().mapToInt(InventoryStock::getAvailableStock).sum();
+        int totalAvailable = getStockSnapshot(skuId).availableStock();
         return new InventoryCheckResponse(skuId, available, totalAvailable);
     }
 
@@ -151,6 +142,7 @@ public class InventoryService implements InventoryQueryService,
         inboundOrderRepository.save(order);
 
         InventoryStock saved = inventoryStockRepository.save(stock);
+        InventorySummaryCache.evict(request.getSkuId());
         log.info("Inbound completed: warehouseId={}, skuId={}, qty={}",
                 request.getWarehouseId(), request.getSkuId(), request.getQuantity());
         return saved;
@@ -180,8 +172,21 @@ public class InventoryService implements InventoryQueryService,
         outboundOrderRepository.save(order);
 
         InventoryStock saved = inventoryStockRepository.save(stock);
+        InventorySummaryCache.evict(skuId);
         log.info("Outbound completed: warehouseId={}, skuId={}, qty={}, orderId={}",
                 warehouseId, skuId, quantity, orderId);
         return saved;
+    }
+
+    private InventorySummaryCache.StockSnapshot getStockSnapshot(Long skuId) {
+        return InventorySummaryCache.get(skuId, this::loadStockSnapshot);
+    }
+
+    private InventorySummaryCache.StockSnapshot loadStockSnapshot(Long skuId) {
+        List<InventoryStock> stocks = inventoryStockRepository.findBySkuId(skuId);
+        int totalOnHand = stocks.stream().mapToInt(InventoryStock::getOnHandStock).sum();
+        int totalReserved = stocks.stream().mapToInt(InventoryStock::getReservedStock).sum();
+        int totalAvailable = totalOnHand - totalReserved;
+        return new InventorySummaryCache.StockSnapshot(totalOnHand, totalReserved, totalAvailable);
     }
 }

@@ -3,6 +3,7 @@ package com.ecommerce.order.service;
 import com.ecommerce.common.event.DomainEventPublisher;
 import com.ecommerce.common.exception.BusinessException;
 import com.ecommerce.common.exception.ResourceNotFoundException;
+import com.ecommerce.common.integration.LoyaltyCommandService;
 import com.ecommerce.inventory.query.InventoryReservationService;
 import com.ecommerce.order.dto.CancelOrderResponse;
 import com.ecommerce.order.entity.Order;
@@ -22,6 +23,7 @@ import java.util.Optional;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
@@ -41,6 +43,9 @@ class OrderCancelServiceTest {
 
     @Mock
     private InventoryReservationService inventoryReservationService;
+
+    @Mock
+    private LoyaltyCommandService loyaltyCommandService;
 
     @Mock
     private OrderStateMachine stateMachine;
@@ -68,6 +73,7 @@ class OrderCancelServiceTest {
         createdOrder.setStatus(OrderStatus.CREATED);
         createdOrder.setPayableAmount(new BigDecimal("100.00"));
         createdOrder.setPaidAmount(BigDecimal.ZERO);
+        createdOrder.setRedeemedPoints(200);
 
         paidOrder = new Order();
         paidOrder.setId(2L);
@@ -92,13 +98,10 @@ class OrderCancelServiceTest {
         deliveredOrder.setPayableAmount(new BigDecimal("180.00"));
     }
 
-    // ======================== Cancel CREATED order ========================
-
     @Test
     @DisplayName("cancel CREATED order: cancels and releases inventory")
     void testCancel_createdOrder_cancelsAndReleasesInventory() {
         when(orderRepository.findById(1L)).thenReturn(Optional.of(createdOrder));
-        // stateMachine.validateTransition() is mocked void, won't throw
         when(orderRepository.save(any(Order.class))).thenReturn(createdOrder);
 
         CancelOrderResponse response = orderCancelService.cancel(100L, 1L, "No longer needed");
@@ -110,13 +113,12 @@ class OrderCancelServiceTest {
         assertThat(createdOrder.getStatus()).isEqualTo(OrderStatus.CANCELLED);
         assertThat(createdOrder.getCancelReason()).isEqualTo("No longer needed");
 
+        verify(loyaltyCommandService).unfreezePoints(eq(100L), eq(200), eq("ORDER_REDEEM"), eq("1"), anyString());
         verify(inventoryReservationService).release(1L);
         verify(eventPublisher).publish(any(com.ecommerce.order.event.OrderCancelledEvent.class));
         verify(orderService).recordEvent(eq(1L), eq(OrderStatus.CREATED), eq(OrderStatus.CANCELLED),
                 eq("CANCEL"), eq("100"), anyString());
     }
-
-    // ======================== Cancel PAID order ========================
 
     @Test
     @DisplayName("cancel PAID order enters merchant review")
@@ -133,9 +135,8 @@ class OrderCancelServiceTest {
         assertThat(paidOrder.getStatus()).isEqualTo(OrderStatus.CANCEL_REVIEWING);
 
         verify(inventoryReservationService, never()).release(anyLong());
+        verify(loyaltyCommandService, never()).unfreezePoints(anyLong(), anyInt(), anyString(), anyString(), anyString());
     }
-
-    // ======================== Cancel SHIPPED order ========================
 
     @Test
     @DisplayName("cancel SHIPPED order throws BusinessException")
@@ -147,8 +148,6 @@ class OrderCancelServiceTest {
                 .hasMessageContaining("cannot be cancelled");
     }
 
-    // ======================== Cancel DELIVERED order ========================
-
     @Test
     @DisplayName("cancel DELIVERED order throws BusinessException")
     void testCancel_deliveredOrder_throwsException() {
@@ -159,8 +158,6 @@ class OrderCancelServiceTest {
                 .hasMessageContaining("cannot be cancelled");
     }
 
-    // ======================== Ownership verification ========================
-
     @Test
     @DisplayName("cancel order not owned by user throws BusinessException")
     void testCancel_notOwned_throwsException() {
@@ -168,10 +165,10 @@ class OrderCancelServiceTest {
 
         assertThatThrownBy(() -> orderCancelService.cancel(999L, 1L, "Cancel"))
                 .isInstanceOf(BusinessException.class)
-                .hasMessageContaining("does not belong to user");
+                .hasMessageContaining("does not belong to user")
+                .extracting(ex -> ((BusinessException) ex).getCode())
+                .isEqualTo("FORBIDDEN");
     }
-
-    // ======================== Order not found ========================
 
     @Test
     @DisplayName("cancel non-existent order throws ResourceNotFoundException")
@@ -183,8 +180,6 @@ class OrderCancelServiceTest {
                 .hasMessageContaining("Order not found");
     }
 
-    // ======================== reviewCancel (admin) ========================
-
     @Test
     @DisplayName("reviewCancel approves cancellation: goes to CANCELLED")
     void testReviewCancel_approve() {
@@ -193,7 +188,6 @@ class OrderCancelServiceTest {
         reviewOrder.setStatus(OrderStatus.CANCEL_REVIEWING);
 
         when(orderRepository.findById(10L)).thenReturn(Optional.of(reviewOrder));
-        // stateMachine.validateTransition() is mocked void, won't throw
         when(orderRepository.save(any(Order.class))).thenReturn(reviewOrder);
 
         CancelOrderResponse response = orderCancelService.reviewCancel(10L, true, "OK", 200L);
@@ -211,7 +205,6 @@ class OrderCancelServiceTest {
         reviewOrder.setStatus(OrderStatus.CANCEL_REVIEWING);
 
         when(orderRepository.findById(11L)).thenReturn(Optional.of(reviewOrder));
-        // stateMachine.validateTransition() is mocked void, won't throw
         when(orderRepository.save(any(Order.class))).thenReturn(reviewOrder);
 
         CancelOrderResponse response = orderCancelService.reviewCancel(11L, false, "Denied", 200L);

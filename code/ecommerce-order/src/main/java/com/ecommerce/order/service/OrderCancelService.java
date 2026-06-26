@@ -3,6 +3,7 @@ package com.ecommerce.order.service;
 import com.ecommerce.common.event.DomainEventPublisher;
 import com.ecommerce.common.exception.BusinessException;
 import com.ecommerce.common.exception.ResourceNotFoundException;
+import com.ecommerce.common.integration.LoyaltyCommandService;
 import com.ecommerce.inventory.query.InventoryReservationService;
 import com.ecommerce.order.dto.CancelOrderResponse;
 import com.ecommerce.order.entity.Order;
@@ -35,17 +36,20 @@ public class OrderCancelService {
 
     private final OrderRepository orderRepository;
     private final InventoryReservationService inventoryReservationService;
+    private final LoyaltyCommandService loyaltyCommandService;
     private final OrderStateMachine stateMachine;
     private final DomainEventPublisher eventPublisher;
     private final OrderService orderService;
 
     public OrderCancelService(OrderRepository orderRepository,
                               InventoryReservationService inventoryReservationService,
+                              LoyaltyCommandService loyaltyCommandService,
                               OrderStateMachine stateMachine,
                               DomainEventPublisher eventPublisher,
                               OrderService orderService) {
         this.orderRepository = orderRepository;
         this.inventoryReservationService = inventoryReservationService;
+        this.loyaltyCommandService = loyaltyCommandService;
         this.stateMachine = stateMachine;
         this.eventPublisher = eventPublisher;
         this.orderService = orderService;
@@ -64,9 +68,8 @@ public class OrderCancelService {
         Order order = orderRepository.findById(orderId)
                 .orElseThrow(() -> new ResourceNotFoundException("Order not found: " + orderId));
 
-        // Verify ownership
         if (!order.getUserId().equals(userId)) {
-            throw new BusinessException("ORDER_NOT_OWNED",
+            throw new BusinessException("FORBIDDEN",
                     "Order " + orderId + " does not belong to user " + userId);
         }
 
@@ -111,7 +114,8 @@ public class OrderCancelService {
         order.setCancelledAt(LocalDateTime.now());
         orderRepository.save(order);
 
-        // Release reserved inventory
+        releaseRedeemedPoints(order, "User cancelled before payment: " + reason);
+
         try {
             inventoryReservationService.release(order.getId());
             log.info("Inventory released for cancelled order {}", order.getId());
@@ -119,11 +123,9 @@ public class OrderCancelService {
             log.error("Failed to release inventory for order {}: {}", order.getId(), e.getMessage());
         }
 
-        // Record event
         orderService.recordEvent(order.getId(), fromStatus, OrderStatus.CANCELLED,
                 "CANCEL", order.getUserId().toString(), "User cancelled: " + reason);
 
-        // Publish event
         eventPublisher.publish(new OrderCancelledEvent(this, order.getId(), order.getUserId()));
 
         log.info("Order {} cancelled by user {}", order.getId(), order.getUserId());
@@ -143,6 +145,8 @@ public class OrderCancelService {
         order.setCancelReason(reason);
         order.setCancelledAt(LocalDateTime.now());
         orderRepository.save(order);
+
+        releaseRedeemedPoints(order, "User cancelled during payment: " + reason);
 
         orderService.recordEvent(order.getId(), fromStatus, OrderStatus.CANCELLED,
                 "CANCEL", order.getUserId().toString(),
@@ -192,14 +196,12 @@ public class OrderCancelService {
         OrderStatus fromStatus = order.getStatus();
 
         if (approved) {
-            // Approve cancellation: move to CANCELLED, initiate refund
             stateMachine.validateTransition(fromStatus, OrderStatus.CANCELLED);
             order.setStatus(OrderStatus.CANCELLED);
             order.setCancelReviewerId(reviewerId);
             order.setCancelledAt(LocalDateTime.now());
             orderRepository.save(order);
 
-            // Release inventory if still reserved
             try {
                 inventoryReservationService.release(orderId);
             } catch (Exception e) {
@@ -213,7 +215,6 @@ public class OrderCancelService {
             return new CancelOrderResponse(orderId, OrderStatus.CANCELLED.name(),
                     "Cancellation approved, refund will be processed");
         } else {
-            // Reject cancellation: revert to PAID
             stateMachine.validateTransition(fromStatus, OrderStatus.PAID);
             order.setStatus(OrderStatus.PAID);
             order.setCancelReason(null);
@@ -226,6 +227,14 @@ public class OrderCancelService {
             return new CancelOrderResponse(orderId, OrderStatus.PAID.name(),
                     "Cancellation rejected, order remains active");
         }
+    }
+
+    private void releaseRedeemedPoints(Order order, String description) {
+        if (order.getRedeemedPoints() <= 0) {
+            return;
+        }
+        loyaltyCommandService.unfreezePoints(order.getUserId(), order.getRedeemedPoints(),
+                "ORDER_REDEEM", String.valueOf(order.getId()), description);
     }
 
     private BusinessException statusConflict(String message) {

@@ -20,6 +20,16 @@
             <version>${project.version}</version>
         </dependency>
         <dependency>
+            <groupId>com.ecommerce</groupId>
+            <artifactId>ecommerce-inventory</artifactId>
+            <version>${project.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>com.ecommerce</groupId>
+            <artifactId>ecommerce-loyalty</artifactId>
+            <version>${project.version}</version>
+        </dependency>
+        <dependency>
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-security</artifactId>
         </dependency>

@@ -24,13 +24,6 @@ import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
-/**
- * Tests for {@link PaymentCallbackService}.
- *
- * <p>The processCallback() method does NOT verify the
- * X-Payment-Signature header. It logs the signature but never validates it,
- * making the callback endpoint vulnerable to forged payment notifications.
- */
 @ExtendWith(MockitoExtension.class)
 class PaymentCallbackServiceTest {
 
@@ -47,24 +40,23 @@ class PaymentCallbackServiceTest {
 
     @BeforeEach
     void setUp() {
+        PaymentConfig paymentConfig = new PaymentConfig();
+        paymentConfig.setCallbackSignature("valid-signature");
         callbackService = new PaymentCallbackService(
                 paymentRecordRepository,
                 orderPaymentStatusUpdater,
                 paymentService,
-                new PaymentConfig()
+                paymentConfig
         );
     }
 
-    // ---- testProcessCallback_withoutSignatureVerification_succeeds ----
-
     @Test
-    @DisplayName("callback is processed WITHOUT signature verification")
-    void testProcessCallback_withoutSignatureVerification_succeeds() {
-        // Given: a callback with an obviously forged/wrong signature
+    @DisplayName("callback with valid signature updates payment and order")
+    void testProcessCallback_withValidSignature_succeeds() {
         PaymentCallbackRequest request = new PaymentCallbackRequest(
                 "PAY001", 1L, "SUCCESS",
                 new BigDecimal("99.00"), "seq-001",
-                "valid-signature" // This signature is never validated
+                "valid-signature"
         );
 
         PaymentRecord payment = new PaymentRecord();
@@ -78,27 +70,20 @@ class PaymentCallbackServiceTest {
         when(paymentRecordRepository.save(any(PaymentRecord.class)))
                 .thenAnswer(invocation -> invocation.getArgument(0));
 
-        // When: processCallback is called with the forged signature
         callbackService.processCallback(request);
 
-        // Then: callback is processed successfully WITHOUT verifying
-        // the signature. The wrong signature "valid-signature" is simply
-        // logged but never validated. No exception is thrown.
         verify(paymentRecordRepository).save(any(PaymentRecord.class));
         verify(orderPaymentStatusUpdater).markAsPaid(1L, "PAY001");
         verify(paymentService).confirmPayment(any(PaymentRecord.class));
     }
 
-    // ---- testProcessCallback_updatesPaymentStatus ----
-
     @Test
     @DisplayName("successful callback updates payment status to SUCCESS")
     void testProcessCallback_updatesPaymentStatus() {
-        // Given
         PaymentCallbackRequest request = new PaymentCallbackRequest(
                 "PAY002", 2L, "SUCCESS",
                 new BigDecimal("199.00"), "seq-002",
-                "valid-signature" // Signature is not validated
+                "valid-signature"
         );
 
         PaymentRecord payment = new PaymentRecord();
@@ -112,10 +97,8 @@ class PaymentCallbackServiceTest {
         when(paymentRecordRepository.save(any(PaymentRecord.class)))
                 .thenAnswer(invocation -> invocation.getArgument(0));
 
-        // When
         callbackService.processCallback(request);
 
-        // Then: payment status should be updated to SUCCESS
         ArgumentCaptor<PaymentRecord> captor = ArgumentCaptor.forClass(PaymentRecord.class);
         verify(paymentRecordRepository).save(captor.capture());
         PaymentRecord saved = captor.getValue();
@@ -125,12 +108,9 @@ class PaymentCallbackServiceTest {
         assertNotNull(saved.getPaidAt());
     }
 
-    // ---- testProcessCallback_duplicateCallback_handledIdempotently ----
-
     @Test
     @DisplayName("duplicate callback with same sequence is handled idempotently")
     void testProcessCallback_duplicateCallback_handledIdempotently() {
-        // Given: payment already has the same callback sequence
         PaymentCallbackRequest request = new PaymentCallbackRequest(
                 "PAY003", 3L, "SUCCESS",
                 new BigDecimal("299.00"), "seq-003",
@@ -142,15 +122,13 @@ class PaymentCallbackServiceTest {
         payment.setOrderId(3L);
         payment.setPaidAmount(new BigDecimal("299.00"));
         payment.setStatus(PaymentStatus.SUCCESS);
-        payment.setCallbackSequence("seq-003"); // already processed with this sequence
+        payment.setCallbackSequence("seq-003");
 
         when(paymentRecordRepository.findByPaymentNo("PAY003"))
                 .thenReturn(Optional.of(payment));
 
-        // When: same callback sequence arrives again
         callbackService.processCallback(request);
 
-        // Then: idempotent — no save, no confirm, no status update
         verify(paymentRecordRepository, never()).save(any());
         verify(paymentService, never()).confirmPayment(any());
         verify(orderPaymentStatusUpdater, never()).markAsPaid(any(), any());

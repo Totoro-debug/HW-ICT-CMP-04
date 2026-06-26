@@ -26,9 +26,12 @@ public class FreightCalculator {
     private static final BigDecimal DEFAULT_FREE_SHIPPING_THRESHOLD = new BigDecimal("199.00");
 
     private final FreightTemplateRepository freightTemplateRepository;
+    private final FreightTemplateCache freightTemplateCache;
 
-    public FreightCalculator(FreightTemplateRepository freightTemplateRepository) {
+    public FreightCalculator(FreightTemplateRepository freightTemplateRepository,
+                             FreightTemplateCache freightTemplateCache) {
         this.freightTemplateRepository = freightTemplateRepository;
+        this.freightTemplateCache = freightTemplateCache;
     }
 
     /**
@@ -45,17 +48,7 @@ public class FreightCalculator {
         FreightTemplate template = findActiveTemplate();
 
         if (template != null) {
-            BigDecimal threshold = template.getFreeShippingThreshold() != null
-                    ? template.getFreeShippingThreshold() : DEFAULT_FREE_SHIPPING_THRESHOLD;
-            BigDecimal freight = template.getDefaultFreight() != null
-                    ? template.getDefaultFreight() : DEFAULT_FREIGHT;
-
-            if (itemTotal.compareTo(threshold) >= 0) {
-                log.info("Free shipping: itemTotal={} reaches threshold={}", itemTotal, threshold);
-                return BigDecimal.ZERO;
-            }
-            log.info("Freight charged: itemTotal={}, threshold={}, freight={}", itemTotal, threshold, freight);
-            return freight;
+            return calculateWithTemplate(itemTotal, template);
         }
 
         // Fallback to default rules
@@ -76,25 +69,34 @@ public class FreightCalculator {
             return calculateFreight(itemTotal);
         }
 
-        return freightTemplateRepository.findById(templateId)
-                .map(template -> {
-                    BigDecimal threshold = template.getFreeShippingThreshold() != null
-                            ? template.getFreeShippingThreshold() : DEFAULT_FREE_SHIPPING_THRESHOLD;
-                    BigDecimal freight = template.getDefaultFreight() != null
-                            ? template.getDefaultFreight() : DEFAULT_FREIGHT;
-
-                    if (itemTotal != null && itemTotal.compareTo(threshold) >= 0) {
-                        return BigDecimal.ZERO;
-                    }
-                    return freight;
-                })
+        return freightTemplateCache.get(templateId, () -> freightTemplateRepository.findById(templateId))
+                .map(template -> calculateWithTemplate(itemTotal, template))
                 .orElseGet(() -> calculateFreight(itemTotal));
     }
 
+    private BigDecimal calculateWithTemplate(BigDecimal itemTotal, FreightTemplate template) {
+        BigDecimal threshold = template.getFreeShippingThreshold() != null
+                ? template.getFreeShippingThreshold() : DEFAULT_FREE_SHIPPING_THRESHOLD;
+        BigDecimal freight = template.getDefaultFreight() != null
+                ? template.getDefaultFreight() : DEFAULT_FREIGHT;
+
+        if (itemTotal != null && itemTotal.compareTo(threshold) >= 0) {
+            log.info("Free shipping: itemTotal={} reaches threshold={}", itemTotal, threshold);
+            return BigDecimal.ZERO;
+        }
+        log.info("Freight charged: itemTotal={}, threshold={}, freight={}", itemTotal, threshold, freight);
+        return freight;
+    }
+
     private FreightTemplate findActiveTemplate() {
-        return freightTemplateRepository.findAll()
+        FreightTemplate template = freightTemplateRepository.findAll()
                 .stream()
                 .findFirst()
                 .orElse(null);
+        if (template == null || template.getId() == null) {
+            return template;
+        }
+        return freightTemplateCache.get(template.getId(), () -> freightTemplateRepository.findById(template.getId()))
+                .orElse(template);
     }
 }

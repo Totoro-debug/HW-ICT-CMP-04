@@ -2,11 +2,10 @@ package com.ecommerce.loyalty.service;
 
 import com.ecommerce.loyalty.entity.LoyaltyAccount;
 import com.ecommerce.loyalty.entity.MemberLevel;
-import com.ecommerce.loyalty.query.AnnualConsumptionQueryService;
 import com.ecommerce.loyalty.repository.LoyaltyAccountRepository;
+import com.ecommerce.order.query.OrderQueryService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -26,12 +25,12 @@ public class MemberLevelService {
     private static final BigDecimal SILVER_THRESHOLD = new BigDecimal("1000");
 
     private final LoyaltyAccountRepository accountRepository;
-    private final ObjectProvider<AnnualConsumptionQueryService> annualConsumptionQueryServiceProvider;
+    private final OrderQueryService orderQueryService;
 
     public MemberLevelService(LoyaltyAccountRepository accountRepository,
-                              ObjectProvider<AnnualConsumptionQueryService> annualConsumptionQueryServiceProvider) {
+                              OrderQueryService orderQueryService) {
         this.accountRepository = accountRepository;
-        this.annualConsumptionQueryServiceProvider = annualConsumptionQueryServiceProvider;
+        this.orderQueryService = orderQueryService;
     }
 
     /**
@@ -78,12 +77,7 @@ public class MemberLevelService {
     }
 
     private BigDecimal getAnnualConsumption(Long userId) {
-        AnnualConsumptionQueryService queryService = annualConsumptionQueryServiceProvider.getIfAvailable();
-        if (queryService == null) {
-            log.debug("AnnualConsumptionQueryService is unavailable, using zero annual consumption for user {}", userId);
-            return BigDecimal.ZERO;
-        }
-        return queryService.getAnnualConsumption(userId);
+        return orderQueryService.getAnnualConsumption(userId);
     }
 
     private LoyaltyAccount getOrCreateAccount(Long userId) {

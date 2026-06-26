@@ -108,17 +108,17 @@ class PromotionControllerTest {
         }
 
         @Test
-        @DisplayName("claimCoupon: returns 400 when coupon is exhausted")
-        void testClaimCoupon_exhausted_returns400() throws Exception {
+        @DisplayName("claimCoupon: returns 409 when coupon is exhausted")
+        void testClaimCoupon_exhausted_returns409() throws Exception {
             when(couponService.claim(anyLong(), anyLong()))
-                    .thenThrow(new com.ecommerce.common.exception.BusinessException(
-                            "COUPON_EXHAUSTED", "Coupon has been fully claimed"));
+                    .thenThrow(new com.ecommerce.common.exception.ConflictException(
+                            "Coupon has been fully claimed"));
 
             mockMvc.perform(post("/api/v1/promotions/coupons/claim")
                             .contentType(MediaType.APPLICATION_JSON)
                             .content(objectMapper.writeValueAsString(request)))
-                    .andExpect(status().isBadRequest())
-                    .andExpect(jsonPath("$.code").value("COUPON_EXHAUSTED"));
+                    .andExpect(status().isConflict())
+                    .andExpect(jsonPath("$.code").value("CONFLICT"));
         }
     }
 

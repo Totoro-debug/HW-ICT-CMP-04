@@ -1,11 +1,7 @@
 package com.ecommerce.payment.service;
 
-import com.ecommerce.common.event.DomainEventPublisher;
 import com.ecommerce.common.exception.BusinessException;
 import com.ecommerce.common.exception.ResourceNotFoundException;
-import com.ecommerce.common.notification.LocalNotificationService;
-import com.ecommerce.common.notification.NotificationChannel;
-import com.ecommerce.common.notification.NotificationRequest;
 import com.ecommerce.payment.dto.RefundApplyRequest;
 import com.ecommerce.payment.dto.RefundResponse;
 import com.ecommerce.payment.dto.RefundReviewRequest;
@@ -13,7 +9,6 @@ import com.ecommerce.payment.entity.PaymentRecord;
 import com.ecommerce.payment.entity.PaymentStatus;
 import com.ecommerce.payment.entity.RefundRecord;
 import com.ecommerce.payment.entity.RefundStatus;
-import com.ecommerce.payment.event.RefundCompletedEvent;
 import com.ecommerce.payment.repository.PaymentRecordRepository;
 import com.ecommerce.payment.repository.RefundRecordRepository;
 import org.slf4j.Logger;
@@ -22,8 +17,6 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
-import java.time.LocalDateTime;
-import java.util.Map;
 import java.util.UUID;
 
 /**
@@ -37,19 +30,16 @@ public class RefundService {
     private final RefundRecordRepository refundRecordRepository;
     private final PaymentRecordRepository paymentRecordRepository;
     private final RefundCalculator refundCalculator;
-    private final DomainEventPublisher eventPublisher;
-    private final LocalNotificationService notificationService;
+    private final RefundStageService refundStageService;
 
     public RefundService(RefundRecordRepository refundRecordRepository,
                          PaymentRecordRepository paymentRecordRepository,
                          RefundCalculator refundCalculator,
-                         DomainEventPublisher eventPublisher,
-                         LocalNotificationService notificationService) {
+                         RefundStageService refundStageService) {
         this.refundRecordRepository = refundRecordRepository;
         this.paymentRecordRepository = paymentRecordRepository;
         this.refundCalculator = refundCalculator;
-        this.eventPublisher = eventPublisher;
-        this.notificationService = notificationService;
+        this.refundStageService = refundStageService;
     }
 
     /**
@@ -60,21 +50,18 @@ public class RefundService {
         log.info("Applying refund: userId={}, orderId={}, paymentNo={}",
                 userId, request.getOrderId(), request.getPaymentNo());
 
-        // Find the successful payment
         PaymentRecord payment = paymentRecordRepository
                 .findByPaymentNo(request.getPaymentNo())
                 .orElseThrow(() -> new ResourceNotFoundException(
                         "PaymentRecord", request.getPaymentNo()));
 
         if (payment.getStatus() != PaymentStatus.SUCCESS) {
-            throw new BusinessException("REFUND_NOT_ALLOWED",
+            throw new BusinessException("CONFLICT",
                     "Refund can only be applied for successfully paid orders");
         }
 
-        // Calculate refund amount
         BigDecimal refundAmount = refundCalculator.calculate(payment.getPaidAmount());
 
-        // Create refund record
         RefundRecord refund = new RefundRecord();
         refund.setRefundNo(generateRefundNo());
         refund.setPaymentNo(request.getPaymentNo());
@@ -103,7 +90,7 @@ public class RefundService {
                 .orElseThrow(() -> new ResourceNotFoundException("RefundRecord", refundId));
 
         if (refund.getStatus() != RefundStatus.PENDING_REVIEW) {
-            throw new BusinessException("REFUND_STATUS_INVALID",
+            throw new BusinessException("CONFLICT",
                     "Refund is not in PENDING_REVIEW status: " + refund.getStatus());
         }
 
@@ -127,56 +114,20 @@ public class RefundService {
     }
 
     /**
-     * Warehouse accepts returned goods.
+     * Warehouse accepts returned goods and then triggers refund execution in a separate transaction.
      */
-    @Transactional
     public RefundResponse warehouseAccept(Long refundId, Long acceptorId) {
         log.info("Warehouse accepting refund: refundId={}, acceptorId={}", refundId, acceptorId);
 
-        RefundRecord refund = refundRecordRepository.findById(refundId)
-                .orElseThrow(() -> new ResourceNotFoundException("RefundRecord", refundId));
-
-        if (refund.getStatus() != RefundStatus.WAITING_WAREHOUSE_ACCEPT) {
-            throw new BusinessException("REFUND_WAITING_WAREHOUSE_ACCEPT",
-                    "Refund must pass review and wait for warehouse acceptance before completion");
+        RefundRecord acceptedRefund = refundStageService.acceptWarehouse(refundId, acceptorId);
+        try {
+            RefundRecord completedRefund = refundStageService.completeRefund(refundId);
+            return toRefundResponse(completedRefund);
+        } catch (Exception ex) {
+            log.error("Refund execution failed after warehouse acceptance, keeping acceptance committed: refundId={}, error={}",
+                    refundId, ex.getMessage(), ex);
+            return toRefundResponse(acceptedRefund);
         }
-
-        refund.setStatus(RefundStatus.WAREHOUSE_ACCEPTED);
-        refund.setWarehouseAcceptorId(acceptorId);
-        refund = refundRecordRepository.save(refund);
-
-        // After warehouse acceptance, process the refund
-        processRefund(refund);
-
-        return toRefundResponse(refund);
-    }
-
-    /**
-     * Processes the refund completion.
-     */
-    private void processRefund(RefundRecord refund) {
-        refund.setStatus(RefundStatus.COMPLETED);
-        refund.setCompletedAt(LocalDateTime.now());
-        refundRecordRepository.save(refund);
-
-        // Update payment status
-        PaymentRecord payment = paymentRecordRepository
-                .findByPaymentNo(refund.getPaymentNo())
-                .orElseThrow();
-        payment.setStatus(PaymentStatus.REFUNDED);
-        paymentRecordRepository.save(payment);
-
-        // Publish event — order module will consume RefundCompletedEvent
-        // and update the order status to REFUNDED via its own listener
-        RefundCompletedEvent event = new RefundCompletedEvent(
-                this, refund.getRefundNo(), refund.getPaymentNo(),
-                refund.getOrderId(), refund.getUserId(), refund.getRefundAmount());
-        eventPublisher.publish(event);
-
-        // Send notification
-        sendRefundNotification(refund);
-
-        log.info("Refund completed: refundNo={}, amount={}", refund.getRefundNo(), refund.getRefundAmount());
     }
 
     /**
@@ -186,20 +137,6 @@ public class RefundService {
         RefundRecord refund = refundRecordRepository.findById(refundId)
                 .orElseThrow(() -> new ResourceNotFoundException("RefundRecord", refundId));
         return toRefundResponse(refund);
-    }
-
-    private void sendRefundNotification(RefundRecord refund) {
-        NotificationRequest request = new NotificationRequest();
-        request.setBizType("REFUND_COMPLETED");
-        request.setBizId(refund.getRefundNo());
-        request.setChannel(NotificationChannel.EMAIL);
-        request.setTemplateCode("refund_completed");
-        request.setVariables(Map.of(
-                "refundNo", refund.getRefundNo(),
-                "amount", refund.getRefundAmount().toString()
-        ));
-        request.setIdempotencyKey("refund_notify_" + refund.getRefundNo());
-        notificationService.send(request);
     }
 
     private String generateRefundNo() {

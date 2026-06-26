@@ -13,7 +13,7 @@ import java.time.Duration;
 /**
  * Configuration for the Caffeine Cache used to store shopping carts.
  *
- * <p>Creates a {@link Cache} bean with 7-day TTL, keyed by userId.
+ * <p>Creates a {@link Cache} bean with 7-day TTL, keyed by cart:{userId}.
  */
 @Configuration
 public class CartCacheConfig {
@@ -31,11 +31,11 @@ public class CartCacheConfig {
     private static final long MAX_CART_ENTRIES = 10_000;
 
     /**
-     * Creates a Caffeine Cache bean for storing {@link CartData} keyed by userId.
+     * Creates a Caffeine Cache bean for storing {@link CartData} keyed by cart:{userId}.
      * TTL is 7 days, after which entries are automatically evicted.
      */
     @Bean
-    public Cache<Long, CartData> cartCache() {
+    public Cache<String, CartData> cartCache() {
         log.info("Initializing cart cache with TTL={}, maxSize={}", CART_TTL, MAX_CART_ENTRIES);
         return Caffeine.newBuilder()
                 .expireAfterWrite(CART_TTL)

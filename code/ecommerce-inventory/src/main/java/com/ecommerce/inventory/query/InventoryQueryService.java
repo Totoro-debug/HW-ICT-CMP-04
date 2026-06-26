@@ -7,9 +7,6 @@ import java.util.List;
  * Other modules (order, cart, product, etc.) use this interface
  * to query inventory data without depending on inventory JPA entities or repositories.
  *
- * <p>This interface intentionally reuses {@link com.ecommerce.product.query.StockSummaryDto}
- * as the return type for {@link #getStockSummary(Long)} so that a single implementation
- * can satisfy both this interface and {@link com.ecommerce.product.query.InventoryQueryService}.
  */
 public interface InventoryQueryService {
 
@@ -19,7 +16,7 @@ public interface InventoryQueryService {
      * @param skuId the SKU id
      * @return the stock summary
      */
-    com.ecommerce.product.query.StockSummaryDto getStockSummary(Long skuId);
+    StockSummaryDto getStockSummary(Long skuId);
 
     /**
      * Checks whether the requested quantity is available for the given SKU.

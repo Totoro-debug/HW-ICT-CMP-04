@@ -1,14 +1,12 @@
 package com.ecommerce.user.service;
 
 import com.ecommerce.common.exception.ConflictException;
-import com.ecommerce.common.notification.LocalNotificationService;
-import com.ecommerce.common.notification.NotificationChannel;
-import com.ecommerce.common.notification.NotificationRequest;
 import com.ecommerce.user.dto.RegisterRequest;
 import com.ecommerce.user.dto.UserResponse;
 import com.ecommerce.user.entity.User;
 import com.ecommerce.user.entity.UserRole;
 import com.ecommerce.user.entity.UserStatus;
+import com.ecommerce.user.event.UserRegisteredEvent;
 import com.ecommerce.user.repository.UserRepository;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -17,6 +15,7 @@ import org.mockito.ArgumentCaptor;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -36,7 +35,7 @@ class UserRegisterServiceTest {
     private BCryptPasswordEncoder passwordEncoder;
 
     @Mock
-    private LocalNotificationService notificationService;
+    private ApplicationEventPublisher eventPublisher;
 
     @InjectMocks
     private UserRegisterService userRegisterService;
@@ -119,8 +118,8 @@ class UserRegisterServiceTest {
     }
 
     @Test
-    @DisplayName("sends welcome notification via LocalNotificationService after registration")
-    void testRegister_notificationSent() {
+    @DisplayName("publishes UserRegisteredEvent after registration")
+    void testRegister_userRegisteredEventPublished() {
         RegisterRequest request = validRequest();
         when(userRepository.existsByEmail(request.getEmail())).thenReturn(false);
         when(userRepository.existsByPhone(request.getPhone())).thenReturn(false);
@@ -136,17 +135,14 @@ class UserRegisterServiceTest {
 
         userRegisterService.register(request);
 
-        ArgumentCaptor<NotificationRequest> notificationCaptor =
-                ArgumentCaptor.forClass(NotificationRequest.class);
-        verify(notificationService).send(notificationCaptor.capture());
+        ArgumentCaptor<UserRegisteredEvent> eventCaptor =
+                ArgumentCaptor.forClass(UserRegisteredEvent.class);
+        verify(eventPublisher).publishEvent(eventCaptor.capture());
 
-        NotificationRequest notification = notificationCaptor.getValue();
-        assertThat(notification.getBizType()).isEqualTo("USER_REGISTER");
-        assertThat(notification.getBizId()).isEqualTo("1");
-        assertThat(notification.getReceiver()).isEqualTo("newuser@example.com");
-        assertThat(notification.getChannel()).isEqualTo(NotificationChannel.EMAIL);
-        assertThat(notification.getTemplateCode()).isEqualTo("WELCOME");
-        assertThat(notification.getVariables()).containsEntry("nickname", "NewUser");
+        UserRegisteredEvent event = eventCaptor.getValue();
+        assertThat(event.getUserId()).isEqualTo(1L);
+        assertThat(event.getEmail()).isEqualTo("newuser@example.com");
+        assertThat(event.getNickname()).isEqualTo("NewUser");
     }
 
     @Test

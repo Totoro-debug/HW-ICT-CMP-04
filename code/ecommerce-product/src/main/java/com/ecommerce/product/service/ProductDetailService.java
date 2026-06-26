@@ -1,11 +1,14 @@
 package com.ecommerce.product.service;
 
+import com.ecommerce.common.exception.BusinessException;
 import com.ecommerce.common.exception.ResourceNotFoundException;
 import com.ecommerce.product.dto.ProductDetailResponse;
 import com.ecommerce.product.entity.Brand;
 import com.ecommerce.product.entity.Category;
 import com.ecommerce.product.entity.ProductSku;
 import com.ecommerce.product.entity.ProductSpu;
+import com.ecommerce.product.entity.SkuStatus;
+import com.ecommerce.product.query.InventoryQueryService;
 import com.ecommerce.product.repository.BrandRepository;
 import com.ecommerce.product.repository.CategoryRepository;
 import com.ecommerce.product.repository.ProductSkuRepository;
@@ -35,21 +38,23 @@ public class ProductDetailService {
     private final BrandRepository brandRepository;
     private final CategoryRepository categoryRepository;
     private final ObjectMapper objectMapper;
-
-    private final StockInfoFetcher stockInfoFetcher;
+    private final InventoryQueryService inventoryQueryService;
+    private final ProductDetailCacheService productDetailCacheService;
 
     public ProductDetailService(ProductSkuRepository skuRepository,
                                 ProductSpuRepository spuRepository,
                                 BrandRepository brandRepository,
                                 CategoryRepository categoryRepository,
                                 ObjectMapper objectMapper,
-                                StockInfoFetcher stockInfoFetcher) {
+                                InventoryQueryService inventoryQueryService,
+                                ProductDetailCacheService productDetailCacheService) {
         this.skuRepository = skuRepository;
         this.spuRepository = spuRepository;
         this.brandRepository = brandRepository;
         this.categoryRepository = categoryRepository;
         this.objectMapper = objectMapper;
-        this.stockInfoFetcher = stockInfoFetcher;
+        this.inventoryQueryService = inventoryQueryService;
+        this.productDetailCacheService = productDetailCacheService;
     }
 
     /**
@@ -57,8 +62,21 @@ public class ProductDetailService {
      */
     @Transactional(readOnly = true)
     public ProductDetailResponse getProductDetail(Long skuId) {
+        return productDetailCacheService.get(skuId)
+                .orElseGet(() -> {
+                    ProductDetailResponse response = buildProductDetail(skuId);
+                    productDetailCacheService.put(skuId, response);
+                    return response;
+                });
+    }
+
+    private ProductDetailResponse buildProductDetail(Long skuId) {
         ProductSku sku = skuRepository.findById(skuId)
                 .orElseThrow(() -> new ResourceNotFoundException("ProductSku", skuId));
+
+        if (sku.getStatus() != SkuStatus.ON_SHELF) {
+            throw new BusinessException("PRODUCT_NOT_FOR_SALE", "Product SKU is not for sale: " + skuId);
+        }
 
         ProductSpu spu = spuRepository.findById(sku.getSpuId())
                 .orElseThrow(() -> new ResourceNotFoundException("ProductSpu", sku.getSpuId()));
@@ -70,28 +88,23 @@ public class ProductDetailService {
         response.setPrice(sku.getPrice());
         response.setStatus(sku.getStatus().name());
 
-        response.setStockSummary(stockInfoFetcher.fetch(skuId));
+        response.setStockSummary(inventoryQueryService.getStockSummary(skuId));
 
         response.setSpuName(spu.getName());
 
-        // Brand name
         if (spu.getBrandId() != null) {
             brandRepository.findById(spu.getBrandId())
                     .map(Brand::getName)
                     .ifPresent(response::setBrand);
         }
 
-        // Category name
         if (spu.getCategoryId() != null) {
             categoryRepository.findById(spu.getCategoryId())
                     .map(Category::getName)
                     .ifPresent(response::setCategory);
         }
 
-        // Parse specs from JSON
         response.setSpecs(parseSpecs(sku.getSpecs()));
-
-        // Parse images from JSON
         response.setImages(parseImages(spu.getImages()));
 
         log.debug("Built product detail for skuId={}", skuId);

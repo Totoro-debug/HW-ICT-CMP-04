@@ -11,8 +11,9 @@ import com.ecommerce.cart.dto.UpdateCartItemRequest;
 import com.ecommerce.common.exception.BusinessException;
 import com.ecommerce.common.exception.ResourceNotFoundException;
 import com.ecommerce.common.integration.PointsRedeemEstimator;
-import com.ecommerce.common.integration.PromotionDiscountCalculator;
 import com.ecommerce.product.query.SkuDto;
+import com.ecommerce.promotion.dto.PromotionCalculateResponse;
+import com.ecommerce.promotion.service.PromotionCalculationService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -45,7 +46,7 @@ class CartServiceTest {
     private CartValidationService cartValidationService;
 
     @Mock
-    private PromotionDiscountCalculator promotionDiscountCalculator;
+    private PromotionCalculationService promotionCalculationService;
 
     @Mock
     private PointsRedeemEstimator pointsRedeemEstimator;
@@ -60,7 +61,7 @@ class CartServiceTest {
     @BeforeEach
     void setUp() {
         cartService = new CartService(cartCacheManager, cartValidationService,
-                promotionDiscountCalculator, pointsRedeemEstimator);
+                promotionCalculationService, pointsRedeemEstimator);
         skuDto = new SkuDto();
         skuDto.setSkuId(SKU_ID);
         skuDto.setName("Test SKU");
@@ -182,7 +183,9 @@ class CartServiceTest {
         when(cartValidationService.validateSku(SKU_ID)).thenReturn(skuDto);
         doNothing().when(cartValidationService).validateStock(SKU_ID, 2);
 
-        doReturn(new BigDecimal("10.00")).when(promotionDiscountCalculator).calculateDiscount(any(), any(), any());
+        PromotionCalculateResponse promotionResponse = new PromotionCalculateResponse();
+        promotionResponse.setTotalDiscount(new BigDecimal("10.00"));
+        doReturn(promotionResponse).when(promotionCalculationService).calculate(any());
         doReturn(500).when(pointsRedeemEstimator).estimateRedeemPoints(any(), any());
 
         CartEstimateRequest request = new CartEstimateRequest();

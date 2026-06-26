@@ -49,7 +49,6 @@ public class PaymentCallbackService {
         log.info("Processing payment callback: paymentNo={}, status={}",
                 request.getPaymentNo(), request.getStatus());
 
-        // Idempotency check: if same callback sequence already processed
         if (request.getCallbackSequence() != null) {
             PaymentRecord existing = paymentRecordRepository
                     .findByPaymentNo(request.getPaymentNo())
@@ -112,10 +111,7 @@ public class PaymentCallbackService {
         payment.setCallbackData("Callback processed at " + LocalDateTime.now());
         paymentRecordRepository.save(payment);
 
-        // Update order payment status
         orderPaymentStatusUpdater.markAsPaid(payment.getOrderId(), payment.getPaymentNo());
-
-        // Confirm payment — triggers logistics, loyalty, notification
         paymentService.confirmPayment(payment);
 
         log.info("Payment callback processed successfully: paymentNo={}", request.getPaymentNo());
@@ -128,7 +124,7 @@ public class PaymentCallbackService {
                         "PaymentRecord", request.getPaymentNo()));
 
         if (payment.getStatus() == PaymentStatus.SUCCESS) {
-            throw new BusinessException("PAYMENT_STATUS_CONFLICT",
+            throw new BusinessException("CONFLICT",
                     "Cannot mark as FAILED when already SUCCESS");
         }
 
@@ -137,7 +133,6 @@ public class PaymentCallbackService {
         payment.setCallbackData("Failed callback at " + LocalDateTime.now());
         paymentRecordRepository.save(payment);
 
-        // Update order payment status
         orderPaymentStatusUpdater.markPaymentFailed(payment.getOrderId());
 
         log.info("Payment callback failed: paymentNo={}", request.getPaymentNo());

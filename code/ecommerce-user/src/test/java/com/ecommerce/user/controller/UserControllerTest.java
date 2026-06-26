@@ -1,5 +1,6 @@
 package com.ecommerce.user.controller;
 
+import com.ecommerce.user.cache.UserRoleCacheManager;
 import com.ecommerce.user.dto.LoginRequest;
 import com.ecommerce.user.dto.LoginResponse;
 import com.ecommerce.user.dto.RegisterRequest;
@@ -62,6 +63,9 @@ class UserControllerTest {
 
     @MockBean
     private UserRepository userRepository;
+
+    @MockBean
+    private UserRoleCacheManager userRoleCacheManager;
 
     @AfterEach
     void clearSecurityContext() {

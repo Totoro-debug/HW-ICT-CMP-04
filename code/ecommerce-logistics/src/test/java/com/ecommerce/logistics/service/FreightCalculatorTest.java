@@ -32,7 +32,7 @@ class FreightCalculatorTest {
     @BeforeEach
     void setUp() {
         lenient().when(freightTemplateRepository.findAll()).thenReturn(Collections.emptyList());
-        calculator = new FreightCalculator(freightTemplateRepository);
+        calculator = new FreightCalculator(freightTemplateRepository, new FreightTemplateCache());
     }
 
     /**

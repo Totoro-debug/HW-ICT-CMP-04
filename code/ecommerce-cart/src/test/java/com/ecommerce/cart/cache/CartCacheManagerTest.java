@@ -15,7 +15,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 class CartCacheManagerTest {
 
     private CartCacheManager cartCacheManager;
-    private Cache<Long, CartData> cache;
+    private Cache<String, CartData> cache;
 
     private static final Long USER_ID = 1L;
 
@@ -57,7 +57,7 @@ class CartCacheManagerTest {
     @DisplayName("cache TTL evicts entries after expiration period")
     void testCacheExpiry_ttl7days() throws InterruptedException {
         // Use a short TTL to verify the expiry mechanism works
-        Cache<Long, CartData> shortTtlCache = Caffeine.newBuilder()
+        Cache<String, CartData> shortTtlCache = Caffeine.newBuilder()
                 .expireAfterWrite(Duration.ofMillis(200))
                 .maximumSize(100)
                 .build();

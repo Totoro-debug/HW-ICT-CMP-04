@@ -34,7 +34,7 @@ public class OrderValidator {
      */
     public void validateQuantity(int quantity) {
         if (quantity <= 0) {
-            throw new BusinessException("ORDER_INVALID_QUANTITY",
+            throw new BusinessException("VALIDATION_FAILED",
                     "Order item quantity must be positive, got: " + quantity);
         }
     }
@@ -44,7 +44,7 @@ public class OrderValidator {
      */
     public void validateItemsCount(int count) {
         if (count <= 0) {
-            throw new BusinessException("ORDER_EMPTY_ITEMS",
+            throw new BusinessException("VALIDATION_FAILED",
                     "Order must contain at least one item");
         }
     }

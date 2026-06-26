@@ -2,7 +2,6 @@ package com.ecommerce.payment.service;
 
 import com.ecommerce.common.exception.BusinessException;
 import com.ecommerce.common.exception.ValidationException;
-import com.ecommerce.order.entity.OrderStatus;
 import com.ecommerce.order.query.OrderDto;
 import com.ecommerce.payment.dto.PayRequest;
 import com.ecommerce.payment.entity.PaymentMethod;
@@ -32,16 +31,14 @@ public class PaymentValidator {
      * Validates a payment request.
      */
     public void validate(PayRequest request, OrderDto order) {
-        // Validate order exists
         if (order == null) {
-            throw new BusinessException("ORDER_NOT_FOUND",
+            throw new BusinessException("RESOURCE_NOT_FOUND",
                     "Order not found: " + request.getOrderId());
         }
 
-        // Validate order status is payable
-        OrderStatus status = order.getStatus();
-        if (status != OrderStatus.CREATED && status != OrderStatus.PAYING) {
-            throw new BusinessException("ORDER_STATUS_INVALID",
+        String status = order.getStatus();
+        if (!"CREATED".equals(status) && !"PAYING".equals(status)) {
+            throw new BusinessException("ORDER_STATUS_CONFLICT",
                     "Order " + request.getOrderId() + " is not in a payable status: " + status);
         }
 
@@ -57,7 +54,6 @@ public class PaymentValidator {
                     "Payment amount must equal order payable amount");
         }
 
-        // Validate payment method
         if (request.getMethod() == null) {
             throw new ValidationException("method", "Payment method is required");
         }
@@ -68,10 +64,9 @@ public class PaymentValidator {
                     "Unsupported payment method: " + request.getMethod());
         }
 
-        // Check for duplicate successful payment
         if (paymentRecordRepository.existsByOrderIdAndStatus(
                 request.getOrderId(), PaymentStatus.SUCCESS)) {
-            throw new BusinessException("PAYMENT_DUPLICATE",
+            throw new BusinessException("CONFLICT",
                     "Order " + request.getOrderId() + " already has a successful payment");
         }
 

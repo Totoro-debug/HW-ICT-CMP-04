@@ -1,9 +1,6 @@
 package com.ecommerce.payment.service;
 
-import com.ecommerce.common.event.DomainEventPublisher;
 import com.ecommerce.common.exception.BusinessException;
-import com.ecommerce.common.notification.LocalNotificationService;
-import com.ecommerce.common.notification.NotificationRequest;
 import com.ecommerce.payment.dto.RefundApplyRequest;
 import com.ecommerce.payment.dto.RefundResponse;
 import com.ecommerce.payment.dto.RefundReviewRequest;
@@ -17,26 +14,19 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
-import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
 import java.math.BigDecimal;
 import java.util.Optional;
 
-import static org.junit.jupiter.api.Assertions.*;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
-/**
- * Tests for {@link RefundService}.
- *
- * <p>approveRefund() directly sets COMPLETED status without
- * and warehouse acceptance workflow.
- * PENDING_REVIEW -> APPROVED -> WAITING_WAREHOUSE_ACCEPT -> WAREHOUSE_ACCEPTED -> COMPLETED.
- * The current code does: PENDING_REVIEW -> APPROVED -> COMPLETED (skipping warehouse).
- */
 @ExtendWith(MockitoExtension.class)
 class RefundServiceTest {
 
@@ -50,10 +40,7 @@ class RefundServiceTest {
     private RefundCalculator refundCalculator;
 
     @Mock
-    private DomainEventPublisher eventPublisher;
-
-    @Mock
-    private LocalNotificationService notificationService;
+    private RefundStageService refundStageService;
 
     private RefundService refundService;
 
@@ -63,138 +50,128 @@ class RefundServiceTest {
                 refundRecordRepository,
                 paymentRecordRepository,
                 refundCalculator,
-                eventPublisher,
-                notificationService
+                refundStageService
         );
     }
 
-    // ---- testApproveRefund_directlyCompletes ----
-
     @Test
-    @DisplayName("approveRefund directly sets COMPLETED, skipping warehouse")
-    void testApproveRefund_directlyCompletes() {
-        // Given: a refund in PENDING_REVIEW
+    @DisplayName("review approval moves refund to WAITING_WAREHOUSE_ACCEPT")
+    void testReviewRefund_movesToWaitingWarehouseAccept() {
         RefundRecord refund = new RefundRecord();
         refund.setId(1L);
         refund.setRefundNo("RF001");
-        refund.setPaymentNo("PAY001");
-        refund.setOrderId(10L);
-        refund.setUserId(100L);
-        refund.setRefundAmount(new BigDecimal("97.00"));
         refund.setStatus(RefundStatus.PENDING_REVIEW);
         refund.setReason("Changed mind");
-
-        PaymentRecord payment = new PaymentRecord();
-        payment.setPaymentNo("PAY001");
-        payment.setOrderId(10L);
-        payment.setStatus(PaymentStatus.SUCCESS);
-        payment.setPaidAmount(new BigDecimal("100.00"));
 
         when(refundRecordRepository.findById(1L)).thenReturn(Optional.of(refund));
         when(refundRecordRepository.save(any(RefundRecord.class)))
                 .thenAnswer(invocation -> invocation.getArgument(0));
+
         RefundReviewRequest reviewRequest = new RefundReviewRequest(true, "Approved by admin");
 
-        // When: admin approves the refund
         RefundResponse response = refundService.reviewRefund(1L, 999L, reviewRequest);
 
-        // Then: status is COMPLETED, NOT WAITING_WAREHOUSE_ACCEPT
-        // The approveRefund() private method calls processRefund() immediately,
-        // which sets status to COMPLETED. The warehouse acceptance step is skipped.
-        assertEquals(RefundStatus.WAITING_WAREHOUSE_ACCEPT, response.getStatus(),
-                "reviewed refund status");
-        assertNotNull(response);
+        assertEquals(RefundStatus.WAITING_WAREHOUSE_ACCEPT, response.getStatus());
+        assertEquals("Approved by admin", response.getReviewNote());
     }
-
-    // ---- testWarehouseAccept_exists_independently ----
 
     @Test
-    @DisplayName("warehouseAccept handles reviewed refund")
-    void testWarehouseAccept_exists_independently() {
-        // Given: warehouseAccept requires WAITING_WAREHOUSE_ACCEPT status
-        // Verify warehouse acceptance behavior after review.
-        // can never be called in the normal flow.
+    @DisplayName("warehouse acceptance can complete refund in separate stage")
+    void testWarehouseAccept_completesRefundWhenExecutionSucceeds() {
+        RefundRecord accepted = new RefundRecord();
+        accepted.setId(2L);
+        accepted.setRefundNo("RF002");
+        accepted.setPaymentNo("PAY002");
+        accepted.setOrderId(20L);
+        accepted.setUserId(200L);
+        accepted.setRefundAmount(new BigDecimal("97.00"));
+        accepted.setStatus(RefundStatus.WAREHOUSE_ACCEPTED);
 
-        RefundRecord refund = new RefundRecord();
-        refund.setId(2L);
-        refund.setRefundNo("RF002");
-        refund.setPaymentNo("PAY002");
-        refund.setOrderId(20L);
-        refund.setUserId(200L);
-        refund.setStatus(RefundStatus.COMPLETED); // already completed by approveRefund
+        RefundRecord completed = new RefundRecord();
+        completed.setId(2L);
+        completed.setRefundNo("RF002");
+        completed.setPaymentNo("PAY002");
+        completed.setOrderId(20L);
+        completed.setUserId(200L);
+        completed.setRefundAmount(new BigDecimal("97.00"));
+        completed.setStatus(RefundStatus.COMPLETED);
 
-        when(refundRecordRepository.findById(2L)).thenReturn(Optional.of(refund));
+        when(refundStageService.acceptWarehouse(2L, 999L)).thenReturn(accepted);
+        when(refundStageService.completeRefund(2L)).thenReturn(completed);
 
-        // When/Then: calling warehouseAccept on a COMPLETED refund throws
-        // because it requires WAITING_WAREHOUSE_ACCEPT status
-        BusinessException ex = assertThrows(BusinessException.class,
-                () -> refundService.warehouseAccept(2L, 999L));
-        assertEquals("REFUND_WAITING_WAREHOUSE_ACCEPT", ex.getCode());
+        RefundResponse response = refundService.warehouseAccept(2L, 999L);
+
+        assertEquals(RefundStatus.COMPLETED, response.getStatus());
+        verify(refundStageService).acceptWarehouse(2L, 999L);
+        verify(refundStageService).completeRefund(2L);
     }
 
-    // ---- testApplyRefund_createsRefundRecord ----
+    @Test
+    @DisplayName("warehouse acceptance stays committed when refund execution fails")
+    void testWarehouseAccept_keepsAcceptedStatusWhenExecutionFails() {
+        RefundRecord accepted = new RefundRecord();
+        accepted.setId(3L);
+        accepted.setRefundNo("RF003");
+        accepted.setPaymentNo("PAY003");
+        accepted.setOrderId(30L);
+        accepted.setUserId(300L);
+        accepted.setRefundAmount(new BigDecimal("88.00"));
+        accepted.setStatus(RefundStatus.WAREHOUSE_ACCEPTED);
+
+        when(refundStageService.acceptWarehouse(3L, 1000L)).thenReturn(accepted);
+        when(refundStageService.completeRefund(3L))
+                .thenThrow(new BusinessException("CONFLICT", "refund gateway temporarily unavailable"));
+
+        RefundResponse response = refundService.warehouseAccept(3L, 1000L);
+
+        assertEquals(RefundStatus.WAREHOUSE_ACCEPTED, response.getStatus());
+    }
 
     @Test
     @DisplayName("applyRefund creates a refund record in PENDING_REVIEW status")
     void testApplyRefund_createsRefundRecord() {
-        // Given: a successful payment exists
         PaymentRecord payment = new PaymentRecord();
-        payment.setPaymentNo("PAY003");
-        payment.setOrderId(30L);
+        payment.setPaymentNo("PAY004");
+        payment.setOrderId(40L);
         payment.setPaidAmount(new BigDecimal("200.00"));
         payment.setStatus(PaymentStatus.SUCCESS);
 
-        when(paymentRecordRepository.findByPaymentNo("PAY003"))
+        when(paymentRecordRepository.findByPaymentNo("PAY004"))
                 .thenReturn(Optional.of(payment));
         when(refundCalculator.calculate(new BigDecimal("200.00")))
                 .thenReturn(new BigDecimal("195.00"));
         when(refundRecordRepository.save(any(RefundRecord.class)))
                 .thenAnswer(invocation -> invocation.getArgument(0));
 
-        RefundApplyRequest request = new RefundApplyRequest(30L, "PAY003", "Defective item");
+        RefundApplyRequest request = new RefundApplyRequest(40L, "PAY004", "Defective item");
 
-        // When
         RefundResponse response = refundService.applyRefund(100L, request);
 
-        // Then
         assertNotNull(response);
-        assertEquals("PAY003", response.getPaymentNo());
-        assertEquals(30L, response.getOrderId());
+        assertEquals("PAY004", response.getPaymentNo());
+        assertEquals(40L, response.getOrderId());
         assertEquals(100L, response.getUserId());
         assertEquals(RefundStatus.PENDING_REVIEW, response.getStatus());
         assertEquals("Defective item", response.getReason());
         assertNotNull(response.getRefundNo());
     }
 
-    // ---- testProcessRefund_calculatesCorrectAmount ----
-
     @Test
-    @DisplayName("processRefund calculates amount using RefundCalculator formula")
-    void testProcessRefund_calculatesCorrectAmount() {
-        // Given: a successful payment of 150.00
+    @DisplayName("applyRefund rejects non-success payment with CONFLICT")
+    void testApplyRefund_rejectsNonSuccessPayment() {
         PaymentRecord payment = new PaymentRecord();
-        payment.setPaymentNo("PAY004");
-        payment.setOrderId(40L);
-        payment.setPaidAmount(new BigDecimal("150.00"));
-        payment.setStatus(PaymentStatus.SUCCESS);
+        payment.setPaymentNo("PAY005");
+        payment.setOrderId(50L);
+        payment.setPaidAmount(new BigDecimal("100.00"));
+        payment.setStatus(PaymentStatus.PENDING);
 
-        // RefundCalculator formula: refund = 150.00 * 0.98 - 1.00 = 146.00
-        BigDecimal expectedRefundAmount = new BigDecimal("146.00");
-
-        when(paymentRecordRepository.findByPaymentNo("PAY004"))
+        when(paymentRecordRepository.findByPaymentNo("PAY005"))
                 .thenReturn(Optional.of(payment));
-        when(refundCalculator.calculate(new BigDecimal("150.00")))
-                .thenReturn(expectedRefundAmount);
-        when(refundRecordRepository.save(any(RefundRecord.class)))
-                .thenAnswer(invocation -> invocation.getArgument(0));
 
-        RefundApplyRequest request = new RefundApplyRequest(40L, "PAY004", "Wrong size");
+        RefundApplyRequest request = new RefundApplyRequest(50L, "PAY005", "No longer needed");
 
-        // When
-        RefundResponse response = refundService.applyRefund(100L, request);
-
-        // Then: the refund amount comes from RefundCalculator
-        assertEquals(expectedRefundAmount, response.getRefundAmount(),
-                "RefundCalculator applies paid * 0.98 - 1.00");
+        BusinessException ex = assertThrows(BusinessException.class,
+                () -> refundService.applyRefund(101L, request));
+        assertEquals("CONFLICT", ex.getCode());
     }
 }

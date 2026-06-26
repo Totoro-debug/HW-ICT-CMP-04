@@ -60,7 +60,7 @@ class PromotionCalculationServiceTest {
     private CouponTemplateRepository couponTemplateRepository;
 
     @InjectMocks
-    private PromotionCalculationService promotionCalculationService;
+    private PromotionCalculationServiceImpl promotionCalculationService;
 
     // -----------------------------------------------------------------------
     // Shared test data

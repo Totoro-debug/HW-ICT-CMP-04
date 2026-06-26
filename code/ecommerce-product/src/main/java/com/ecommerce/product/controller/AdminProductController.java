@@ -1,7 +1,9 @@
 package com.ecommerce.product.controller;
 
 import com.ecommerce.product.dto.SkuCreateRequest;
+import com.ecommerce.product.dto.SkuResponse;
 import com.ecommerce.product.dto.SpuCreateRequest;
+import com.ecommerce.product.dto.SpuResponse;
 import com.ecommerce.product.entity.ProductSku;
 import com.ecommerce.product.entity.ProductSpu;
 import com.ecommerce.product.service.SkuService;
@@ -41,20 +43,20 @@ public class AdminProductController {
      * Creates a new SPU.
      */
     @PostMapping("/spu")
-    public ResponseEntity<ProductSpu> createSpu(@Valid @RequestBody SpuCreateRequest request) {
+    public ResponseEntity<SpuResponse> createSpu(@Valid @RequestBody SpuCreateRequest request) {
         log.info("Admin creating SPU: spuCode={}", request.getSpuCode());
         ProductSpu spu = spuService.createSpu(request);
-        return ResponseEntity.status(HttpStatus.CREATED).body(spu);
+        return ResponseEntity.status(HttpStatus.CREATED).body(SpuResponse.from(spu));
     }
 
     /**
      * Creates a new SKU under an existing SPU.
      */
     @PostMapping("/sku")
-    public ResponseEntity<ProductSku> createSku(@Valid @RequestBody SkuCreateRequest request) {
+    public ResponseEntity<SkuResponse> createSku(@Valid @RequestBody SkuCreateRequest request) {
         log.info("Admin creating SKU: skuCode={}, spuId={}", request.getSkuCode(), request.getSpuId());
         ProductSku sku = skuService.createSku(request);
-        return ResponseEntity.status(HttpStatus.CREATED).body(sku);
+        return ResponseEntity.status(HttpStatus.CREATED).body(SkuResponse.from(sku));
     }
 
     /**

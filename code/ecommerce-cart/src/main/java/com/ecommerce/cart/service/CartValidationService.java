@@ -2,10 +2,10 @@ package com.ecommerce.cart.service;
 
 import com.ecommerce.common.exception.BusinessException;
 import com.ecommerce.common.exception.ResourceNotFoundException;
-import com.ecommerce.product.query.InventoryQueryService;
+import com.ecommerce.inventory.query.InventoryQueryService;
+import com.ecommerce.inventory.query.StockSummaryDto;
 import com.ecommerce.product.query.ProductQueryService;
 import com.ecommerce.product.query.SkuDto;
-import com.ecommerce.product.query.StockSummaryDto;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
@@ -78,7 +78,7 @@ public class CartValidationService {
      */
     public void validateQuantity(int quantity) {
         if (quantity < 1 || quantity > MAX_QUANTITY) {
-            throw new BusinessException("INVALID_QUANTITY",
+            throw new BusinessException("VALIDATION_FAILED",
                     "Quantity must be between 1 and " + MAX_QUANTITY + ", got: " + quantity);
         }
     }
@@ -92,7 +92,7 @@ public class CartValidationService {
      */
     public void validateCartSize(int currentItemCount, int newItemTypesToAdd) {
         if (currentItemCount + newItemTypesToAdd > MAX_ITEM_TYPES) {
-            throw new BusinessException("CART_FULL",
+            throw new BusinessException("VALIDATION_FAILED",
                     "Cart can contain at most " + MAX_ITEM_TYPES + " distinct items. "
                             + "Current: " + currentItemCount + ", adding: " + newItemTypesToAdd);
         }

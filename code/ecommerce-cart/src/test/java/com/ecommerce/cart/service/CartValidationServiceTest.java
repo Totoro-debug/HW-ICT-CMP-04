@@ -2,10 +2,10 @@ package com.ecommerce.cart.service;
 
 import com.ecommerce.common.exception.BusinessException;
 import com.ecommerce.common.exception.ResourceNotFoundException;
-import com.ecommerce.product.query.InventoryQueryService;
+import com.ecommerce.inventory.query.InventoryQueryService;
+import com.ecommerce.inventory.query.StockSummaryDto;
 import com.ecommerce.product.query.ProductQueryService;
 import com.ecommerce.product.query.SkuDto;
-import com.ecommerce.product.query.StockSummaryDto;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -136,33 +136,33 @@ class CartValidationServiceTest {
     @DisplayName("validateQuantity throws BusinessException when quantity is 0")
     void testValidateQuantity_zero_throwsException() {
         // BusinessException message: "Quantity must be between 1 and 999, got: <qty>"
-        // BusinessException code: "INVALID_QUANTITY"
+        // BusinessException code: "VALIDATION_FAILED"
         assertThatThrownBy(() -> cartValidationService.validateQuantity(0))
                 .isInstanceOf(BusinessException.class)
                 .hasMessageContaining("Quantity must be between 1 and 999")
-                .hasFieldOrPropertyWithValue("code", "INVALID_QUANTITY");
+                .hasFieldOrPropertyWithValue("code", "VALIDATION_FAILED");
     }
 
     @Test
     @DisplayName("validateQuantity throws BusinessException when quantity exceeds 999")
     void testValidateQuantity_exceedsMax_throwsException() {
         // BusinessException message: "Quantity must be between 1 and 999, got: <qty>"
-        // BusinessException code: "INVALID_QUANTITY"
+        // BusinessException code: "VALIDATION_FAILED"
         assertThatThrownBy(() -> cartValidationService.validateQuantity(1000))
                 .isInstanceOf(BusinessException.class)
                 .hasMessageContaining("Quantity must be between 1 and 999")
-                .hasFieldOrPropertyWithValue("code", "INVALID_QUANTITY");
+                .hasFieldOrPropertyWithValue("code", "VALIDATION_FAILED");
     }
 
     @Test
     @DisplayName("validateQuantity throws BusinessException when quantity is negative")
     void testValidateQuantity_negative_throwsException() {
         // BusinessException message: "Quantity must be between 1 and 999, got: <qty>"
-        // BusinessException code: "INVALID_QUANTITY"
+        // BusinessException code: "VALIDATION_FAILED"
         assertThatThrownBy(() -> cartValidationService.validateQuantity(-1))
                 .isInstanceOf(BusinessException.class)
                 .hasMessageContaining("Quantity must be between 1 and 999")
-                .hasFieldOrPropertyWithValue("code", "INVALID_QUANTITY");
+                .hasFieldOrPropertyWithValue("code", "VALIDATION_FAILED");
     }
 
     @Test
@@ -178,10 +178,10 @@ class CartValidationServiceTest {
     @DisplayName("validateCartSize throws BusinessException when adding item exceeds max")
     void testValidateCartSize_exceedsMax_throwsException() {
         // BusinessException message: "Cart can contain at most <max> distinct items. Current: <cur>, adding: <new>"
-        // BusinessException code: "CART_FULL"
+        // BusinessException code: "VALIDATION_FAILED"
         assertThatThrownBy(() -> cartValidationService.validateCartSize(100, 1))
                 .isInstanceOf(BusinessException.class)
                 .hasMessageContaining("Cart can contain at most")
-                .hasFieldOrPropertyWithValue("code", "CART_FULL");
+                .hasFieldOrPropertyWithValue("code", "VALIDATION_FAILED");
     }
 }

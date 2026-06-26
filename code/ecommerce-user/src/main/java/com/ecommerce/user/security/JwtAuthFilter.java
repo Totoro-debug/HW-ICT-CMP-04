@@ -1,5 +1,6 @@
 package com.ecommerce.user.security;
 
+import com.ecommerce.user.cache.UserRoleCacheManager;
 import com.ecommerce.user.service.JwtTokenProvider;
 import io.jsonwebtoken.Claims;
 import io.jsonwebtoken.Jws;
@@ -17,6 +18,7 @@ import org.springframework.web.filter.OncePerRequestFilter;
 
 import java.io.IOException;
 import java.util.List;
+import java.util.Optional;
 import java.util.stream.Collectors;
 
 /**
@@ -28,9 +30,11 @@ public class JwtAuthFilter extends OncePerRequestFilter {
     private static final Logger log = LoggerFactory.getLogger(JwtAuthFilter.class);
 
     private final JwtTokenProvider jwtTokenProvider;
+    private final UserRoleCacheManager userRoleCacheManager;
 
-    public JwtAuthFilter(JwtTokenProvider jwtTokenProvider) {
+    public JwtAuthFilter(JwtTokenProvider jwtTokenProvider, UserRoleCacheManager userRoleCacheManager) {
         this.jwtTokenProvider = jwtTokenProvider;
+        this.userRoleCacheManager = userRoleCacheManager;
     }
 
     @Override
@@ -57,7 +61,13 @@ public class JwtAuthFilter extends OncePerRequestFilter {
         try {
             Jws<Claims> claims = jwtTokenProvider.validateToken(token);
             Long userId = jwtTokenProvider.getUserId(claims);
-            List<String> roles = jwtTokenProvider.getRoles(claims);
+            List<String> tokenRoles = jwtTokenProvider.getRoles(claims);
+            Optional<List<String>> cachedRoles = userRoleCacheManager.getRoles(userId);
+            List<String> roles = (cachedRoles == null ? Optional.<List<String>>empty() : cachedRoles)
+                    .orElseGet(() -> {
+                        userRoleCacheManager.putRoles(userId, tokenRoles);
+                        return tokenRoles;
+                    });
 
             List<SimpleGrantedAuthority> authorities = roles.stream()
                     .map(role -> new SimpleGrantedAuthority("ROLE_" + role))

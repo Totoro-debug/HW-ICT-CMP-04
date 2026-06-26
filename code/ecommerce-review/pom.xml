@@ -21,7 +21,7 @@
         </dependency>
         <dependency>
             <groupId>com.ecommerce</groupId>
-            <artifactId>ecommerce-loyalty</artifactId>
+            <artifactId>ecommerce-user</artifactId>
             <version>${project.version}</version>
         </dependency>
     </dependencies>

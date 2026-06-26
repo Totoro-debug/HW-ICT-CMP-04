@@ -2,7 +2,6 @@ package com.ecommerce.order.service;
 
 import com.ecommerce.common.exception.BusinessException;
 import com.ecommerce.common.exception.ResourceNotFoundException;
-import com.ecommerce.loyalty.query.AnnualConsumptionQueryService;
 import com.ecommerce.order.dto.VerifyPurchaseResponse;
 import com.ecommerce.order.entity.Order;
 import com.ecommerce.order.entity.OrderItem;
@@ -37,20 +36,23 @@ import java.util.List;
  */
 @Service
 @Transactional(readOnly = true)
-public class OrderQueryServiceImpl implements OrderQueryService, OrderPaymentStatusUpdater, AnnualConsumptionQueryService {
+public class OrderQueryServiceImpl implements OrderQueryService, OrderPaymentStatusUpdater {
 
     private static final Logger log = LoggerFactory.getLogger(OrderQueryServiceImpl.class);
 
     private final OrderRepository orderRepository;
     private final OrderItemRepository orderItemRepository;
     private final ProductQueryService productQueryService;
+    private final OrderPaymentEventHandler paymentEventHandler;
 
     public OrderQueryServiceImpl(OrderRepository orderRepository,
-                                  OrderItemRepository orderItemRepository,
-                                  ProductQueryService productQueryService) {
+                                 OrderItemRepository orderItemRepository,
+                                 ProductQueryService productQueryService,
+                                 OrderPaymentEventHandler paymentEventHandler) {
         this.orderRepository = orderRepository;
         this.orderItemRepository = orderItemRepository;
         this.productQueryService = productQueryService;
+        this.paymentEventHandler = paymentEventHandler;
     }
 
     @Override
@@ -65,10 +67,9 @@ public class OrderQueryServiceImpl implements OrderQueryService, OrderPaymentSta
         Order order = orderRepository.findById(orderId)
                 .orElseThrow(() -> new ResourceNotFoundException("Order not found: " + orderId));
 
-        // Only CREATED or PAYING orders can be paid
         if (order.getStatus() != OrderStatus.CREATED
                 && order.getStatus() != OrderStatus.PAYING) {
-            throw new BusinessException("ORDER_NOT_PAYABLE",
+            throw new BusinessException("ORDER_STATUS_CONFLICT",
                     "Order " + orderId + " is in status " + order.getStatus()
                             + " and cannot be paid");
         }
@@ -77,7 +78,6 @@ public class OrderQueryServiceImpl implements OrderQueryService, OrderPaymentSta
 
     @Override
     public VerifyPurchaseResponse verifyPurchase(Long userId, Long productId) {
-        // Find delivered/completed orders for the user and check if product was purchased
         Page<Order> orders = orderRepository.findByUserId(userId,
                 PageRequest.of(0, 200, Sort.by(Sort.Direction.DESC, "createdAt")));
 
@@ -113,58 +113,26 @@ public class OrderQueryServiceImpl implements OrderQueryService, OrderPaymentSta
     @Override
     public BigDecimal getAnnualConsumption(Long userId) {
         LocalDateTime startOfYear = LocalDate.now().withDayOfYear(1).atStartOfDay();
-        return orderRepository.sumPayableAmountByUserIdAndStatusInAndPaidAtAfter(
+        BigDecimal total = orderRepository.sumPayableAmountByUserIdAndStatusInAndPaidAtAfter(
                 userId,
                 List.of(OrderStatus.PAID, OrderStatus.SHIPPED, OrderStatus.DELIVERED, OrderStatus.COMPLETED),
                 startOfYear);
+        return total != null ? total : BigDecimal.ZERO;
     }
-
-    // ======================== OrderPaymentStatusUpdater ========================
 
     @Override
     @Transactional
     public void markAsPaid(Long orderId, String paymentNo) {
         Order order = orderRepository.findById(orderId)
                 .orElseThrow(() -> new ResourceNotFoundException("Order not found: " + orderId));
-
-        if (order.getStatus() != OrderStatus.PAYING && order.getStatus() != OrderStatus.CREATED) {
-            throw new BusinessException("ORDER_INVALID_STATUS",
-                    "Cannot mark order " + orderId + " as paid when status is "
-                            + order.getStatus());
-        }
-
-        OrderStatus fromStatus = order.getStatus();
-
-        order.setStatus(OrderStatus.PAID);
-        order.setPaymentNo(paymentNo);
-        order.setPaidAt(LocalDateTime.now());
-        order.setPaidAmount(order.getPayableAmount());
-        orderRepository.save(order);
-
-        log.info("Order {} marked as paid, paymentNo={}, amount={}",
-                orderId, paymentNo, order.getPayableAmount());
+        paymentEventHandler.handlePaymentSuccess(orderId, paymentNo, order.getPayableAmount());
     }
 
     @Override
     @Transactional
     public void markPaymentFailed(Long orderId) {
-        Order order = orderRepository.findById(orderId)
-                .orElseThrow(() -> new ResourceNotFoundException("Order not found: " + orderId));
-
-        if (order.getStatus() != OrderStatus.PAYING) {
-            log.warn("Order {} is not in PAYING status, status is {} — ignoring payment failure",
-                    orderId, order.getStatus());
-            return;
-        }
-
-        // Revert to CREATED so the user can try paying again
-        order.setStatus(OrderStatus.CREATED);
-        orderRepository.save(order);
-
-        log.info("Order {} payment failed, reverted to CREATED", orderId);
+        paymentEventHandler.handlePaymentFailure(orderId);
     }
-
-    // ======================== Private helpers ========================
 
     private OrderDto toDto(Order order) {
         OrderDto dto = new OrderDto();
@@ -172,7 +140,7 @@ public class OrderQueryServiceImpl implements OrderQueryService, OrderPaymentSta
         dto.setOrderNo(order.getOrderNo());
         dto.setUserId(order.getUserId());
         dto.setExternalOrderNo(order.getExternalOrderNo());
-        dto.setStatus(order.getStatus());
+        dto.setStatus(order.getStatus() != null ? order.getStatus().name() : null);
         dto.setItemTotal(order.getItemTotal());
         dto.setShippingFee(order.getShippingFee());
         dto.setPackagingFee(order.getPackagingFee());

@@ -1,6 +1,7 @@
 package com.ecommerce.loyalty.event;
 
 import com.ecommerce.loyalty.service.LoyaltyPointService;
+import com.ecommerce.common.event.ReviewApprovedEvent;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.context.event.EventListener;

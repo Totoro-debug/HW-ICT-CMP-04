@@ -1,7 +1,7 @@
 package com.ecommerce.app.controller;
 
-import com.ecommerce.common.event.FailedEventRecord;
-import com.ecommerce.common.event.FailedEventRecordRepository;
+import com.ecommerce.common.event.FailedEventRecordItem;
+import com.ecommerce.common.event.FailedEventRecordQueryService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.http.ResponseEntity;
@@ -16,10 +16,10 @@ public class EventFailureAdminController {
 
     private static final Logger log = LoggerFactory.getLogger(EventFailureAdminController.class);
 
-    private final FailedEventRecordRepository failedEventRecordRepository;
+    private final FailedEventRecordQueryService failedEventRecordQueryService;
 
-    public EventFailureAdminController(FailedEventRecordRepository failedEventRecordRepository) {
-        this.failedEventRecordRepository = failedEventRecordRepository;
+    public EventFailureAdminController(FailedEventRecordQueryService failedEventRecordQueryService) {
+        this.failedEventRecordQueryService = failedEventRecordQueryService;
     }
 
     @GetMapping("/failures")
@@ -27,14 +27,7 @@ public class EventFailureAdminController {
             @RequestParam(required = false) String eventType) {
         log.info("Querying event failures, eventType={}", eventType);
 
-        List<FailedEventRecord> records;
-        if (eventType != null && !eventType.isBlank()) {
-            records = failedEventRecordRepository.findAll().stream()
-                    .filter(r -> eventType.equals(r.getEventType()))
-                    .toList();
-        } else {
-            records = failedEventRecordRepository.findAll();
-        }
+        List<FailedEventRecordItem> records = failedEventRecordQueryService.findFailures(eventType);
 
         return ResponseEntity.ok(Map.of(
                 "count", records.size(),

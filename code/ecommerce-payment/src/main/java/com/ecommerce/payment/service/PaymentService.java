@@ -93,9 +93,10 @@ public class PaymentService {
         log.info("Confirming payment: paymentNo={}, orderId={}",
                 payment.getPaymentNo(), payment.getOrderId());
 
+        OrderDto order = orderQueryService.getOrder(payment.getOrderId());
         PaymentSucceededEvent event = new PaymentSucceededEvent(
                 this, payment.getPaymentNo(), payment.getOrderId(),
-                null, payment.getPaidAmount());
+                order.getUserId(), payment.getPaidAmount());
         eventPublisher.publish(event);
 
         log.info("Payment confirmed event published: paymentNo={}", payment.getPaymentNo());

@@ -64,7 +64,7 @@ public class ProductIntegrationService {
         }
 
         if (!errors.isEmpty()) {
-            throw new BusinessException("PRODUCT_VALIDATION_FAILED",
+            throw new BusinessException("PRODUCT_NOT_FOR_SALE",
                     "One or more products are not available: " + String.join("; ", errors));
         }
 

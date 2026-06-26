@@ -1,23 +1,19 @@
 package com.ecommerce.user.service;
 
 import com.ecommerce.common.exception.ConflictException;
-import com.ecommerce.common.notification.LocalNotificationService;
-import com.ecommerce.common.notification.NotificationChannel;
-import com.ecommerce.common.notification.NotificationRequest;
 import com.ecommerce.user.dto.RegisterRequest;
 import com.ecommerce.user.dto.UserResponse;
 import com.ecommerce.user.entity.User;
 import com.ecommerce.user.entity.UserRole;
 import com.ecommerce.user.entity.UserStatus;
+import com.ecommerce.user.event.UserRegisteredEvent;
 import com.ecommerce.user.repository.UserRepository;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
-
-import java.util.HashMap;
-import java.util.Map;
 
 /**
  * Handles user registration.
@@ -29,14 +25,14 @@ public class UserRegisterService {
 
     private final UserRepository userRepository;
     private final BCryptPasswordEncoder passwordEncoder;
-    private final LocalNotificationService notificationService;
+    private final ApplicationEventPublisher eventPublisher;
 
     public UserRegisterService(UserRepository userRepository,
                                BCryptPasswordEncoder passwordEncoder,
-                               LocalNotificationService notificationService) {
+                               ApplicationEventPublisher eventPublisher) {
         this.userRepository = userRepository;
         this.passwordEncoder = passwordEncoder;
-        this.notificationService = notificationService;
+        this.eventPublisher = eventPublisher;
     }
 
     @Transactional
@@ -60,17 +56,7 @@ public class UserRegisterService {
         User saved = userRepository.save(user);
         log.info("User registered: id={}, email={}, status={}", saved.getId(), saved.getEmail(), saved.getStatus());
 
-        // Send welcome notification via LocalNotificationService
-        NotificationRequest notification = new NotificationRequest();
-        notification.setBizType("USER_REGISTER");
-        notification.setBizId(String.valueOf(saved.getId()));
-        notification.setReceiver(saved.getEmail());
-        notification.setChannel(NotificationChannel.EMAIL);
-        notification.setTemplateCode("WELCOME");
-        Map<String, Object> variables = new HashMap<>();
-        variables.put("nickname", saved.getNickname());
-        notification.setVariables(variables);
-        notificationService.send(notification);
+        eventPublisher.publishEvent(new UserRegisteredEvent(this, saved.getId(), saved.getEmail(), saved.getNickname()));
 
         return UserResponse.from(saved);
     }

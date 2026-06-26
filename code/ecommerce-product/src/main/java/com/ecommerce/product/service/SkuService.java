@@ -25,13 +25,16 @@ public class SkuService {
     private final ProductSkuRepository skuRepository;
     private final ProductSpuRepository spuRepository;
     private final ObjectMapper objectMapper;
+    private final ProductDetailCacheService productDetailCacheService;
 
     public SkuService(ProductSkuRepository skuRepository,
                       ProductSpuRepository spuRepository,
-                      ObjectMapper objectMapper) {
+                      ObjectMapper objectMapper,
+                      ProductDetailCacheService productDetailCacheService) {
         this.skuRepository = skuRepository;
         this.spuRepository = spuRepository;
         this.objectMapper = objectMapper;
+        this.productDetailCacheService = productDetailCacheService;
     }
 
     /**
@@ -68,6 +71,7 @@ public class SkuService {
         sku.setSalesCount(0);
 
         ProductSku saved = skuRepository.save(sku);
+        productDetailCacheService.evict(saved.getId());
         log.info("Created SKU: id={}, skuCode={}, spuId={}", saved.getId(), saved.getSkuCode(), saved.getSpuId());
         return saved;
     }
@@ -83,6 +87,7 @@ public class SkuService {
         }
         sku.setStatus(SkuStatus.ON_SHELF);
         skuRepository.save(sku);
+        productDetailCacheService.evict(skuId);
         log.info("SKU on shelf: skuId={}, skuCode={}", skuId, sku.getSkuCode());
     }
 
@@ -97,6 +102,7 @@ public class SkuService {
         }
         sku.setStatus(SkuStatus.OFF_SHELF);
         skuRepository.save(sku);
+        productDetailCacheService.evict(skuId);
         log.info("SKU off shelf: skuId={}, skuCode={}", skuId, sku.getSkuCode());
     }
 

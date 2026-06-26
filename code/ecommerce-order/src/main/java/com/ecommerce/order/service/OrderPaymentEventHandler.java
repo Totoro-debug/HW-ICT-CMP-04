@@ -1,6 +1,7 @@
 package com.ecommerce.order.service;
 
 import com.ecommerce.common.event.DomainEventPublisher;
+import com.ecommerce.common.integration.LoyaltyCommandService;
 import com.ecommerce.order.entity.Order;
 import com.ecommerce.order.entity.OrderStatus;
 import com.ecommerce.order.event.OrderPaidEvent;
@@ -42,17 +43,20 @@ public class OrderPaymentEventHandler {
     private final OrderRepository orderRepository;
     private final DomainEventPublisher eventPublisher;
     private final com.ecommerce.inventory.query.InventoryReservationService inventoryReservationService;
+    private final LoyaltyCommandService loyaltyCommandService;
     private final OrderStateMachine stateMachine;
     private final OrderService orderService;
 
     public OrderPaymentEventHandler(OrderRepository orderRepository,
                                      DomainEventPublisher eventPublisher,
                                      com.ecommerce.inventory.query.InventoryReservationService inventoryReservationService,
+                                     LoyaltyCommandService loyaltyCommandService,
                                      OrderStateMachine stateMachine,
                                      OrderService orderService) {
         this.orderRepository = orderRepository;
         this.eventPublisher = eventPublisher;
         this.inventoryReservationService = inventoryReservationService;
+        this.loyaltyCommandService = loyaltyCommandService;
         this.stateMachine = stateMachine;
         this.orderService = orderService;
     }
@@ -82,7 +86,7 @@ public class OrderPaymentEventHandler {
                 log.info("Order {} is already PAID — payment idempotent success", orderId);
                 return;
             }
-            throw new com.ecommerce.common.exception.BusinessException("ORDER_NOT_PAYABLE",
+            throw new com.ecommerce.common.exception.BusinessException("ORDER_STATUS_CONFLICT",
                     "Order " + orderId + " is in status " + order.getStatus()
                             + " and cannot accept payment");
         }
@@ -111,15 +115,15 @@ public class OrderPaymentEventHandler {
                 "PAYMENT_SUCCESS", "PAYMENT_SYSTEM",
                 "Payment confirmed: " + paymentNo + ", amount: " + order.getPayableAmount());
 
-        // Deduct inventory (reserved stock is now sold)
-        try {
-            inventoryReservationService.deductAfterPayment(orderId);
-            log.info("Inventory deducted for order {} after payment", orderId);
-        } catch (Exception e) {
-            log.error("Failed to deduct inventory for order {}: {}", orderId, e.getMessage());
-            // In a real system, this would trigger a compensation/retry flow.
-            // The order is PAID but inventory may be inconsistent — this is a
-            // known failure mode that requires manual reconciliation.
+        // Deduct inventory (reserved stock is now sold). This is part of the payment
+        // confirmation transaction and must roll back the order update on failure.
+        inventoryReservationService.deductAfterPayment(orderId);
+        log.info("Inventory deducted for order {} after payment", orderId);
+
+        if (order.getRedeemedPoints() > 0) {
+            loyaltyCommandService.consumeFrozenPoints(order.getUserId(), order.getRedeemedPoints(),
+                    "ORDER_REDEEM", String.valueOf(orderId),
+                    "Consume frozen points after payment " + paymentNo);
         }
 
         // Publish event

@@ -11,16 +11,15 @@ import com.ecommerce.review.dto.ReviewResponse;
 import com.ecommerce.review.entity.Review;
 import com.ecommerce.review.entity.ReviewAppend;
 import com.ecommerce.review.entity.ReviewStatus;
-import com.ecommerce.review.event.ReviewApprovedEvent;
 import com.ecommerce.review.repository.ReviewAppendRepository;
 import com.ecommerce.review.repository.ReviewRepository;
+import com.ecommerce.user.query.UserQueryService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
-import org.mockito.InOrder;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
@@ -37,7 +36,6 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.eq;
-import static org.mockito.Mockito.inOrder;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
@@ -66,6 +64,9 @@ class ReviewServiceTest {
     @Mock
     private OrderQueryService orderQueryService;
 
+    @Mock
+    private UserQueryService userQueryService;
+
     @InjectMocks
     private ReviewService reviewService;
 
@@ -91,6 +92,8 @@ class ReviewServiceTest {
     }
 
     private void stubStandardMocks() {
+        when(userQueryService.isActive(1L)).thenReturn(true);
+        when(userQueryService.isFrozen(1L)).thenReturn(false);
         when(orderQueryService.verifyPurchase(1L, createRequest.getProductId()))
                 .thenReturn(new VerifyPurchaseResponse(true, createRequest.getOrderId(), null));
         when(reviewRepository.findByUserIdAndOrderItemId(anyLong(), anyLong()))
@@ -127,6 +130,8 @@ class ReviewServiceTest {
     @Test
     @DisplayName("createReview: rejects when purchase verification fails")
     void testCreateReview_purchaseRequiredWhenNotPurchased() {
+        when(userQueryService.isActive(1L)).thenReturn(true);
+        when(userQueryService.isFrozen(1L)).thenReturn(false);
         when(orderQueryService.verifyPurchase(1L, createRequest.getProductId()))
                 .thenReturn(new VerifyPurchaseResponse(false, null, null));
 
@@ -140,6 +145,8 @@ class ReviewServiceTest {
     @Test
     @DisplayName("createReview: rejects when verified delivered order does not match request order")
     void testCreateReview_purchaseRequiredWhenOrderIdMismatches() {
+        when(userQueryService.isActive(1L)).thenReturn(true);
+        when(userQueryService.isFrozen(1L)).thenReturn(false);
         when(orderQueryService.verifyPurchase(1L, createRequest.getProductId()))
                 .thenReturn(new VerifyPurchaseResponse(true, 999L, null));
 
@@ -151,22 +158,43 @@ class ReviewServiceTest {
     }
 
     // -----------------------------------------------------------------------
-    // Points awarded IMMEDIATELY on submission (before approval)
+    // Points are awarded only after admin approval
     // -----------------------------------------------------------------------
 
     @Test
-    @DisplayName("createReview: publishes ReviewApprovedEvent immediately after save, before approval")
-    void testCreateReview_awardsPointsImmediately() {
+    @DisplayName("createReview: does not publish ReviewApprovedEvent before approval")
+    void testCreateReview_doesNotPublishApprovalEvent() {
         stubStandardMocks();
 
         reviewService.createReview(1L, createRequest);
 
-        // Verify event is published with a ReviewApprovedEvent — RIGHT AFTER save.
-        // The event triggers ReviewApprovedEventListener which awards 20 points.
-        // This happens BEFORE admin approval.
-        InOrder inOrder = inOrder(reviewRepository, eventPublisher);
-        inOrder.verify(reviewRepository).save(any(Review.class));
-        inOrder.verify(eventPublisher).publish(any(ReviewApprovedEvent.class));
+        verify(reviewRepository).save(any(Review.class));
+        verify(eventPublisher, never()).publish(any());
+    }
+
+    @Test
+    @DisplayName("createReview: rejects inactive users")
+    void testCreateReview_userNotActive() {
+        when(userQueryService.isActive(1L)).thenReturn(false);
+
+        assertThatThrownBy(() -> reviewService.createReview(1L, createRequest))
+                .isInstanceOf(BusinessException.class)
+                .extracting("code")
+                .isEqualTo("USER_NOT_ACTIVE");
+        verify(reviewRepository, never()).save(any(Review.class));
+    }
+
+    @Test
+    @DisplayName("createReview: rejects frozen users")
+    void testCreateReview_userFrozen() {
+        when(userQueryService.isActive(1L)).thenReturn(true);
+        when(userQueryService.isFrozen(1L)).thenReturn(true);
+
+        assertThatThrownBy(() -> reviewService.createReview(1L, createRequest))
+                .isInstanceOf(BusinessException.class)
+                .extracting("code")
+                .isEqualTo("USER_FROZEN");
+        verify(reviewRepository, never()).save(any(Review.class));
     }
 
     // -----------------------------------------------------------------------

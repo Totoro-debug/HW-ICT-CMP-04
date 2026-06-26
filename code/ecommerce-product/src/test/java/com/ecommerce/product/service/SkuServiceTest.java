@@ -40,6 +40,9 @@ class SkuServiceTest {
     @Mock
     private ObjectMapper objectMapper;
 
+    @Mock
+    private ProductDetailCacheService productDetailCacheService;
+
     @InjectMocks
     private SkuService skuService;
 
@@ -85,6 +88,7 @@ class SkuServiceTest {
         assertThat(result.getSalesCount()).isZero();
         assertThat(result.getSortOrder()).isZero();
         verify(skuRepository).save(any(ProductSku.class));
+        verify(productDetailCacheService).evict(1L);
     }
 
     @Test
@@ -137,6 +141,7 @@ class SkuServiceTest {
 
         assertThat(draftSku.getStatus()).isEqualTo(SkuStatus.ON_SHELF);
         verify(skuRepository).save(draftSku);
+        verify(productDetailCacheService).evict(1L);
     }
 
     @Test
@@ -184,6 +189,7 @@ class SkuServiceTest {
 
         assertThat(onShelfSku.getStatus()).isEqualTo(SkuStatus.OFF_SHELF);
         verify(skuRepository).save(onShelfSku);
+        verify(productDetailCacheService).evict(1L);
     }
 
     @Test

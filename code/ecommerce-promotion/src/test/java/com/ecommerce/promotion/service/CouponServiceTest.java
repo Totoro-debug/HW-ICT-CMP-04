@@ -249,7 +249,7 @@ class CouponServiceTest {
 
         @Test
         @DisplayName("testClaimCoupon_exceededQuantity_throwsException: " +
-                "throws COUPON_EXHAUSTED when issuedQuantity >= totalQuantity")
+                "throws CONFLICT when issuedQuantity >= totalQuantity")
         void testClaimCoupon_exceededQuantity_throwsException() {
             template.setIssuedQuantity(100); // equals totalQuantity
             when(couponTemplateRepository.findById(templateId)).thenReturn(Optional.of(template));

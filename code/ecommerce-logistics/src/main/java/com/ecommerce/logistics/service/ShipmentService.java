@@ -1,5 +1,6 @@
 package com.ecommerce.logistics.service;
 
+import com.ecommerce.common.exception.ConflictException;
 import com.ecommerce.common.exception.ResourceNotFoundException;
 import com.ecommerce.logistics.dto.ShipmentResponse;
 import com.ecommerce.logistics.dto.TrackingResponse;
@@ -8,6 +9,7 @@ import com.ecommerce.logistics.entity.PickList;
 import com.ecommerce.logistics.entity.Shipment;
 import com.ecommerce.logistics.entity.ShipmentStatus;
 import com.ecommerce.logistics.entity.ShipmentTracking;
+import com.ecommerce.logistics.event.ShipmentDeliveredEvent;
 import com.ecommerce.logistics.query.OrderLogisticsStatusUpdater;
 import com.ecommerce.logistics.repository.LabelRecordRepository;
 import com.ecommerce.logistics.repository.PickListRepository;
@@ -15,6 +17,7 @@ import com.ecommerce.logistics.repository.ShipmentRepository;
 import com.ecommerce.logistics.repository.ShipmentTrackingRepository;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -41,19 +44,22 @@ public class ShipmentService {
     private final ShipmentTrackingRepository trackingRepository;
     private final FreightCalculator freightCalculator;
     private final OrderLogisticsStatusUpdater orderLogisticsStatusUpdater;
+    private final ApplicationEventPublisher eventPublisher;
 
     public ShipmentService(ShipmentRepository shipmentRepository,
                           PickListRepository pickListRepository,
                           LabelRecordRepository labelRecordRepository,
                           ShipmentTrackingRepository trackingRepository,
                           FreightCalculator freightCalculator,
-                          OrderLogisticsStatusUpdater orderLogisticsStatusUpdater) {
+                          OrderLogisticsStatusUpdater orderLogisticsStatusUpdater,
+                          ApplicationEventPublisher eventPublisher) {
         this.shipmentRepository = shipmentRepository;
         this.pickListRepository = pickListRepository;
         this.labelRecordRepository = labelRecordRepository;
         this.trackingRepository = trackingRepository;
         this.freightCalculator = freightCalculator;
         this.orderLogisticsStatusUpdater = orderLogisticsStatusUpdater;
+        this.eventPublisher = eventPublisher;
     }
 
     /**
@@ -94,7 +100,7 @@ public class ShipmentService {
         recordTracking(shipment.getId(), "CREATED", "Warehouse",
                 "Shipment created", null);
 
-        // Update order logistics status
+        // Update order logistics status for non-delivery intermediate creation state.
         try {
             orderLogisticsStatusUpdater.updateLogisticsStatus(orderId, "CREATED");
         } catch (Exception e) {
@@ -141,11 +147,9 @@ public class ShipmentService {
                 .orElseThrow(() -> new ResourceNotFoundException(
                         "Shipment not found: " + shipmentId));
 
-        if (shipment.getStatus() != ShipmentStatus.OUTBOUND
-                && shipment.getStatus() != ShipmentStatus.CREATED
+        if (shipment.getStatus() != ShipmentStatus.CREATED
                 && shipment.getStatus() != ShipmentStatus.PICKING) {
-            throw new IllegalStateException(
-                    "Cannot pick shipment in status " + shipment.getStatus());
+            throw conflict(shipment.getStatus(), "PICKING");
         }
 
         // Update to PICKING if not already
@@ -190,16 +194,27 @@ public class ShipmentService {
                 .orElseThrow(() -> new ResourceNotFoundException(
                         "Shipment not found: " + shipmentId));
 
-        String labelNo = "LB" + UUID.randomUUID().toString().substring(0, 8).toUpperCase();
-        String trackingNo = "TN" + System.currentTimeMillis();
+        if (shipment.getStatus() != ShipmentStatus.PICKING
+                && shipment.getStatus() != ShipmentStatus.LABEL_PRINTED) {
+            throw conflict(shipment.getStatus(), "LABEL_PRINTED");
+        }
 
-        LabelRecord label = new LabelRecord();
-        label.setShipmentId(shipmentId);
-        label.setLabelNo(labelNo);
-        label.setCarrier(carrier);
-        label.setTrackingNo(trackingNo);
-        label.setPrintedAt(LocalDateTime.now());
-        labelRecordRepository.save(label);
+        String labelNo = shipment.getLabelNo() != null
+                ? shipment.getLabelNo()
+                : "LB" + UUID.randomUUID().toString().substring(0, 8).toUpperCase();
+        String trackingNo = shipment.getTrackingNo() != null
+                ? shipment.getTrackingNo()
+                : "TN" + System.currentTimeMillis();
+
+        if (shipment.getLabelNo() == null || shipment.getTrackingNo() == null) {
+            LabelRecord label = new LabelRecord();
+            label.setShipmentId(shipmentId);
+            label.setLabelNo(labelNo);
+            label.setCarrier(carrier);
+            label.setTrackingNo(trackingNo);
+            label.setPrintedAt(LocalDateTime.now());
+            labelRecordRepository.save(label);
+        }
 
         shipment.setLabelNo(labelNo);
         shipment.setTrackingNo(trackingNo);
@@ -231,6 +246,11 @@ public class ShipmentService {
         Shipment shipment = shipmentRepository.findById(shipmentId)
                 .orElseThrow(() -> new ResourceNotFoundException(
                         "Shipment not found: " + shipmentId));
+
+        if (shipment.getStatus() != ShipmentStatus.LABEL_PRINTED
+                && shipment.getStatus() != ShipmentStatus.OUTBOUND) {
+            throw conflict(shipment.getStatus(), "OUTBOUND");
+        }
 
         shipment.setStatus(ShipmentStatus.OUTBOUND);
         shipmentRepository.save(shipment);
@@ -269,17 +289,29 @@ public class ShipmentService {
 
         recordTracking(shipmentId, newStatus.name(), location, description, "CARRIER");
 
-        try {
-            orderLogisticsStatusUpdater.updateLogisticsStatus(
-                    shipment.getOrderId(), newStatus.name());
-        } catch (Exception e) {
-            log.warn("Failed to update order logistics status: {}", e.getMessage());
+        if (newStatus == ShipmentStatus.DELIVERED) {
+            eventPublisher.publishEvent(new ShipmentDeliveredEvent(this,
+                    shipment.getId(), shipment.getOrderId(), shipment.getUserId(), shipment.getDeliveredAt()));
+            log.info("ShipmentDeliveredEvent published for shipmentId={}, orderId={}",
+                    shipment.getId(), shipment.getOrderId());
+        } else {
+            try {
+                orderLogisticsStatusUpdater.updateLogisticsStatus(
+                        shipment.getOrderId(), newStatus.name());
+            } catch (Exception e) {
+                log.warn("Failed to update order logistics status: {}", e.getMessage());
+            }
         }
 
         log.info("Shipment {} status updated to {}", shipmentId, newStatus);
     }
 
     // ======================== Private helpers ========================
+
+    private ConflictException conflict(ShipmentStatus currentStatus, String targetStatus) {
+        return new ConflictException(
+                "Cannot transition shipment from " + currentStatus + " to " + targetStatus);
+    }
 
     private String generateShipmentNo() {
         String datePart = LocalDate.now().format(DateTimeFormatter.ofPattern("yyyyMMdd"));

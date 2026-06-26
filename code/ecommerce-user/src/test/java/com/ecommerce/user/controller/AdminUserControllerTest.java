@@ -1,5 +1,6 @@
 package com.ecommerce.user.controller;
 
+import com.ecommerce.user.cache.UserRoleCacheManager;
 import com.ecommerce.user.config.SecurityConfig;
 import com.ecommerce.user.service.JwtTokenProvider;
 import com.ecommerce.user.service.UserAuthService;
@@ -38,6 +39,9 @@ class AdminUserControllerTest {
 
     @MockBean
     private UserAuthService userAuthService;
+
+    @MockBean
+    private UserRoleCacheManager userRoleCacheManager;
 
     @AfterEach
     void clearSecurityContext() {

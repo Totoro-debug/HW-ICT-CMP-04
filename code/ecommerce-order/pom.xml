@@ -34,12 +34,6 @@
             <artifactId>ecommerce-promotion</artifactId>
             <version>${project.version}</version>
         </dependency>
-        <dependency>
-            <groupId>com.ecommerce</groupId>
-            <artifactId>ecommerce-loyalty</artifactId>
-            <version>${project.version}</version>
-        </dependency>
-
         <!-- Test dependencies -->
         <dependency>
             <groupId>org.springframework.security</groupId>

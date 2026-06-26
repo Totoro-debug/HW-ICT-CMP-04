@@ -1,5 +1,6 @@
 package com.ecommerce.logistics.service;
 
+import com.ecommerce.common.exception.ConflictException;
 import com.ecommerce.common.exception.ResourceNotFoundException;
 import com.ecommerce.logistics.dto.ShipmentResponse;
 import com.ecommerce.logistics.entity.PickList;
@@ -17,6 +18,7 @@ import org.mockito.ArgumentCaptor;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.context.ApplicationEventPublisher;
 
 import java.math.BigDecimal;
 import java.util.Collections;
@@ -49,6 +51,8 @@ class ShipmentServiceTest {
     private FreightCalculator freightCalculator;
     @Mock
     private OrderLogisticsStatusUpdater orderLogisticsStatusUpdater;
+    @Mock
+    private ApplicationEventPublisher eventPublisher;
 
     @InjectMocks
     private ShipmentService shipmentService;
@@ -99,23 +103,12 @@ class ShipmentServiceTest {
     // ==================== pick ====================
 
     @Test
-    void testPick_fromOutbound_canPick() {
+    void testPick_fromOutbound_throwsConflict() {
         Shipment shipment = createShipment(1L, ShipmentStatus.OUTBOUND);
         when(shipmentRepository.findById(1L)).thenReturn(Optional.of(shipment));
-        when(pickListRepository.save(any(PickList.class))).thenAnswer(inv -> {
-            PickList pl = inv.getArgument(0);
-            pl.setId(10L);
-            return pl;
-        });
-        when(trackingRepository.save(any(ShipmentTracking.class))).thenReturn(new ShipmentTracking());
 
-        shipmentService.pick(1L, 999L);
-
-        ArgumentCaptor<Shipment> captor = ArgumentCaptor.forClass(Shipment.class);
-        verify(shipmentRepository).save(captor.capture());
-        Shipment saved = captor.getValue();
-        assertEquals(ShipmentStatus.PICKING, saved.getStatus());
-        assertEquals(10L, saved.getPickListId());
+        assertThrows(ConflictException.class,
+                () -> shipmentService.pick(1L, 999L));
     }
 
     @Test
@@ -175,7 +168,7 @@ class ShipmentServiceTest {
         Shipment shipment = createShipment(4L, ShipmentStatus.COLLECTED);
         when(shipmentRepository.findById(4L)).thenReturn(Optional.of(shipment));
 
-        assertThrows(IllegalStateException.class,
+        assertThrows(ConflictException.class,
                 () -> shipmentService.pick(4L, 666L));
     }
 
@@ -184,7 +177,7 @@ class ShipmentServiceTest {
         Shipment shipment = createShipment(5L, ShipmentStatus.DELIVERED);
         when(shipmentRepository.findById(5L)).thenReturn(Optional.of(shipment));
 
-        assertThrows(IllegalStateException.class,
+        assertThrows(ConflictException.class,
                 () -> shipmentService.pick(5L, 555L));
     }
 
@@ -192,7 +185,7 @@ class ShipmentServiceTest {
 
     @Test
     void testPrintLabel_transitionsToLabelPrinted() {
-        Shipment shipment = createShipment(1L, ShipmentStatus.OUTBOUND);
+        Shipment shipment = createShipment(1L, ShipmentStatus.PICKING);
         when(shipmentRepository.findById(1L)).thenReturn(Optional.of(shipment));
         when(labelRecordRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
         when(trackingRepository.save(any(ShipmentTracking.class))).thenReturn(new ShipmentTracking());

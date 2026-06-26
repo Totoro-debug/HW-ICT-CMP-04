@@ -4,10 +4,10 @@ import com.ecommerce.common.exception.ResourceNotFoundException;
 import com.ecommerce.logistics.dto.FreightTemplateRequest;
 import com.ecommerce.logistics.entity.FreightTemplate;
 import com.ecommerce.logistics.repository.FreightTemplateRepository;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
-import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
@@ -35,8 +35,12 @@ class FreightTemplateServiceTest {
     @Mock
     private FreightTemplateRepository freightTemplateRepository;
 
-    @InjectMocks
     private FreightTemplateService freightTemplateService;
+
+    @BeforeEach
+    void setUp() {
+        freightTemplateService = new FreightTemplateService(freightTemplateRepository, new FreightTemplateCache());
+    }
 
     // ==================== createTemplate ====================
 

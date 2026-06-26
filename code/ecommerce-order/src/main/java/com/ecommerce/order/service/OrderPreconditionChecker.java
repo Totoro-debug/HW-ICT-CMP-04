@@ -31,7 +31,7 @@ public class OrderPreconditionChecker {
     public void check(Long userId, int itemCount) {
         UserDto user = userQueryService.getUserById(userId);
         if (user == null) {
-            throw new BusinessException("USER_NOT_FOUND", "User not found: " + userId);
+            throw new BusinessException("RESOURCE_NOT_FOUND", "User not found: " + userId);
         }
 
         String status = user.getStatus();
@@ -43,7 +43,7 @@ public class OrderPreconditionChecker {
         }
 
         if (itemCount <= 0) {
-            throw new BusinessException("ORDER_EMPTY", "Order must have at least one item");
+            throw new BusinessException("VALIDATION_FAILED", "Order must have at least one item");
         }
 
         log.debug("Order preconditions passed for userId={}, itemCount={}", userId, itemCount);

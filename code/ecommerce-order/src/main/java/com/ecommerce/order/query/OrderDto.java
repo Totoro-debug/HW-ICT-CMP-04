@@ -1,7 +1,5 @@
 package com.ecommerce.order.query;
 
-import com.ecommerce.order.entity.OrderStatus;
-
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
 
@@ -15,7 +13,7 @@ public class OrderDto {
     private String orderNo;
     private Long userId;
     private String externalOrderNo;
-    private OrderStatus status;
+    private String status;
     private BigDecimal itemTotal;
     private BigDecimal shippingFee;
     private BigDecimal packagingFee;
@@ -68,11 +66,11 @@ public class OrderDto {
         this.externalOrderNo = externalOrderNo;
     }
 
-    public OrderStatus getStatus() {
+    public String getStatus() {
         return status;
     }
 
-    public void setStatus(OrderStatus status) {
+    public void setStatus(String status) {
         this.status = status;
     }
 

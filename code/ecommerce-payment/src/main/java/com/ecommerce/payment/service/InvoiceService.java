@@ -57,7 +57,7 @@ public class InvoiceService {
         PaymentRecord successfulPayment = payments.stream()
                 .filter(p -> p.getStatus() == PaymentStatus.SUCCESS)
                 .findFirst()
-                .orElseThrow(() -> new BusinessException("NO_PAID_PAYMENT",
+                .orElseThrow(() -> new BusinessException("CONFLICT",
                         "Order " + request.getOrderId() + " has no successful payment"));
 
         BigDecimal invoiceAmount = MonetaryUtil.roundToCent(request.getInvoiceAmount());

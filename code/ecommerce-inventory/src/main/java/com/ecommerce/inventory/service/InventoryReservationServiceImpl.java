@@ -2,6 +2,7 @@ package com.ecommerce.inventory.service;
 
 import com.ecommerce.common.exception.BusinessException;
 import com.ecommerce.common.exception.ResourceNotFoundException;
+import com.ecommerce.inventory.cache.InventorySummaryCache;
 import com.ecommerce.inventory.entity.InventoryStock;
 import com.ecommerce.inventory.entity.ReservationStatus;
 import com.ecommerce.inventory.entity.StockReservation;
@@ -53,6 +54,7 @@ public class InventoryReservationServiceImpl implements InventoryReservationServ
 
                 stock.setReservedStock(stock.getReservedStock() + toReserve);
                 inventoryStockRepository.save(stock);
+                InventorySummaryCache.evict(stock.getSkuId());
 
                 StockReservation reservation = new StockReservation();
                 reservation.setOrderId(orderId);

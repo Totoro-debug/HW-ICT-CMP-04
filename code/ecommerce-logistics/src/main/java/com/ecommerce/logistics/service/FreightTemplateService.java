@@ -28,9 +28,12 @@ public class FreightTemplateService {
     private static final BigDecimal DEFAULT_FREE_SHIPPING_THRESHOLD = new BigDecimal("199.00");
 
     private final FreightTemplateRepository freightTemplateRepository;
+    private final FreightTemplateCache freightTemplateCache;
 
-    public FreightTemplateService(FreightTemplateRepository freightTemplateRepository) {
+    public FreightTemplateService(FreightTemplateRepository freightTemplateRepository,
+                                  FreightTemplateCache freightTemplateCache) {
         this.freightTemplateRepository = freightTemplateRepository;
+        this.freightTemplateCache = freightTemplateCache;
     }
 
     /**
@@ -50,6 +53,8 @@ public class FreightTemplateService {
         template.setWeightRules(request.getWeightRules());
 
         template = freightTemplateRepository.save(template);
+        freightTemplateCache.evict(template.getId());
+        freightTemplateCache.evictAll();
 
         log.info("Freight template created: id={}, name={}, defaultFreight={}, threshold={}",
                 template.getId(), template.getName(),
@@ -87,6 +92,7 @@ public class FreightTemplateService {
         }
 
         template = freightTemplateRepository.save(template);
+        freightTemplateCache.evict(templateId);
 
         log.info("Freight template updated: id={}", templateId);
 
@@ -106,7 +112,7 @@ public class FreightTemplateService {
      */
     @Transactional(readOnly = true)
     public FreightTemplate getTemplate(Long templateId) {
-        return freightTemplateRepository.findById(templateId)
+        return freightTemplateCache.get(templateId, () -> freightTemplateRepository.findById(templateId))
                 .orElseThrow(() -> new ResourceNotFoundException(
                         "Freight template not found: " + templateId));
     }
@@ -119,6 +125,7 @@ public class FreightTemplateService {
             throw new ResourceNotFoundException("Freight template not found: " + templateId);
         }
         freightTemplateRepository.deleteById(templateId);
+        freightTemplateCache.evict(templateId);
         log.info("Freight template deleted: id={}", templateId);
     }
 }

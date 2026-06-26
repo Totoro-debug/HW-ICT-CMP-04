@@ -42,30 +42,30 @@ public class AdminLogisticsController {
     /**
      * Generate a pick list and start picking for a shipment.
      */
-    @PostMapping("/shipments/{id}/pick")
-    public ResponseEntity<Void> pick(@PathVariable Long id) {
-        log.info("POST /api/v1/admin/logistics/shipments/{}/pick", id);
-        shipmentService.pick(id, null);
+    @PostMapping("/shipments/{shipmentId}/pick")
+    public ResponseEntity<Void> pick(@PathVariable("shipmentId") Long shipmentId) {
+        log.info("POST /api/v1/admin/logistics/shipments/{}/pick", shipmentId);
+        shipmentService.pick(shipmentId, null);
         return ResponseEntity.ok().build();
     }
 
     /**
      * Print a shipping label for a shipment.
      */
-    @PostMapping("/shipments/{id}/print-label")
-    public ResponseEntity<Void> printLabel(@PathVariable Long id) {
-        log.info("POST /api/v1/admin/logistics/shipments/{}/print-label", id);
-        shipmentService.printLabel(id, "DEFAULT");
+    @PostMapping("/shipments/{shipmentId}/print-label")
+    public ResponseEntity<Void> printLabel(@PathVariable("shipmentId") Long shipmentId) {
+        log.info("POST /api/v1/admin/logistics/shipments/{}/print-label", shipmentId);
+        shipmentService.printLabel(shipmentId, "DEFAULT");
         return ResponseEntity.ok().build();
     }
 
     /**
      * Complete outbound scanning for a shipment.
      */
-    @PostMapping("/shipments/{id}/outbound")
-    public ResponseEntity<Void> outbound(@PathVariable Long id) {
-        log.info("POST /api/v1/admin/logistics/shipments/{}/outbound", id);
-        shipmentService.outbound(id);
+    @PostMapping("/shipments/{shipmentId}/outbound")
+    public ResponseEntity<Void> outbound(@PathVariable("shipmentId") Long shipmentId) {
+        log.info("POST /api/v1/admin/logistics/shipments/{}/outbound", shipmentId);
+        shipmentService.outbound(shipmentId);
         return ResponseEntity.ok().build();
     }
 

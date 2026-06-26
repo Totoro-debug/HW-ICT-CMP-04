@@ -1,6 +1,7 @@
 package com.ecommerce.promotion.service;
 
 import com.ecommerce.common.exception.BusinessException;
+import com.ecommerce.common.exception.ConflictException;
 import com.ecommerce.common.exception.ResourceNotFoundException;
 import com.ecommerce.common.money.MonetaryUtil;
 import com.ecommerce.promotion.entity.CouponStatus;
@@ -44,14 +45,14 @@ public class CouponService {
         // Check per-user limit
         long userClaimCount = userCouponRepository.countByUserIdAndCouponTemplateId(userId, templateId);
         if (template.getPerUserLimit() != null && userClaimCount >= template.getPerUserLimit()) {
-            throw new BusinessException("COUPON_LIMIT_EXCEEDED",
+            throw new ConflictException(
                     "You have already claimed the maximum number of this coupon");
         }
 
         // Check total quantity
         if (template.getTotalQuantity() != null && template.getIssuedQuantity() != null
                 && template.getIssuedQuantity() >= template.getTotalQuantity()) {
-            throw new BusinessException("COUPON_EXHAUSTED", "Coupon has been fully claimed");
+            throw new ConflictException("Coupon has been fully claimed");
         }
 
         // Increment issued quantity

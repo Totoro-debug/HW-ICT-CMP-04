@@ -1,5 +1,6 @@
 package com.ecommerce.user.controller;
 
+import com.ecommerce.user.cache.UserRoleCacheManager;
 import com.ecommerce.user.dto.AddressRequest;
 import com.ecommerce.user.dto.AddressResponse;
 import com.ecommerce.user.config.SecurityConfig;
@@ -53,6 +54,9 @@ class AddressControllerTest {
 
     @MockBean
     private AddressService addressService;
+
+    @MockBean
+    private UserRoleCacheManager userRoleCacheManager;
 
     @AfterEach
     void clearSecurityContext() {

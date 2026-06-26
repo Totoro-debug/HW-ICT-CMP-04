@@ -8,7 +8,8 @@ import com.ecommerce.common.money.MonetaryUtil;
 import com.ecommerce.common.test.SystemClockService;
 import com.ecommerce.inventory.query.InventoryReservationService;
 import com.ecommerce.inventory.query.ReserveItem;
-import com.ecommerce.loyalty.query.LoyaltyQueryService;
+import com.ecommerce.common.integration.LoyaltyCommandService;
+import com.ecommerce.common.integration.LoyaltyQueryService;
 import com.ecommerce.order.dto.CancelOrderResponse;
 import com.ecommerce.order.dto.CreateOrderRequest;
 import com.ecommerce.order.dto.CreateOrderResponse;
@@ -82,6 +83,7 @@ public class OrderService {
     private final ProductQueryService productQueryService;
     private final InventoryReservationService inventoryReservationService;
     private final LoyaltyQueryService loyaltyQueryService;
+    private final LoyaltyCommandService loyaltyCommandService;
     private final OrderPreconditionChecker preconditionChecker;
     private final OrderValidator orderValidator;
     private final OrderTotalCalculator totalCalculator;
@@ -90,6 +92,7 @@ public class OrderService {
     private final OrderSplitStrategy splitStrategy;
     private final DomainEventPublisher eventPublisher;
     private final com.ecommerce.promotion.service.PromotionCalculationService promotionCalculationService;
+    private final com.ecommerce.promotion.service.PromotionUsageCommandService promotionUsageCommandService;
 
     public OrderService(OrderRepository orderRepository,
                         OrderItemRepository orderItemRepository,
@@ -98,6 +101,7 @@ public class OrderService {
                         ProductQueryService productQueryService,
                         InventoryReservationService inventoryReservationService,
                         LoyaltyQueryService loyaltyQueryService,
+                        LoyaltyCommandService loyaltyCommandService,
                         OrderPreconditionChecker preconditionChecker,
                         OrderValidator orderValidator,
                         OrderTotalCalculator totalCalculator,
@@ -105,7 +109,8 @@ public class OrderService {
                         OrderRiskChecker riskChecker,
                         OrderSplitStrategy splitStrategy,
                         DomainEventPublisher eventPublisher,
-                        com.ecommerce.promotion.service.PromotionCalculationService promotionCalculationService) {
+                        com.ecommerce.promotion.service.PromotionCalculationService promotionCalculationService,
+                        com.ecommerce.promotion.service.PromotionUsageCommandService promotionUsageCommandService) {
         this.orderRepository = orderRepository;
         this.orderItemRepository = orderItemRepository;
         this.orderEventLogRepository = orderEventLogRepository;
@@ -113,6 +118,7 @@ public class OrderService {
         this.productQueryService = productQueryService;
         this.inventoryReservationService = inventoryReservationService;
         this.loyaltyQueryService = loyaltyQueryService;
+        this.loyaltyCommandService = loyaltyCommandService;
         this.preconditionChecker = preconditionChecker;
         this.orderValidator = orderValidator;
         this.totalCalculator = totalCalculator;
@@ -121,6 +127,7 @@ public class OrderService {
         this.splitStrategy = splitStrategy;
         this.eventPublisher = eventPublisher;
         this.promotionCalculationService = promotionCalculationService;
+        this.promotionUsageCommandService = promotionUsageCommandService;
     }
 
     /**
@@ -248,8 +255,21 @@ public class OrderService {
 
         order = orderRepository.save(order);
 
-        // Set orderId on items and save them
         final Long orderId = order.getId();
+
+        // Freeze loyalty points inside the order creation transaction. Estimation above is only
+        // used to cap the requested amount and calculate the displayed deduction.
+        if (redeemedPoints > 0) {
+            loyaltyCommandService.freezePoints(userId, redeemedPoints, "ORDER_REDEEM",
+                    String.valueOf(orderId), "Freeze points for order " + order.getOrderNo());
+        }
+
+        // Mark selected coupons as used inside the order creation transaction.
+        if (request.getCouponIds() != null && !request.getCouponIds().isEmpty()) {
+            promotionUsageCommandService.markCouponsUsed(userId, orderId, request.getCouponIds());
+        }
+
+        // Set orderId on items and save them
         for (OrderItem item : orderItems) {
             item.setOrderId(orderId);
             // Snapshot the product data for historical accuracy

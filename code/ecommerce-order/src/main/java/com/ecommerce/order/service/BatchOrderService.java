@@ -8,7 +8,8 @@ import com.ecommerce.order.dto.CreateOrderResponse;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.support.TransactionTemplate;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -17,15 +18,17 @@ import java.util.List;
  * Service for batch order creation (e.g., for import or migration scenarios).
  */
 @Service
-@Transactional
 public class BatchOrderService {
 
     private static final Logger log = LoggerFactory.getLogger(BatchOrderService.class);
 
     private final OrderService orderService;
+    private final TransactionTemplate transactionTemplate;
 
-    public BatchOrderService(OrderService orderService) {
+    public BatchOrderService(OrderService orderService,
+                             PlatformTransactionManager transactionManager) {
         this.orderService = orderService;
+        this.transactionTemplate = new TransactionTemplate(transactionManager);
     }
 
     /**
@@ -45,7 +48,8 @@ public class BatchOrderService {
 
         for (CreateOrderRequest orderRequest : request.getOrders()) {
             try {
-                CreateOrderResponse response = orderService.createOrder(userId, orderRequest);
+                CreateOrderResponse response = transactionTemplate.execute(
+                        status -> orderService.createOrder(userId, orderRequest));
                 results.add(BatchOrderResult.success(
                         orderRequest.getExternalOrderNo(),
                         response.getOrderId(),
@@ -53,19 +57,16 @@ public class BatchOrderService {
                 successCount++;
                 log.debug("Batch order created: externalOrderNo={}, orderId={}",
                         orderRequest.getExternalOrderNo(), response.getOrderId());
-            } catch (Exception e) {
+            } catch (RuntimeException e) {
                 log.warn("Batch order failed: externalOrderNo={}, error={}",
                         orderRequest.getExternalOrderNo(), e.getMessage());
                 results.add(BatchOrderResult.failure(
                         orderRequest.getExternalOrderNo(), e.getMessage()));
                 failureCount++;
 
-                // If continueOnError is false, rethrow to stop processing
                 if (!request.isContinueOnError()) {
-                    log.error("Batch aborted due to error with continueOnError=false");
-                    throw new com.ecommerce.common.exception.BusinessException(
-                            "BATCH_ORDER_FAILED",
-                            "Batch order processing aborted: " + e.getMessage());
+                    log.info("Batch stopped after first failure because continueOnError=false");
+                    break;
                 }
             }
         }

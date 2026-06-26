@@ -3,6 +3,7 @@ package com.ecommerce.user.service;
 import com.ecommerce.common.exception.AuthorizationException;
 import com.ecommerce.common.exception.BusinessException;
 import com.ecommerce.common.exception.ResourceNotFoundException;
+import com.ecommerce.user.cache.UserRoleCacheManager;
 import com.ecommerce.user.dto.ActivateRequest;
 import com.ecommerce.user.dto.LoginRequest;
 import com.ecommerce.user.dto.LoginResponse;
@@ -37,17 +38,20 @@ public class UserAuthService {
     private final LoginSessionRepository loginSessionRepository;
     private final BCryptPasswordEncoder passwordEncoder;
     private final JwtTokenProvider jwtTokenProvider;
+    private final UserRoleCacheManager userRoleCacheManager;
 
     public UserAuthService(UserRepository userRepository,
                            EmailActivationTokenRepository activationTokenRepository,
                            LoginSessionRepository loginSessionRepository,
                            BCryptPasswordEncoder passwordEncoder,
-                           JwtTokenProvider jwtTokenProvider) {
+                           JwtTokenProvider jwtTokenProvider,
+                           UserRoleCacheManager userRoleCacheManager) {
         this.userRepository = userRepository;
         this.activationTokenRepository = activationTokenRepository;
         this.loginSessionRepository = loginSessionRepository;
         this.passwordEncoder = passwordEncoder;
         this.jwtTokenProvider = jwtTokenProvider;
+        this.userRoleCacheManager = userRoleCacheManager;
     }
 
     /**
@@ -70,6 +74,7 @@ public class UserAuthService {
         }
 
         List<String> roles = Collections.singletonList(user.getRole().name());
+        userRoleCacheManager.putRoles(user.getId(), roles);
         String token = jwtTokenProvider.generateToken(user.getId(), roles);
 
         // Record login session
@@ -122,6 +127,7 @@ public class UserAuthService {
                 .orElseThrow(() -> new ResourceNotFoundException("User not found: " + userId));
         user.setStatus(UserStatus.FROZEN);
         userRepository.save(user);
+        userRoleCacheManager.refresh(userId, Collections.emptyList());
         log.info("User frozen: id={}", userId);
     }
 
@@ -134,6 +140,7 @@ public class UserAuthService {
                 .orElseThrow(() -> new ResourceNotFoundException("User not found: " + userId));
         user.setStatus(UserStatus.ACTIVE);
         userRepository.save(user);
+        userRoleCacheManager.refresh(userId, Collections.singletonList(user.getRole().name()));
         log.info("User unfrozen: id={}", userId);
     }
 }

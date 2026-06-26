@@ -46,11 +46,6 @@ public class LocalNotificationServiceImpl implements LocalNotificationService {
             return;
         }
 
-        // Fault injection: simulate notification send failure
-        if (FaultInjectionRegistry.isActive("notification-send-failure")) {
-            throw new RuntimeException("Fault injected: notification-send-failure");
-        }
-
         String idempotencyKey = request.getIdempotencyKey();
         if (idempotencyKey != null && idempotencyCache.putIfAbsent(idempotencyKey, Boolean.TRUE) != null) {
             log.info("Duplicate notification request ignored: bizType={}, bizId={}, idempotencyKey={}",
@@ -72,6 +67,11 @@ public class LocalNotificationServiceImpl implements LocalNotificationService {
                 request.getBizType(), request.getBizId(), request.getChannel(), request.getTemplateCode());
 
         try {
+            // Fault injection: simulate notification send failure inside the normal failure handling scope.
+            if (FaultInjectionRegistry.isActive("notification-send-failure")) {
+                throw new RuntimeException("Fault injected: notification-send-failure");
+            }
+
             String renderedContent = renderTemplate(request.getTemplateCode(), request.getVariablesOrDefault());
 
             switch (request.getChannel()) {

@@ -1,7 +1,9 @@
 package com.ecommerce.user.config;
 
+import com.ecommerce.user.cache.UserRoleCacheManager;
 import com.ecommerce.user.security.JwtAuthFilter;
 import com.ecommerce.user.service.JwtTokenProvider;
+import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
@@ -31,7 +33,9 @@ public class SecurityConfig {
     }
 
     @Bean
-    public SecurityFilterChain securityFilterChain(HttpSecurity http) throws Exception {
+    public SecurityFilterChain securityFilterChain(HttpSecurity http,
+                                                   ObjectProvider<UserRoleCacheManager> userRoleCacheManagerProvider) throws Exception {
+        UserRoleCacheManager userRoleCacheManager = userRoleCacheManagerProvider.getIfAvailable(UserRoleCacheManager::new);
         http
                 .csrf(csrf -> csrf.disable())
                 .sessionManagement(session ->
@@ -49,7 +53,7 @@ public class SecurityConfig {
                         .requestMatchers("/api/v1/users/addresses", "/api/v1/users/addresses/**").hasRole("USER")
                         .anyRequest().authenticated()
                 )
-                .addFilterBefore(new JwtAuthFilter(jwtTokenProvider),
+                .addFilterBefore(new JwtAuthFilter(jwtTokenProvider, userRoleCacheManager),
                         UsernamePasswordAuthenticationFilter.class);
 
         return http.build();

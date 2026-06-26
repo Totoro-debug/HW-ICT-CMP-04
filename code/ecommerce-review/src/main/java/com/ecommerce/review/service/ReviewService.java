@@ -1,6 +1,5 @@
 package com.ecommerce.review.service;
 
-import com.ecommerce.common.event.DomainEventPublisher;
 import com.ecommerce.common.exception.BusinessException;
 import com.ecommerce.common.exception.ResourceNotFoundException;
 import com.ecommerce.order.dto.VerifyPurchaseResponse;
@@ -12,9 +11,9 @@ import com.ecommerce.review.dto.ReviewResponse;
 import com.ecommerce.review.entity.Review;
 import com.ecommerce.review.entity.ReviewAppend;
 import com.ecommerce.review.entity.ReviewStatus;
-import com.ecommerce.review.event.ReviewApprovedEvent;
 import com.ecommerce.review.repository.ReviewAppendRepository;
 import com.ecommerce.review.repository.ReviewRepository;
+import com.ecommerce.user.query.UserQueryService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.data.domain.Page;
@@ -39,19 +38,19 @@ public class ReviewService {
     private final ReviewRepository reviewRepository;
     private final ReviewAppendRepository reviewAppendRepository;
     private final SensitiveWordFilter sensitiveWordFilter;
-    private final DomainEventPublisher eventPublisher;
     private final OrderQueryService orderQueryService;
+    private final UserQueryService userQueryService;
 
     public ReviewService(ReviewRepository reviewRepository,
                          ReviewAppendRepository reviewAppendRepository,
                          SensitiveWordFilter sensitiveWordFilter,
-                         DomainEventPublisher eventPublisher,
-                         OrderQueryService orderQueryService) {
+                         OrderQueryService orderQueryService,
+                         UserQueryService userQueryService) {
         this.reviewRepository = reviewRepository;
         this.reviewAppendRepository = reviewAppendRepository;
         this.sensitiveWordFilter = sensitiveWordFilter;
-        this.eventPublisher = eventPublisher;
         this.orderQueryService = orderQueryService;
+        this.userQueryService = userQueryService;
     }
 
     /**
@@ -69,6 +68,7 @@ public class ReviewService {
                     "Rating must be between 1 and 5, got: " + request.getRating());
         }
 
+        verifyUserStatus(userId);
         verifyReviewEligibility(userId, request);
 
         // Check for duplicate review on the same order item
@@ -103,9 +103,16 @@ public class ReviewService {
         log.info("Review created: id={}, userId={}, productId={}, status=PENDING_REVIEW",
                 saved.getId(), userId, request.getProductId());
 
-        eventPublisher.publish(new ReviewApprovedEvent(this, saved.getId(), userId));
-
         return toResponse(saved);
+    }
+
+    private void verifyUserStatus(Long userId) {
+        if (!userQueryService.isActive(userId)) {
+            throw new BusinessException("USER_NOT_ACTIVE", "User is not active");
+        }
+        if (userQueryService.isFrozen(userId)) {
+            throw new BusinessException("USER_FROZEN", "User is frozen");
+        }
     }
 
     private void verifyReviewEligibility(Long userId, ReviewCreateRequest request) {

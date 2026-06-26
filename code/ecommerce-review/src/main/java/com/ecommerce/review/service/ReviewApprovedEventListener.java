@@ -1,15 +1,12 @@
 package com.ecommerce.review.service;
 
-import com.ecommerce.review.event.ReviewApprovedEvent;
+import com.ecommerce.common.event.ReviewApprovedEvent;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.context.event.EventListener;
-import org.springframework.stereotype.Component;
-
 /**
- * Listens for {@link ReviewApprovedEvent} and awards 20 review reward points.
+ * Legacy review-side handler kept out of Spring registration.
+ * Review points are handled by ecommerce-loyalty.
  */
-@Component("reviewReviewApprovedEventListener")
 public class ReviewApprovedEventListener {
 
     private static final Logger log = LoggerFactory.getLogger(ReviewApprovedEventListener.class);
@@ -20,7 +17,6 @@ public class ReviewApprovedEventListener {
     public ReviewApprovedEventListener() {
     }
 
-    @EventListener
     public void onReviewApproved(ReviewApprovedEvent event) {
         log.info("Received ReviewApprovedEvent: reviewId={}, userId={}",
                 event.getReviewId(), event.getUserId());

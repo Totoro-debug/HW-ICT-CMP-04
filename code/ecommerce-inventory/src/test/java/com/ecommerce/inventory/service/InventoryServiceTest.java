@@ -2,6 +2,7 @@ package com.ecommerce.inventory.service;
 
 import com.ecommerce.common.exception.BusinessException;
 import com.ecommerce.common.exception.ResourceNotFoundException;
+import com.ecommerce.inventory.cache.InventorySummaryCache;
 import com.ecommerce.inventory.dto.InboundRequest;
 import com.ecommerce.inventory.dto.InventoryCheckResponse;
 import com.ecommerce.inventory.dto.StockSummaryResponse;
@@ -11,7 +12,7 @@ import com.ecommerce.inventory.repository.InventoryStockRepository;
 import com.ecommerce.inventory.repository.OutboundOrderRepository;
 import com.ecommerce.product.query.ProductQueryService;
 import com.ecommerce.product.query.SkuDto;
-import com.ecommerce.product.query.StockSummaryDto;
+import com.ecommerce.inventory.query.StockSummaryDto;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -54,6 +55,7 @@ class InventoryServiceTest {
 
     @BeforeEach
     void setUp() {
+        InventorySummaryCache.clear();
         stock = new InventoryStock();
         stock.setId(1L);
         stock.setWarehouseId(1L);

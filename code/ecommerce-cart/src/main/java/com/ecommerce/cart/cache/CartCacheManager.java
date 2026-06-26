@@ -5,20 +5,18 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Component;
 
-import java.time.Duration;
-
 /**
  * Cart storage implementation using Caffeine Cache with 7-day TTL.
- * Key format: userId.
+ * Key format: cart:{userId}.
  */
 @Component
 public class CartCacheManager {
 
     private static final Logger log = LoggerFactory.getLogger(CartCacheManager.class);
 
-    private final Cache<Long, CartData> cartCache;
+    private final Cache<String, CartData> cartCache;
 
-    public CartCacheManager(Cache<Long, CartData> cartCache) {
+    public CartCacheManager(Cache<String, CartData> cartCache) {
         this.cartCache = cartCache;
     }
 
@@ -29,11 +27,12 @@ public class CartCacheManager {
      * @return the cart data, or null if not present or expired
      */
     public CartData getCart(Long userId) {
-        CartData cart = cartCache.getIfPresent(userId);
+        String key = cartKey(userId);
+        CartData cart = cartCache.getIfPresent(key);
         if (cart != null) {
-            log.debug("Cart cache hit for userId={}", userId);
+            log.debug("Cart cache hit for key={}", key);
         } else {
-            log.debug("Cart cache miss for userId={}", userId);
+            log.debug("Cart cache miss for key={}", key);
         }
         return cart;
     }
@@ -45,8 +44,9 @@ public class CartCacheManager {
      */
     public void saveCart(CartData cart) {
         cart.setUpdatedAt(java.time.LocalDateTime.now());
-        cartCache.put(cart.getUserId(), cart);
-        log.debug("Cart cached for userId={}", cart.getUserId());
+        String key = cartKey(cart.getUserId());
+        cartCache.put(key, cart);
+        log.debug("Cart cached for key={}", key);
     }
 
     /**
@@ -55,7 +55,12 @@ public class CartCacheManager {
      * @param userId the user ID
      */
     public void removeCart(Long userId) {
-        cartCache.invalidate(userId);
-        log.debug("Cart cache invalidated for userId={}", userId);
+        String key = cartKey(userId);
+        cartCache.invalidate(key);
+        log.debug("Cart cache invalidated for key={}", key);
+    }
+
+    private String cartKey(Long userId) {
+        return "cart:" + userId;
     }
 }

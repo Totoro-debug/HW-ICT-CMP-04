@@ -49,4 +49,13 @@ public interface OrderQueryService {
      * @return the payable amount
      */
     BigDecimal getOrderAmount(Long orderId);
+
+    /**
+     * Get the user's paid consumption in the current calendar year.
+     * Used by the loyalty module for member level evaluation.
+     *
+     * @param userId the user ID
+     * @return annual paid consumption amount
+     */
+    BigDecimal getAnnualConsumption(Long userId);
 }

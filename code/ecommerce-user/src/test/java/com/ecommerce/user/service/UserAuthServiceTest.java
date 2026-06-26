@@ -3,6 +3,7 @@ package com.ecommerce.user.service;
 import com.ecommerce.common.exception.AuthorizationException;
 import com.ecommerce.common.exception.BusinessException;
 import com.ecommerce.common.exception.ResourceNotFoundException;
+import com.ecommerce.user.cache.UserRoleCacheManager;
 import com.ecommerce.user.dto.ActivateRequest;
 import com.ecommerce.user.dto.LoginRequest;
 import com.ecommerce.user.dto.LoginResponse;
@@ -51,6 +52,9 @@ class UserAuthServiceTest {
 
     @Mock
     private JwtTokenProvider jwtTokenProvider;
+
+    @Mock
+    private UserRoleCacheManager userRoleCacheManager;
 
     @InjectMocks
     private UserAuthService userAuthService;
