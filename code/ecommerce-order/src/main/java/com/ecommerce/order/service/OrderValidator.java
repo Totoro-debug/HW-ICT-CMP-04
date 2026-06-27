@@ -1,6 +1,7 @@
 package com.ecommerce.order.service;
 
 import com.ecommerce.common.exception.BusinessException;
+import com.ecommerce.common.money.MoneyValidationUtil;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Component;
@@ -16,16 +17,12 @@ public class OrderValidator {
     private static final Logger log = LoggerFactory.getLogger(OrderValidator.class);
 
     /**
-     * Validate that an order amount is positive.
+     * Validate that an order amount meets the payable minimum.
      *
      * @param amount the amount to validate
-     * @throws BusinessException if amount is null, zero, or negative
      */
     public void validateAmount(BigDecimal amount) {
-        if (amount == null || amount.compareTo(BigDecimal.ZERO) <= 0) {
-            throw new BusinessException("ORDER_INVALID_AMOUNT",
-                    "Order amount must be positive, got: " + amount);
-        }
+        MoneyValidationUtil.validatePayableAmount(amount);
         log.debug("Amount validated: {}", amount);
     }
 

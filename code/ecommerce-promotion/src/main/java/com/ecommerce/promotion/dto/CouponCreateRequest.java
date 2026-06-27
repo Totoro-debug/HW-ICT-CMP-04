@@ -1,6 +1,7 @@
 package com.ecommerce.promotion.dto;
 
 import com.ecommerce.promotion.entity.CouponType;
+import jakarta.validation.constraints.DecimalMin;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
 
@@ -19,10 +20,13 @@ public class CouponCreateRequest {
     @NotNull
     private CouponType type;
 
+    @DecimalMin(value = "0.01", inclusive = true)
     private BigDecimal discountValue;
 
+    @DecimalMin(value = "0.01", inclusive = true)
     private BigDecimal thresholdAmount;
 
+    @DecimalMin(value = "0.00", inclusive = true)
     private BigDecimal maxDiscount;
 
     private Integer totalQuantity;

@@ -1,5 +1,6 @@
 package com.ecommerce.app;
 
+import com.ecommerce.logistics.event.OrderPaidShipmentListener;
 import com.ecommerce.logistics.query.OrderLogisticsStatusUpdater;
 import testsupport.TestApplication;
 import org.junit.jupiter.api.DisplayName;
@@ -21,13 +22,16 @@ import org.springframework.test.context.ActiveProfiles;
  *       in logistics module mocked here</li>
  * </ul>
  */
-@SpringBootTest(classes = TestApplication.class)
+@SpringBootTest(classes = TestApplication.class, properties = "spring.aop.proxy-target-class=true")
 @ActiveProfiles("test")
 @DisplayName("ShopHubApplication")
 class ShopHubApplicationTest {
 
     @MockBean
     private OrderLogisticsStatusUpdater orderLogisticsStatusUpdater;
+
+    @MockBean
+    private OrderPaidShipmentListener orderPaidShipmentListener;
 
     @Test
     @DisplayName("should load Spring application context successfully")

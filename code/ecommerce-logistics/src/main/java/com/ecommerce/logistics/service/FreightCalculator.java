@@ -1,5 +1,6 @@
 package com.ecommerce.logistics.service;
 
+import com.ecommerce.common.money.MonetaryUtil;
 import com.ecommerce.logistics.entity.FreightTemplate;
 import com.ecommerce.logistics.repository.FreightTemplateRepository;
 import org.slf4j.Logger;
@@ -42,7 +43,7 @@ public class FreightCalculator {
      */
     public BigDecimal calculateFreight(BigDecimal itemTotal) {
         if (itemTotal == null || itemTotal.compareTo(BigDecimal.ZERO) <= 0) {
-            return DEFAULT_FREIGHT;
+            return normalizeFreightAmount(DEFAULT_FREIGHT);
         }
 
         FreightTemplate template = findActiveTemplate();
@@ -55,10 +56,10 @@ public class FreightCalculator {
         if (itemTotal.compareTo(DEFAULT_FREE_SHIPPING_THRESHOLD) >= 0) {
             log.info("Free shipping (default): itemTotal={} reaches threshold={}",
                     itemTotal, DEFAULT_FREE_SHIPPING_THRESHOLD);
-            return BigDecimal.ZERO;
+            return normalizeFreightAmount(BigDecimal.ZERO);
         }
         log.info("Freight charged (default): itemTotal={}, freight={}", itemTotal, DEFAULT_FREIGHT);
-        return DEFAULT_FREIGHT;
+        return normalizeFreightAmount(DEFAULT_FREIGHT);
     }
 
     /**
@@ -82,10 +83,17 @@ public class FreightCalculator {
 
         if (itemTotal != null && itemTotal.compareTo(threshold) >= 0) {
             log.info("Free shipping: itemTotal={} reaches threshold={}", itemTotal, threshold);
-            return BigDecimal.ZERO;
+            return normalizeFreightAmount(BigDecimal.ZERO);
         }
         log.info("Freight charged: itemTotal={}, threshold={}, freight={}", itemTotal, threshold, freight);
-        return freight;
+        return normalizeFreightAmount(freight);
+    }
+
+    static BigDecimal normalizeFreightAmount(BigDecimal amount) {
+        if (amount == null) {
+            return new BigDecimal("0.00");
+        }
+        return MonetaryUtil.roundToCent(amount);
     }
 
     private FreightTemplate findActiveTemplate() {

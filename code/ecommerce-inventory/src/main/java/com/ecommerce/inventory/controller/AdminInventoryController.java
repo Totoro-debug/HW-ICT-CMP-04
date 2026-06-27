@@ -1,5 +1,6 @@
 package com.ecommerce.inventory.controller;
 
+import com.ecommerce.common.ratelimit.RateLimit;
 import com.ecommerce.inventory.dto.InboundRequest;
 import com.ecommerce.inventory.dto.OutboundRequest;
 import com.ecommerce.inventory.dto.StockAdjustmentRequest;
@@ -58,6 +59,7 @@ public class AdminInventoryController {
 
     @PostMapping("/inventory/outbound")
     @ResponseStatus(HttpStatus.CREATED)
+    @RateLimit(key = "'inventory:admin:outbound:' + #request.orderId + ':' + #request.skuId", permitsPerMinute = 60)
     public InventoryStock outbound(@Valid @RequestBody OutboundRequest request) {
         return inventoryService.outbound(
                 request.getWarehouseId(), request.getSkuId(), request.getQuantity(), request.getOrderId());
@@ -65,6 +67,7 @@ public class AdminInventoryController {
 
     @PostMapping("/inventory/adjustments")
     @ResponseStatus(HttpStatus.CREATED)
+    @RateLimit(key = "'inventory:admin:adjustment:' + #request.warehouseId + ':' + #request.skuId", permitsPerMinute = 60)
     public StockAdjustment createAdjustment(@Valid @RequestBody StockAdjustmentRequest request) {
         return stockAdjustmentService.create(
                 request.getWarehouseId(), request.getSkuId(), request.getAfterQty(), request.getReason());

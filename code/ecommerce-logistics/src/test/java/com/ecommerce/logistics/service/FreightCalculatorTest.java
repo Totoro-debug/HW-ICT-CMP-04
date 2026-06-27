@@ -42,20 +42,40 @@ class FreightCalculatorTest {
     @Test
     void testCalculate_exactly199_freeShipping() {
         BigDecimal result = calculator.calculateFreight(new BigDecimal("199.00"));
-        assertEquals(BigDecimal.ZERO, result,
+        assertEquals(new BigDecimal("0.00"), result,
                 "itemTotal=199.00 boundary result");
     }
 
     @Test
     void testCalculate_over199_freeShipping() {
         BigDecimal result = calculator.calculateFreight(new BigDecimal("200.00"));
-        assertEquals(BigDecimal.ZERO, result);
+        assertEquals(new BigDecimal("0.00"), result);
     }
 
     @Test
     void testCalculate_below199_chargesShipping() {
         BigDecimal result = calculator.calculateFreight(new BigDecimal("100.00"));
         assertEquals(new BigDecimal("8.00"), result);
+    }
+
+    @Test
+    void testCalculate_roundsTemplateFreightHalfUpToCent() {
+        FreightTemplate template = new FreightTemplate();
+        template.setId(1L);
+        template.setName("Half Up Template");
+        template.setDefaultFreight(new BigDecimal("1.235"));
+        template.setFreeShippingThreshold(new BigDecimal("299.00"));
+
+        when(freightTemplateRepository.findAll()).thenReturn(Collections.singletonList(template));
+
+        BigDecimal result = calculator.calculateFreight(new BigDecimal("100.00"));
+
+        assertEquals(new BigDecimal("1.24"), result);
+    }
+
+    @Test
+    void testNormalizeFreightAmount_halfCentRoundsUp() {
+        assertEquals(new BigDecimal("0.01"), FreightCalculator.normalizeFreightAmount(new BigDecimal("0.005")));
     }
 
     @Test
@@ -79,7 +99,7 @@ class FreightCalculatorTest {
     @Test
     void testCalculate_justAboveThreshold_freeShipping() {
         BigDecimal result = calculator.calculateFreight(new BigDecimal("199.01"));
-        assertEquals(BigDecimal.ZERO, result);
+        assertEquals(new BigDecimal("0.00"), result);
     }
 
     @Test
@@ -98,7 +118,7 @@ class FreightCalculatorTest {
 
         // 299.00 reaches the threshold, free shipping
         BigDecimal result2 = calculator.calculateFreight(new BigDecimal("299.00"));
-        assertEquals(BigDecimal.ZERO, result2);
+        assertEquals(new BigDecimal("0.00"), result2);
     }
 
     @Test
@@ -117,7 +137,7 @@ class FreightCalculatorTest {
 
         // 500.00 reaches the threshold, free shipping
         BigDecimal result2 = calculator.calculateFreight(new BigDecimal("500.00"), 1L);
-        assertEquals(BigDecimal.ZERO, result2);
+        assertEquals(new BigDecimal("0.00"), result2);
     }
 
     @Test

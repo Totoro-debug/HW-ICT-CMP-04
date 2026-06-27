@@ -43,5 +43,5 @@ public interface LoyaltyQueryService {
      * @param userId the user ID
      * @return the level multiplier
      */
-    double getMemberMultiplier(Long userId);
+    BigDecimal getMemberMultiplier(Long userId);
 }

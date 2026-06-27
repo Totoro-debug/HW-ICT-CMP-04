@@ -1,5 +1,6 @@
 package com.ecommerce.logistics.service;
 
+import com.ecommerce.common.audit.AuditLogService;
 import com.ecommerce.common.exception.ConflictException;
 import com.ecommerce.common.exception.ResourceNotFoundException;
 import com.ecommerce.logistics.dto.ShipmentResponse;
@@ -45,6 +46,7 @@ public class ShipmentService {
     private final FreightCalculator freightCalculator;
     private final OrderLogisticsStatusUpdater orderLogisticsStatusUpdater;
     private final ApplicationEventPublisher eventPublisher;
+    private final AuditLogService auditLogService;
 
     public ShipmentService(ShipmentRepository shipmentRepository,
                           PickListRepository pickListRepository,
@@ -52,7 +54,8 @@ public class ShipmentService {
                           ShipmentTrackingRepository trackingRepository,
                           FreightCalculator freightCalculator,
                           OrderLogisticsStatusUpdater orderLogisticsStatusUpdater,
-                          ApplicationEventPublisher eventPublisher) {
+                          ApplicationEventPublisher eventPublisher,
+                          AuditLogService auditLogService) {
         this.shipmentRepository = shipmentRepository;
         this.pickListRepository = pickListRepository;
         this.labelRecordRepository = labelRecordRepository;
@@ -60,6 +63,7 @@ public class ShipmentService {
         this.freightCalculator = freightCalculator;
         this.orderLogisticsStatusUpdater = orderLogisticsStatusUpdater;
         this.eventPublisher = eventPublisher;
+        this.auditLogService = auditLogService;
     }
 
     /**
@@ -73,11 +77,6 @@ public class ShipmentService {
      */
     public Shipment createShipment(Long orderId, Long userId,
                                    BigDecimal freightAmount, String addressSnapshot) {
-        // Fault injection check
-        if (com.ecommerce.common.test.FaultInjectionRegistry.isActive("logistics-create-shipment-failure")) {
-            throw new RuntimeException("Fault injected: logistics-create-shipment-failure");
-        }
-
         log.info("Creating shipment for orderId={}, userId={}", orderId, userId);
 
         Shipment existing = shipmentRepository.findByOrderId(orderId).orElse(null);
@@ -91,7 +90,7 @@ public class ShipmentService {
         shipment.setOrderId(orderId);
         shipment.setUserId(userId);
         shipment.setStatus(ShipmentStatus.CREATED);
-        shipment.setFreightAmount(freightAmount != null ? freightAmount : BigDecimal.ZERO);
+        shipment.setFreightAmount(FreightCalculator.normalizeFreightAmount(freightAmount));
         shipment.setAddressSnapshot(addressSnapshot);
 
         shipment = shipmentRepository.save(shipment);
@@ -252,11 +251,13 @@ public class ShipmentService {
             throw conflict(shipment.getStatus(), "OUTBOUND");
         }
 
+        ShipmentStatus beforeStatus = shipment.getStatus();
         shipment.setStatus(ShipmentStatus.OUTBOUND);
         shipmentRepository.save(shipment);
 
         recordTracking(shipmentId, "OUTBOUND", "Warehouse Exit",
                 "Package scanned and left warehouse", null);
+        recordWarehouseAcceptanceAudit(shipment, beforeStatus);
 
         try {
             orderLogisticsStatusUpdater.updateLogisticsStatus(
@@ -317,6 +318,18 @@ public class ShipmentService {
         String datePart = LocalDate.now().format(DateTimeFormatter.ofPattern("yyyyMMdd"));
         String seqPart = String.format("%04d", System.currentTimeMillis() % 10000);
         return "SH" + datePart + seqPart;
+    }
+
+    private void recordWarehouseAcceptanceAudit(Shipment shipment, ShipmentStatus beforeStatus) {
+        auditLogService.record(
+                "SYSTEM",
+                "SYSTEM",
+                "WAREHOUSE_ACCEPTANCE",
+                "SHIPMENT",
+                String.valueOf(shipment.getId()),
+                beforeStatus.name(),
+                shipment.getStatus().name(),
+                "Warehouse accepted outbound package for order " + shipment.getOrderId());
     }
 
     private void recordTracking(Long shipmentId, String status, String location,

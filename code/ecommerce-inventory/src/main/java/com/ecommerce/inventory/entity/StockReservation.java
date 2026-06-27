@@ -6,11 +6,14 @@ import jakarta.persistence.Entity;
 import jakarta.persistence.EnumType;
 import jakarta.persistence.Enumerated;
 import jakarta.persistence.Table;
+import jakarta.persistence.UniqueConstraint;
 
 import java.time.LocalDateTime;
 
 @Entity
-@Table(name = "stock_reservation")
+@Table(name = "stock_reservation", uniqueConstraints = {
+        @UniqueConstraint(columnNames = { "order_id", "sku_id", "warehouse_id" })
+})
 public class StockReservation extends BaseEntity {
 
     @Column(name = "order_id", nullable = false)

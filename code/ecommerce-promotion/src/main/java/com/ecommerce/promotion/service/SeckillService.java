@@ -4,11 +4,13 @@ import com.ecommerce.common.exception.BusinessException;
 import com.ecommerce.common.exception.ConflictException;
 import com.ecommerce.common.exception.ResourceNotFoundException;
 import com.ecommerce.common.exception.ValidationException;
+import com.ecommerce.common.money.MonetaryUtil;
 import com.ecommerce.promotion.entity.SeckillActivity;
 import com.ecommerce.promotion.repository.SeckillRepository;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.math.BigDecimal;
 import java.time.LocalDateTime;
 
 /**
@@ -32,6 +34,11 @@ public class SeckillService {
                 && !activity.getEndTime().isAfter(activity.getStartTime())) {
             throw new ValidationException("endTime", "End time must be after start time");
         }
+        if (activity.getSeckillPrice() == null
+                || activity.getSeckillPrice().compareTo(BigDecimal.ZERO) <= 0) {
+            throw new ValidationException("seckillPrice", "must be greater than 0");
+        }
+        activity.setSeckillPrice(MonetaryUtil.roundToCent(activity.getSeckillPrice()));
         activity.setSoldQuantity(0);
         activity.setStatus("ACTIVE");
         return seckillRepository.save(activity);

@@ -9,6 +9,7 @@ public class RefundResponse {
 
     private Long id;
     private String refundNo;
+    private String refundRequestNo;
     private String paymentNo;
     private Long orderId;
     private Long userId;
@@ -26,6 +27,8 @@ public class RefundResponse {
     public void setId(Long id) { this.id = id; }
     public String getRefundNo() { return refundNo; }
     public void setRefundNo(String refundNo) { this.refundNo = refundNo; }
+    public String getRefundRequestNo() { return refundRequestNo; }
+    public void setRefundRequestNo(String refundRequestNo) { this.refundRequestNo = refundRequestNo; }
     public String getPaymentNo() { return paymentNo; }
     public void setPaymentNo(String paymentNo) { this.paymentNo = paymentNo; }
     public Long getOrderId() { return orderId; }

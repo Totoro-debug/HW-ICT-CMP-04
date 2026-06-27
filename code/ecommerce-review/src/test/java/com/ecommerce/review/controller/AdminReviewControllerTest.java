@@ -1,5 +1,6 @@
 package com.ecommerce.review.controller;
 
+import com.ecommerce.common.exception.ConflictException;
 import com.ecommerce.common.exception.GlobalExceptionHandler;
 import com.ecommerce.review.dto.ReviewApprovalRequest;
 import com.ecommerce.review.service.ReviewModerationService;
@@ -24,6 +25,7 @@ import java.util.List;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.doNothing;
+import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
@@ -101,6 +103,19 @@ class AdminReviewControllerTest {
                             .contentType(MediaType.APPLICATION_JSON)
                             .content(objectMapper.writeValueAsString(approveRequest)))
                     .andExpect(status().isOk());
+        }
+
+        @Test
+        @DisplayName("approveReview: status conflict returns 409")
+        void testApproveReview_statusConflict_returns409() throws Exception {
+            setupMockAuthentication("1", "ROLE_ADMIN");
+            doThrow(new ConflictException("Only PENDING_REVIEW reviews can be approved"))
+                    .when(reviewModerationService).approve(eq(10L), eq(1L), anyString());
+
+            mockMvc.perform(post("/api/v1/admin/reviews/10/approve")
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content(objectMapper.writeValueAsString(approveRequest)))
+                    .andExpect(status().isConflict());
         }
     }
 

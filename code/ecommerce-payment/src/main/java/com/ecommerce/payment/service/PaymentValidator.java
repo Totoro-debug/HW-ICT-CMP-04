@@ -1,7 +1,10 @@
 package com.ecommerce.payment.service;
 
 import com.ecommerce.common.exception.BusinessException;
+import com.ecommerce.common.exception.ConflictException;
+import com.ecommerce.common.exception.OrderValidationException;
 import com.ecommerce.common.exception.ValidationException;
+import com.ecommerce.common.money.MoneyValidationUtil;
 import com.ecommerce.order.query.OrderDto;
 import com.ecommerce.payment.dto.PayRequest;
 import com.ecommerce.payment.entity.PaymentMethod;
@@ -38,19 +41,19 @@ public class PaymentValidator {
 
         String status = order.getStatus();
         if (!"CREATED".equals(status) && !"PAYING".equals(status)) {
-            throw new BusinessException("ORDER_STATUS_CONFLICT",
+            throw new ConflictException(
                     "Order " + request.getOrderId() + " is not in a payable status: " + status);
         }
 
-        if (request.getAmount() == null
-                || request.getAmount().compareTo(BigDecimal.ZERO) <= 0) {
-            throw new ValidationException("amount",
-                    "Payment amount must be greater than 0");
+        try {
+            MoneyValidationUtil.validatePayableAmount(request.getAmount());
+        } catch (OrderValidationException ex) {
+            throw new OrderValidationException(ex.getCode(), "Payment amount must be at least 0.01");
         }
 
         BigDecimal payableAmount = order.getPayableAmount();
         if (payableAmount == null || request.getAmount().compareTo(payableAmount) != 0) {
-            throw new BusinessException("PAYMENT_AMOUNT_MISMATCH",
+            throw new OrderValidationException("PAYMENT_AMOUNT_MISMATCH",
                     "Payment amount must equal order payable amount");
         }
 
@@ -66,7 +69,7 @@ public class PaymentValidator {
 
         if (paymentRecordRepository.existsByOrderIdAndStatus(
                 request.getOrderId(), PaymentStatus.SUCCESS)) {
-            throw new BusinessException("CONFLICT",
+            throw new ConflictException(
                     "Order " + request.getOrderId() + " already has a successful payment");
         }
 

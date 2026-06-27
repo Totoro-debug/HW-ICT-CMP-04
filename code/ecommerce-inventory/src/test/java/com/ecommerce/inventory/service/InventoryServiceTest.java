@@ -1,12 +1,14 @@
 package com.ecommerce.inventory.service;
 
 import com.ecommerce.common.exception.BusinessException;
+import com.ecommerce.common.exception.ConflictException;
 import com.ecommerce.common.exception.ResourceNotFoundException;
 import com.ecommerce.inventory.cache.InventorySummaryCache;
 import com.ecommerce.inventory.dto.InboundRequest;
 import com.ecommerce.inventory.dto.InventoryCheckResponse;
 import com.ecommerce.inventory.dto.StockSummaryResponse;
 import com.ecommerce.inventory.entity.InventoryStock;
+import com.ecommerce.inventory.entity.OutboundOrder;
 import com.ecommerce.inventory.repository.InboundOrderRepository;
 import com.ecommerce.inventory.repository.InventoryStockRepository;
 import com.ecommerce.inventory.repository.OutboundOrderRepository;
@@ -304,6 +306,45 @@ class InventoryServiceTest {
         assertThat(captor.getValue().getOrderId()).isEqualTo(10L);
         assertThat(captor.getValue().getStatus()).isEqualTo("COMPLETED");
         assertThat(captor.getValue().getOrderNo()).startsWith("OB");
+    }
+
+    @Test
+    @DisplayName("outbound is idempotent for same orderId and same parameters")
+    void testOutbound_sameOrderIdSameParameters_isIdempotent() {
+        OutboundOrder existing = new OutboundOrder();
+        existing.setOrderId(10L);
+        existing.setWarehouseId(1L);
+        existing.setSkuId(100L);
+        existing.setQuantity(30);
+        existing.setStatus("COMPLETED");
+        stock.setOnHandStock(70);
+
+        when(outboundOrderRepo.findByOrderId(10L)).thenReturn(List.of(existing));
+        when(stockRepo.findByWarehouseIdAndSkuId(1L, 100L)).thenReturn(Optional.of(stock));
+
+        InventoryStock result = inventoryService.outbound(1L, 100L, 30, 10L);
+
+        assertThat(result.getOnHandStock()).isEqualTo(70);
+        verify(stockRepo, never()).save(any());
+        verify(outboundOrderRepo, never()).save(any());
+    }
+
+    @Test
+    @DisplayName("outbound rejects same orderId with different parameters")
+    void testOutbound_sameOrderIdDifferentParameters_throwsConflict() {
+        OutboundOrder existing = new OutboundOrder();
+        existing.setOrderId(10L);
+        existing.setWarehouseId(1L);
+        existing.setSkuId(100L);
+        existing.setQuantity(30);
+        existing.setStatus("COMPLETED");
+
+        when(outboundOrderRepo.findByOrderId(10L)).thenReturn(List.of(existing));
+
+        assertThatThrownBy(() -> inventoryService.outbound(1L, 100L, 31, 10L))
+                .isInstanceOf(ConflictException.class);
+        verify(stockRepo, never()).save(any());
+        verify(outboundOrderRepo, never()).save(any());
     }
 
     @Test

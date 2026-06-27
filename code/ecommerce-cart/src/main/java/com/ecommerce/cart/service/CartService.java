@@ -9,7 +9,9 @@ import com.ecommerce.cart.dto.CartEstimateResponse;
 import com.ecommerce.cart.dto.CartItemResponse;
 import com.ecommerce.cart.dto.CartResponse;
 import com.ecommerce.cart.dto.UpdateCartItemRequest;
+import com.ecommerce.common.exception.OrderValidationException;
 import com.ecommerce.common.integration.PointsRedeemEstimator;
+import com.ecommerce.common.money.MoneyValidationUtil;
 import com.ecommerce.common.money.MonetaryUtil;
 import com.ecommerce.product.query.SkuDto;
 import com.ecommerce.promotion.dto.PromotionCalculateRequest;
@@ -157,7 +159,8 @@ public class CartService {
 
         CartData cart = cartCacheManager.getCart(userId);
         if (cart == null || cart.getItems() == null || cart.getItems().isEmpty()) {
-            return emptyEstimateResponse();
+            throw new OrderValidationException(MoneyValidationUtil.CODE_PAYABLE_AMOUNT_TOO_LOW,
+                    "Cart is empty and cannot be estimated for checkout");
         }
 
         BigDecimal itemTotal = BigDecimal.ZERO;
@@ -171,8 +174,9 @@ public class CartService {
             refreshed.setAddedAt(item.getAddedAt());
             refreshedItems.add(refreshed);
 
-            BigDecimal lineTotal = MonetaryUtil.multiply(sku.getPrice(), BigDecimal.valueOf(item.getQuantity()));
-            itemTotal = MonetaryUtil.add(itemTotal, lineTotal);
+            BigDecimal price = sku.getPrice() != null ? sku.getPrice() : BigDecimal.ZERO;
+            BigDecimal lineTotal = price.multiply(BigDecimal.valueOf(item.getQuantity()));
+            itemTotal = itemTotal.add(lineTotal);
 
             PromotionCalculateRequest.CalculateItem promotionItem = new PromotionCalculateRequest.CalculateItem();
             promotionItem.setSkuId(sku.getSkuId());
@@ -187,28 +191,31 @@ public class CartService {
                 ? BigDecimal.ZERO : SHIPPING_FEE;
         BigDecimal packagingFee = PACKAGING_FEE;
 
-        BigDecimal discountAmount = calculateDiscountAmount(userId, request.getCouponIds(), promotionItems);
-        BigDecimal prePointsAmount = MonetaryUtil.add(itemTotal, shippingFee);
-        prePointsAmount = MonetaryUtil.add(prePointsAmount, packagingFee);
-        prePointsAmount = MonetaryUtil.subtract(prePointsAmount, discountAmount);
+        BigDecimal discountAmount = normalizeDiscountAmount(
+                calculateDiscountAmount(userId, request.getCouponIds(), promotionItems), itemTotal);
+        BigDecimal prePointsAmount = itemTotal.add(shippingFee)
+                .add(packagingFee)
+                .subtract(discountAmount);
         if (prePointsAmount.compareTo(BigDecimal.ZERO) < 0) {
             prePointsAmount = BigDecimal.ZERO;
         }
 
         BigDecimal pointsDeductionAmount = calculatePointsDeduction(userId, request.getRedeemPoints(), prePointsAmount);
 
-        BigDecimal payableAmount = MonetaryUtil.subtract(prePointsAmount, pointsDeductionAmount);
+        BigDecimal payableAmount = prePointsAmount.subtract(pointsDeductionAmount);
         if (payableAmount.compareTo(BigDecimal.ZERO) < 0) {
             payableAmount = BigDecimal.ZERO;
         }
+        BigDecimal roundedPayableAmount = MonetaryUtil.roundToCent(payableAmount);
+        MoneyValidationUtil.validatePayableAmount(roundedPayableAmount);
 
         CartEstimateResponse response = new CartEstimateResponse();
-        response.setItemTotal(itemTotal);
-        response.setShippingFee(shippingFee);
-        response.setPackagingFee(packagingFee);
-        response.setDiscountAmount(discountAmount);
-        response.setPointsDeductionAmount(pointsDeductionAmount);
-        response.setPayableAmount(payableAmount);
+        response.setItemTotal(MonetaryUtil.roundToCent(itemTotal));
+        response.setShippingFee(MonetaryUtil.roundToCent(shippingFee));
+        response.setPackagingFee(MonetaryUtil.roundToCent(packagingFee));
+        response.setDiscountAmount(MonetaryUtil.roundToCent(discountAmount));
+        response.setPointsDeductionAmount(MonetaryUtil.roundToCent(pointsDeductionAmount));
+        response.setPayableAmount(roundedPayableAmount);
 
         log.debug("Cart estimate: itemTotal={}, shipping={}, packaging={}, discount={}, points={}, payable={}",
                 itemTotal, shippingFee, packagingFee, discountAmount, pointsDeductionAmount, payableAmount);
@@ -247,14 +254,15 @@ public class CartService {
             CartItemResponse itemResponse = toCartItemResponse(item);
             itemResponses.add(itemResponse);
             totalItems += item.getQuantity();
-            totalAmount = MonetaryUtil.add(totalAmount, itemResponse.getSubtotal());
+            totalAmount = totalAmount.add(itemResponse.getSubtotal());
         }
 
-        return new CartResponse(itemResponses, totalItems, totalAmount);
+        return new CartResponse(itemResponses, totalItems, MonetaryUtil.roundToCent(totalAmount));
     }
 
     private CartItemResponse toCartItemResponse(CartItemData item) {
-        BigDecimal subtotal = MonetaryUtil.multiply(item.getPrice(), BigDecimal.valueOf(item.getQuantity()));
+        BigDecimal price = item.getPrice() != null ? item.getPrice() : BigDecimal.ZERO;
+        BigDecimal subtotal = MonetaryUtil.roundToCent(price.multiply(BigDecimal.valueOf(item.getQuantity())));
         return new CartItemResponse(item.getSkuId(), item.getSkuName(), item.getPrice(), item.getQuantity(), subtotal);
     }
 
@@ -284,6 +292,21 @@ public class CartService {
         return discount != null ? discount : BigDecimal.ZERO;
     }
 
+    private BigDecimal normalizeDiscountAmount(BigDecimal discountAmount, BigDecimal itemTotal) {
+        BigDecimal discount = discountAmount != null ? discountAmount : BigDecimal.ZERO;
+        BigDecimal itemAmount = itemTotal != null ? itemTotal : BigDecimal.ZERO;
+        if (discount.compareTo(BigDecimal.ZERO) < 0) {
+            log.warn("Promotion returned negative discount amount: {}. Normalized to 0.", discount);
+            return BigDecimal.ZERO;
+        }
+        if (discount.compareTo(itemAmount) > 0) {
+            log.warn("Promotion returned discount amount {} exceeding item total {}. Capped to item total.",
+                    discount, itemAmount);
+            return itemAmount;
+        }
+        return discount;
+    }
+
     private BigDecimal calculatePointsDeduction(Long userId, Integer requestedPoints, BigDecimal prePointsAmount) {
         if (requestedPoints == null || requestedPoints <= 0 || prePointsAmount.compareTo(BigDecimal.ZERO) <= 0) {
             return BigDecimal.ZERO;
@@ -293,7 +316,7 @@ public class CartService {
         if (actualPoints <= 0) {
             return BigDecimal.ZERO;
         }
-        BigDecimal deduction = MonetaryUtil.multiply(BigDecimal.valueOf(actualPoints), POINTS_TO_YUAN_RATE);
+        BigDecimal deduction = BigDecimal.valueOf(actualPoints).multiply(POINTS_TO_YUAN_RATE);
         if (deduction.compareTo(prePointsAmount) > 0) {
             return prePointsAmount;
         }

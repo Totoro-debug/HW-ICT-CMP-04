@@ -1,7 +1,7 @@
 package com.ecommerce.review.service;
 
 import com.ecommerce.common.event.DomainEventPublisher;
-import com.ecommerce.common.exception.BusinessException;
+import com.ecommerce.common.exception.ConflictException;
 import com.ecommerce.common.exception.ResourceNotFoundException;
 import com.ecommerce.review.entity.Review;
 import com.ecommerce.review.entity.ReviewStatus;
@@ -113,7 +113,7 @@ class ReviewModerationServiceTest {
             when(reviewRepository.findById(10L)).thenReturn(Optional.of(pendingReview));
 
             assertThatThrownBy(() -> moderationService.approve(10L, 99L, "note"))
-                    .isInstanceOf(BusinessException.class)
+                    .isInstanceOf(ConflictException.class)
                     .hasMessageContaining("Only PENDING_REVIEW reviews can be approved");
         }
 
@@ -158,7 +158,7 @@ class ReviewModerationServiceTest {
             when(reviewRepository.findById(10L)).thenReturn(Optional.of(pendingReview));
 
             assertThatThrownBy(() -> moderationService.reject(10L, 99L, "reason"))
-                    .isInstanceOf(BusinessException.class)
+                    .isInstanceOf(ConflictException.class)
                     .hasMessageContaining("Only PENDING_REVIEW reviews can be rejected");
         }
     }

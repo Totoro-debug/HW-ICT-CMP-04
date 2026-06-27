@@ -14,6 +14,7 @@ import java.time.LocalDateTime;
 @Entity
 @Table(name = "refund_records", indexes = {
         @Index(name = "idx_refund_no", columnList = "refundNo", unique = true),
+        @Index(name = "idx_refund_request_no", columnList = "refundRequestNo", unique = true),
         @Index(name = "idx_refund_payment_no", columnList = "paymentNo"),
         @Index(name = "idx_refund_order_id", columnList = "orderId"),
         @Index(name = "idx_refund_user_id", columnList = "userId"),
@@ -23,6 +24,9 @@ public class RefundRecord extends BaseEntity {
 
     @Column(nullable = false, unique = true, length = 64)
     private String refundNo;
+
+    @Column(nullable = false, unique = true, length = 64)
+    private String refundRequestNo;
 
     @Column(nullable = false, length = 64)
     private String paymentNo;
@@ -57,6 +61,8 @@ public class RefundRecord extends BaseEntity {
 
     public String getRefundNo() { return refundNo; }
     public void setRefundNo(String refundNo) { this.refundNo = refundNo; }
+    public String getRefundRequestNo() { return refundRequestNo; }
+    public void setRefundRequestNo(String refundRequestNo) { this.refundRequestNo = refundRequestNo; }
     public String getPaymentNo() { return paymentNo; }
     public void setPaymentNo(String paymentNo) { this.paymentNo = paymentNo; }
     public Long getOrderId() { return orderId; }

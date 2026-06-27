@@ -4,9 +4,12 @@ import com.ecommerce.common.model.BaseEntity;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.Table;
+import jakarta.persistence.UniqueConstraint;
 
 @Entity
-@Table(name = "outbound_order")
+@Table(name = "outbound_order", uniqueConstraints = {
+        @UniqueConstraint(columnNames = { "order_id", "sku_id", "warehouse_id" })
+})
 public class OutboundOrder extends BaseEntity {
 
     @Column(name = "order_no", nullable = false, length = 64)

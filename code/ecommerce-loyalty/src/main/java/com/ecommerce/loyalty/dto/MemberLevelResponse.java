@@ -9,7 +9,7 @@ public class MemberLevelResponse {
 
     private String level;
     private String levelName;
-    private double multiplier;
+    private BigDecimal multiplier;
     private BigDecimal annualConsumption;
     private String nextLevelCondition;
 
@@ -32,11 +32,11 @@ public class MemberLevelResponse {
         this.levelName = levelName;
     }
 
-    public double getMultiplier() {
+    public BigDecimal getMultiplier() {
         return multiplier;
     }
 
-    public void setMultiplier(double multiplier) {
+    public void setMultiplier(BigDecimal multiplier) {
         this.multiplier = multiplier;
     }
 

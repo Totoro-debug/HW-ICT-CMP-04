@@ -1,6 +1,7 @@
 package com.ecommerce.order.dto;
 
 import jakarta.validation.Valid;
+import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotEmpty;
 import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Size;
@@ -27,7 +28,8 @@ public class CreateOrderRequest {
     /** Number of loyalty points to redeem (optional) */
     private int redeemPoints;
 
-    /** Optional external order number from client system */
+    /** External order number from client system */
+    @NotBlank(message = "External order number is required")
     @Size(max = 128, message = "External order number must not exceed 128 characters")
     private String externalOrderNo;
 

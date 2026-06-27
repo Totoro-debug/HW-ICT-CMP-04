@@ -1,6 +1,8 @@
 package com.ecommerce.review.service;
 
+import com.ecommerce.common.exception.AuthorizationException;
 import com.ecommerce.common.exception.BusinessException;
+import com.ecommerce.common.exception.ConflictException;
 import com.ecommerce.common.exception.ResourceNotFoundException;
 import com.ecommerce.order.dto.VerifyPurchaseResponse;
 import com.ecommerce.order.query.OrderQueryService;
@@ -74,8 +76,7 @@ public class ReviewService {
         // Check for duplicate review on the same order item
         reviewRepository.findByUserIdAndOrderItemId(userId, request.getOrderItemId())
                 .ifPresent(existing -> {
-                    throw new BusinessException("DUPLICATE_REVIEW",
-                            "You have already reviewed this order item");
+                    throw new ConflictException("You have already reviewed this order item");
                 });
 
         // Filter sensitive words
@@ -139,8 +140,7 @@ public class ReviewService {
                 .orElseThrow(() -> new ResourceNotFoundException("Review", reviewId));
 
         if (!review.getUserId().equals(userId)) {
-            throw new BusinessException("FORBIDDEN",
-                    "You can only append to your own reviews");
+            throw AuthorizationException.forbidden("You can only append to your own reviews");
         }
 
         if (review.getStatus() != ReviewStatus.APPROVED) {

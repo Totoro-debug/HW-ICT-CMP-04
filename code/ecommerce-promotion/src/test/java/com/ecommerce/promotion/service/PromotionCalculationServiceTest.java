@@ -1,5 +1,6 @@
 package com.ecommerce.promotion.service;
 
+import com.ecommerce.common.exception.OrderValidationException;
 import com.ecommerce.common.money.MonetaryUtil;
 import com.ecommerce.promotion.dto.PromotionCalculateRequest;
 import com.ecommerce.promotion.dto.PromotionCalculateResponse;
@@ -26,6 +27,7 @@ import java.util.List;
 import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.when;
 
@@ -301,6 +303,38 @@ class PromotionCalculationServiceTest {
             assertThat(response.getCouponDiscount()).isEqualByComparingTo(BigDecimal.ZERO);
             assertThat(response.getMemberDiscount()).isEqualByComparingTo(new BigDecimal("5.00"));
             assertThat(response.getFullReductionDiscount()).isEqualByComparingTo(new BigDecimal("10.00"));
+        }
+
+        @Test
+        @DisplayName("calculate: caps discounts so final amount stays at least 0.01")
+        void testCalculate_capsDiscountsToMinimumPayable() {
+            request.setUserId(null);
+            request.setCouponIds(null);
+
+            when(fullReductionService.calculateBestReduction(any(BigDecimal.class)))
+                    .thenReturn(Optional.of(new BigDecimal("100.00")));
+
+            PromotionCalculateResponse response = promotionCalculationService.calculate(request);
+
+            assertThat(response.getFullReductionDiscount()).isEqualByComparingTo(new BigDecimal("99.99"));
+            assertThat(response.getTotalDiscount()).isEqualByComparingTo(new BigDecimal("99.99"));
+            assertThat(response.getFinalAmount()).isEqualByComparingTo(new BigDecimal("0.01"));
+        }
+
+        @Test
+        @DisplayName("calculate: blocks zero item total as invalid payable amount")
+        void testCalculate_zeroItemTotalThrowsOrderValidationException() {
+            item.setPrice(BigDecimal.ZERO);
+            request.setUserId(null);
+            request.setCouponIds(null);
+
+            when(fullReductionService.calculateBestReduction(any(BigDecimal.class)))
+                    .thenReturn(Optional.empty());
+
+            assertThatThrownBy(() -> promotionCalculationService.calculate(request))
+                    .isInstanceOf(OrderValidationException.class)
+                    .extracting("code")
+                    .isEqualTo("PAYABLE_AMOUNT_TOO_LOW");
         }
     }
 }

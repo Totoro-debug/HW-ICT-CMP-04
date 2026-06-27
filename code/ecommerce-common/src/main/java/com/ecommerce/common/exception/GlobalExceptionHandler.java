@@ -11,7 +11,6 @@ import org.springframework.web.bind.annotation.RestControllerAdvice;
 
 import java.util.HashMap;
 import java.util.Map;
-import java.util.Set;
 import java.util.UUID;
 
 /**
@@ -22,17 +21,6 @@ import java.util.UUID;
 public class GlobalExceptionHandler {
 
     private static final Logger log = LoggerFactory.getLogger(GlobalExceptionHandler.class);
-
-    private static final Set<String> FORBIDDEN_BUSINESS_CODES = Set.of(
-            "USER_NOT_ACTIVE",
-            "USER_FROZEN",
-            "REVIEW_PURCHASE_REQUIRED"
-    );
-
-    private static final Set<String> CONFLICT_BUSINESS_CODES = Set.of(
-            "ORDER_STATUS_CONFLICT",
-            "REFUND_WAITING_WAREHOUSE_ACCEPT"
-    );
 
     @ExceptionHandler(ResourceNotFoundException.class)
     public ResponseEntity<ApiError> handleResourceNotFound(ResourceNotFoundException ex) {
@@ -90,7 +78,7 @@ public class GlobalExceptionHandler {
         String traceId = generateTraceId();
         log.warn("Business exception [{}]: code={}, message={}", traceId, ex.getCode(), ex.getMessage());
         ApiError error = new ApiError(ex.getCode(), ex.getMessage(), traceId, ex.getDetails());
-        return ResponseEntity.status(resolveBusinessHttpStatus(ex.getCode())).body(error);
+        return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(error);
     }
 
     @ExceptionHandler(MethodArgumentNotValidException.class)
@@ -111,19 +99,6 @@ public class GlobalExceptionHandler {
         log.error("Internal error [{}]: {}", traceId, ex.getMessage(), ex);
         ApiError error = new ApiError("INTERNAL_ERROR", "An unexpected error occurred", traceId, new HashMap<>());
         return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(error);
-    }
-
-    private HttpStatus resolveBusinessHttpStatus(String code) {
-        if (code == null) {
-            return HttpStatus.BAD_REQUEST;
-        }
-        if (FORBIDDEN_BUSINESS_CODES.contains(code)) {
-            return HttpStatus.FORBIDDEN;
-        }
-        if (CONFLICT_BUSINESS_CODES.contains(code)) {
-            return HttpStatus.CONFLICT;
-        }
-        return HttpStatus.BAD_REQUEST;
     }
 
     private String generateTraceId() {

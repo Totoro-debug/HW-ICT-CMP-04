@@ -11,7 +11,7 @@ import java.time.LocalDateTime;
 
 /**
  * Central publisher for domain events.
- * Wraps Spring's ApplicationEventPublisher and provides a uniform publish method.
+ * Wraps Spring's ApplicationEventPublisher and provides uniform publish methods.
  */
 @Component
 public class DomainEventPublisher {
@@ -31,22 +31,42 @@ public class DomainEventPublisher {
     }
 
     /**
-     * Publishes a domain event on the Spring application event bus.
-     * If a listener throws an exception, it is caught, logged, and swallowed
-     * so that non-critical listeners do not abort the main business transaction.
-     *
-     * @param event the domain event to publish
+     * Publishes a non-strong-consistency domain event. Listener exceptions are
+     * persisted and swallowed so that non-critical listeners do not abort the
+     * main business transaction.
      */
     public void publish(AbstractDomainEvent event) {
-        log.info("Publishing domain event: eventId={}, type={}, occurredAt={}",
-                event.getEventId(), event.getClass().getSimpleName(), event.getOccurredAt());
+        publish(event, false);
+    }
+
+    /**
+     * Publishes a strong-consistency domain event. Listener exceptions are
+     * persisted and rethrown to allow the caller transaction to roll back.
+     */
+    public void publishStrong(AbstractDomainEvent event) {
+        publish(event, true);
+    }
+
+    public void publish(AbstractDomainEvent event, boolean strongConsistency) {
+        log.info("Publishing domain event: eventId={}, type={}, occurredAt={}, strongConsistency={}",
+                event.getEventId(), event.getClass().getSimpleName(), event.getOccurredAt(), strongConsistency);
         try {
             applicationEventPublisher.publishEvent(event);
             log.info("Domain event published successfully: eventId={}", event.getEventId());
+        } catch (RuntimeException e) {
+            log.error("Failed to publish domain event: eventId={}, type={}, error={}",
+                    event.getEventId(), event.getClass().getSimpleName(), e.getMessage(), e);
+            persistFailure(event, e);
+            if (strongConsistency) {
+                throw e;
+            }
         } catch (Exception e) {
             log.error("Failed to publish domain event: eventId={}, type={}, error={}",
                     event.getEventId(), event.getClass().getSimpleName(), e.getMessage(), e);
             persistFailure(event, e);
+            if (strongConsistency) {
+                throw new IllegalStateException("Strong-consistency event listener failed", e);
+            }
         }
     }
 
@@ -56,9 +76,11 @@ public class DomainEventPublisher {
             record.setEventType(event.getClass().getSimpleName());
             record.setEventPayload(serializeEvent(event));
             record.setErrorMessage(exception.getMessage());
+            record.setLastError(exception.getMessage());
             record.setOccurredAt(LocalDateTime.now());
             record.setRetried(false);
             record.setRetryCount(0);
+            record.setStatus(FailedEventStatus.PENDING);
             failedEventRecordRepository.save(record);
         } catch (Exception e) {
             log.error("Failed to persist failed event record: {}", e.getMessage(), e);

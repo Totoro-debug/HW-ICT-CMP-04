@@ -1,5 +1,6 @@
 package com.ecommerce.product.service;
 
+import com.ecommerce.common.audit.AuditLogService;
 import com.ecommerce.common.exception.ResourceNotFoundException;
 import com.ecommerce.common.exception.ValidationException;
 import com.ecommerce.product.dto.SkuCreateRequest;
@@ -16,6 +17,7 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.security.core.context.SecurityContextHolder;
 
 import java.math.BigDecimal;
 import java.util.Map;
@@ -24,6 +26,8 @@ import java.util.Optional;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -43,6 +47,9 @@ class SkuServiceTest {
     @Mock
     private ProductDetailCacheService productDetailCacheService;
 
+    @Mock
+    private AuditLogService auditLogService;
+
     @InjectMocks
     private SkuService skuService;
 
@@ -51,6 +58,7 @@ class SkuServiceTest {
 
     @BeforeEach
     void setUp() {
+        SecurityContextHolder.clearContext();
         createRequest = new SkuCreateRequest();
         createRequest.setSpuId(1L);
         createRequest.setSkuCode("SKU-001");
@@ -89,6 +97,46 @@ class SkuServiceTest {
         assertThat(result.getSortOrder()).isZero();
         verify(skuRepository).save(any(ProductSku.class));
         verify(productDetailCacheService).evict(1L);
+    }
+
+    @Test
+    @DisplayName("createSku normalizes price and marketPrice to cents using HALF_UP")
+    void testCreateSku_normalizesPriceToCent() {
+        createRequest.setPrice(new BigDecimal("10.005"));
+        createRequest.setMarketPrice(new BigDecimal("12.004"));
+        when(spuRepository.existsById(1L)).thenReturn(true);
+        when(skuRepository.findBySkuCode("SKU-001")).thenReturn(Optional.empty());
+        when(skuRepository.save(any(ProductSku.class))).thenAnswer(invocation -> invocation.getArgument(0));
+
+        ProductSku result = skuService.createSku(createRequest);
+
+        assertThat(result.getPrice()).isEqualByComparingTo(new BigDecimal("10.01"));
+        assertThat(result.getMarketPrice()).isEqualByComparingTo(new BigDecimal("12.00"));
+    }
+
+    @Test
+    @DisplayName("createSku keeps null marketPrice as null")
+    void testCreateSku_allowsNullMarketPrice() {
+        createRequest.setMarketPrice(null);
+        when(spuRepository.existsById(1L)).thenReturn(true);
+        when(skuRepository.findBySkuCode("SKU-001")).thenReturn(Optional.empty());
+        when(skuRepository.save(any(ProductSku.class))).thenAnswer(invocation -> invocation.getArgument(0));
+
+        ProductSku result = skuService.createSku(createRequest);
+
+        assertThat(result.getPrice()).isEqualByComparingTo(new BigDecimal("99.99"));
+        assertThat(result.getMarketPrice()).isNull();
+    }
+
+    @Test
+    @DisplayName("createSku rejects price below 0.01")
+    void testCreateSku_rejectsPriceBelowMinimum() {
+        createRequest.setPrice(BigDecimal.ZERO);
+
+        assertThatThrownBy(() -> skuService.createSku(createRequest))
+                .isInstanceOf(ValidationException.class)
+                .hasMessageContaining("price")
+                .hasMessageContaining("0.01");
     }
 
     @Test
@@ -141,6 +189,8 @@ class SkuServiceTest {
 
         assertThat(draftSku.getStatus()).isEqualTo(SkuStatus.ON_SHELF);
         verify(skuRepository).save(draftSku);
+        verify(auditLogService).record("system", "system", "SKU_ON_SHELF", "PRODUCT_SKU",
+                "1", "DRAFT", "ON_SHELF", "SKU put on shelf");
         verify(productDetailCacheService).evict(1L);
     }
 
@@ -172,6 +222,8 @@ class SkuServiceTest {
         assertThatThrownBy(() -> skuService.onShelf(3L))
                 .isInstanceOf(ValidationException.class)
                 .hasMessageContaining("Cannot put a DELETED SKU on shelf");
+        verify(auditLogService, never()).record(anyString(), anyString(), anyString(), anyString(),
+                anyString(), anyString(), anyString(), anyString());
     }
 
     @Test
@@ -189,6 +241,8 @@ class SkuServiceTest {
 
         assertThat(onShelfSku.getStatus()).isEqualTo(SkuStatus.OFF_SHELF);
         verify(skuRepository).save(onShelfSku);
+        verify(auditLogService).record("system", "system", "SKU_OFF_SHELF", "PRODUCT_SKU",
+                "1", "ON_SHELF", "OFF_SHELF", "SKU taken off shelf");
         verify(productDetailCacheService).evict(1L);
     }
 
@@ -204,5 +258,7 @@ class SkuServiceTest {
         assertThatThrownBy(() -> skuService.offShelf(3L))
                 .isInstanceOf(ValidationException.class)
                 .hasMessageContaining("Cannot take a DELETED SKU off shelf");
+        verify(auditLogService, never()).record(anyString(), anyString(), anyString(), anyString(),
+                anyString(), anyString(), anyString(), anyString());
     }
 }

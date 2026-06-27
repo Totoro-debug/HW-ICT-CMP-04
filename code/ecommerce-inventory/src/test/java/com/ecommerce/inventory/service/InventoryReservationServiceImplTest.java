@@ -1,6 +1,7 @@
 package com.ecommerce.inventory.service;
 
 import com.ecommerce.common.exception.BusinessException;
+import com.ecommerce.common.exception.ConflictException;
 import com.ecommerce.common.exception.ResourceNotFoundException;
 import com.ecommerce.inventory.entity.InventoryStock;
 import com.ecommerce.inventory.entity.ReservationStatus;
@@ -136,6 +137,43 @@ class InventoryReservationServiceImplTest {
         // stock should handle the full quantity
         assertThat(stock.getOnHandStock()).isEqualTo(200);
         assertThat(stock.getReservedStock()).isEqualTo(40);
+    }
+
+    @Test
+    @DisplayName("reserve is idempotent for same orderId and same items")
+    void testReserve_sameOrderIdSameItems_isIdempotent() {
+        StockReservation existing = new StockReservation();
+        existing.setOrderId(1L);
+        existing.setSkuId(100L);
+        existing.setWarehouseId(1L);
+        existing.setQuantity(40);
+        existing.setStatus(ReservationStatus.RESERVED);
+
+        when(stockReservationRepo.findByOrderId(1L)).thenReturn(List.of(existing));
+
+        reservationService.reserve(1L, List.of(new ReserveItem(100L, 40)));
+
+        assertThat(stock.getReservedStock()).isZero();
+        verify(stockRepo, never()).save(any());
+        verify(stockReservationRepo, never()).save(any());
+    }
+
+    @Test
+    @DisplayName("reserve rejects same orderId with different items")
+    void testReserve_sameOrderIdDifferentItems_throwsConflict() {
+        StockReservation existing = new StockReservation();
+        existing.setOrderId(1L);
+        existing.setSkuId(100L);
+        existing.setWarehouseId(1L);
+        existing.setQuantity(40);
+        existing.setStatus(ReservationStatus.RESERVED);
+
+        when(stockReservationRepo.findByOrderId(1L)).thenReturn(List.of(existing));
+
+        assertThatThrownBy(() -> reservationService.reserve(1L, List.of(new ReserveItem(100L, 41))))
+                .isInstanceOf(ConflictException.class);
+        verify(stockRepo, never()).save(any());
+        verify(stockReservationRepo, never()).save(any());
     }
 
     // ---- release tests ----

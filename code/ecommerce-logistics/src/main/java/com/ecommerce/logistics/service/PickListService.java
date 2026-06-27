@@ -1,5 +1,6 @@
 package com.ecommerce.logistics.service;
 
+import com.ecommerce.common.exception.ConflictException;
 import com.ecommerce.common.exception.ResourceNotFoundException;
 import com.ecommerce.logistics.entity.PickList;
 import com.ecommerce.logistics.entity.Shipment;
@@ -86,7 +87,7 @@ public class PickListService {
                         "Pick list not found: " + pickListId));
 
         if (!"PICKING".equals(pickList.getStatus()) && !"PENDING".equals(pickList.getStatus())) {
-            throw new IllegalStateException(
+            throw new ConflictException(
                     "Cannot complete pick list in status: " + pickList.getStatus());
         }
 

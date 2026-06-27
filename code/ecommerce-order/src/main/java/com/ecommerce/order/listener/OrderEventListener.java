@@ -1,5 +1,8 @@
 package com.ecommerce.order.listener;
 
+import com.ecommerce.common.event.FailedEventRecord;
+import com.ecommerce.common.event.FailedEventRecordRepository;
+import com.ecommerce.common.event.FailedEventStatus;
 import com.ecommerce.order.entity.Order;
 import com.ecommerce.order.entity.OrderStatus;
 import com.ecommerce.order.event.OrderCancelledEvent;
@@ -16,6 +19,7 @@ import org.springframework.transaction.event.TransactionalEventListener;
 
 import java.time.LocalDateTime;
 import java.util.Optional;
+import java.util.function.Consumer;
 
 /**
  * Internal event listeners for order domain events.
@@ -33,9 +37,12 @@ public class OrderEventListener {
     private static final Logger log = LoggerFactory.getLogger(OrderEventListener.class);
 
     private final OrderRepository orderRepository;
+    private final FailedEventRecordRepository failedEventRecordRepository;
 
-    public OrderEventListener(OrderRepository orderRepository) {
+    public OrderEventListener(OrderRepository orderRepository,
+                              FailedEventRecordRepository failedEventRecordRepository) {
         this.orderRepository = orderRepository;
+        this.failedEventRecordRepository = failedEventRecordRepository;
     }
 
     /**
@@ -45,15 +52,7 @@ public class OrderEventListener {
      */
     @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
     public void onOrderCreated(OrderCreatedEvent event) {
-        log.info("[OrderEventListener] Order created: orderId={}, userId={}, amount={}, eventId={}",
-                event.getOrderId(), event.getUserId(), event.getPayableAmount(), event.getEventId());
-
-        // In production, this would:
-        // - Send to analytics pipeline
-        // - Update real-time dashboards
-        // - Trigger notification workflows
-
-        log.debug("OrderCreatedEvent processing complete for orderId={}", event.getOrderId());
+        handleNonStrongEvent(event, "OrderEventListener.onOrderCreated", this::processOrderCreated);
     }
 
     /**
@@ -62,11 +61,64 @@ public class OrderEventListener {
      */
     @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
     public void onOrderPaid(OrderPaidEvent event) {
+        handleNonStrongEvent(event, "OrderEventListener.onOrderPaid", this::processOrderPaid);
+    }
+
+    /**
+     * Handle order cancellation event.
+     * Logs cancellation and triggers any internal cleanup.
+     */
+    @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
+    public void onOrderCancelled(OrderCancelledEvent event) {
+        handleNonStrongEvent(event, "OrderEventListener.onOrderCancelled", this::processOrderCancelled);
+    }
+
+    /**
+     * Async fallback listener for general order events.
+     * Uses the synchronous event bus as a fallback for cases where
+     * TransactionalEventListener might not fire (e.g., no active transaction).
+     */
+    @Async
+    @EventListener
+    public void onOrderCreatedFallback(OrderCreatedEvent event) {
+        handleNonStrongEvent(event, "OrderEventListener.onOrderCreatedFallback",
+                e -> log.debug("[OrderEventListener-Fallback] OrderCreatedEvent caught via EventListener: orderId={}",
+                        e.getOrderId()));
+    }
+
+    /**
+     * Async fallback for paid events.
+     */
+    @Async
+    @EventListener
+    public void onOrderPaidFallback(OrderPaidEvent event) {
+        handleNonStrongEvent(event, "OrderEventListener.onOrderPaidFallback",
+                e -> log.debug("[OrderEventListener-Fallback] OrderPaidEvent caught via EventListener: orderId={}",
+                        e.getOrderId()));
+    }
+
+    /**
+     * Async fallback for cancelled events.
+     */
+    @Async
+    @EventListener
+    public void onOrderCancelledFallback(OrderCancelledEvent event) {
+        handleNonStrongEvent(event, "OrderEventListener.onOrderCancelledFallback",
+                e -> log.debug("[OrderEventListener-Fallback] OrderCancelledEvent caught via EventListener: orderId={}",
+                        e.getOrderId()));
+    }
+
+    private void processOrderCreated(OrderCreatedEvent event) {
+        log.info("[OrderEventListener] Order created: orderId={}, userId={}, amount={}, eventId={}",
+                event.getOrderId(), event.getUserId(), event.getPayableAmount(), event.getEventId());
+        log.debug("OrderCreatedEvent processing complete for orderId={}", event.getOrderId());
+    }
+
+    private void processOrderPaid(OrderPaidEvent event) {
         log.info("[OrderEventListener] Order paid: orderId={}, userId={}, paymentNo={}, amount={}, eventId={}",
                 event.getOrderId(), event.getUserId(), event.getPaymentNo(),
                 event.getPaidAmount(), event.getEventId());
 
-        // Post-payment: update order with payment timestamp
         Optional<Order> orderOpt = orderRepository.findById(event.getOrderId());
         if (orderOpt.isPresent()) {
             Order order = orderOpt.get();
@@ -78,52 +130,39 @@ public class OrderEventListener {
         }
     }
 
-    /**
-     * Handle order cancellation event.
-     * Logs cancellation and triggers any internal cleanup.
-     */
-    @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
-    public void onOrderCancelled(OrderCancelledEvent event) {
+    private void processOrderCancelled(OrderCancelledEvent event) {
         log.info("[OrderEventListener] Order cancelled: orderId={}, userId={}, eventId={}",
                 event.getOrderId(), event.getUserId(), event.getEventId());
-
-        // In production, this would:
-        // - Notify affected parties
-        // - Update inventory reconciliation
-        // - Push to analytics
-
         log.debug("OrderCancelledEvent processing complete for orderId={}", event.getOrderId());
     }
 
-    /**
-     * Async fallback listener for general order events.
-     * Uses the synchronous event bus as a fallback for cases where
-     * TransactionalEventListener might not fire (e.g., no active transaction).
-     */
-    @Async
-    @EventListener
-    public void onOrderCreatedFallback(OrderCreatedEvent event) {
-        log.debug("[OrderEventListener-Fallback] OrderCreatedEvent caught via EventListener: orderId={}",
-                event.getOrderId());
+    private <T extends com.ecommerce.common.event.AbstractDomainEvent> void handleNonStrongEvent(
+            T event, String handlerName, Consumer<T> handler) {
+        try {
+            handler.accept(event);
+        } catch (Exception ex) {
+            log.error("Order event listener failed: handler={}, eventType={}, eventId={}, error={}",
+                    handlerName, event.getClass().getSimpleName(), event.getEventId(), ex.getMessage(), ex);
+            persistFailure(event, handlerName, ex);
+        }
     }
 
-    /**
-     * Async fallback for paid events.
-     */
-    @Async
-    @EventListener
-    public void onOrderPaidFallback(OrderPaidEvent event) {
-        log.debug("[OrderEventListener-Fallback] OrderPaidEvent caught via EventListener: orderId={}",
-                event.getOrderId());
-    }
-
-    /**
-     * Async fallback for cancelled events.
-     */
-    @Async
-    @EventListener
-    public void onOrderCancelledFallback(OrderCancelledEvent event) {
-        log.debug("[OrderEventListener-Fallback] OrderCancelledEvent caught via EventListener: orderId={}",
-                event.getOrderId());
+    private void persistFailure(com.ecommerce.common.event.AbstractDomainEvent event,
+                                String handlerName,
+                                Exception exception) {
+        try {
+            FailedEventRecord record = new FailedEventRecord();
+            record.setEventType(handlerName + ":" + event.getClass().getSimpleName());
+            record.setEventPayload("{\"eventId\":\"" + event.getEventId() + "\"}");
+            record.setErrorMessage(exception.getMessage());
+            record.setLastError(exception.getMessage());
+            record.setOccurredAt(LocalDateTime.now());
+            record.setRetried(false);
+            record.setRetryCount(0);
+            record.setStatus(FailedEventStatus.PENDING);
+            failedEventRecordRepository.save(record);
+        } catch (Exception persistenceException) {
+            log.error("Failed to persist order event failure record: {}", persistenceException.getMessage(), persistenceException);
+        }
     }
 }

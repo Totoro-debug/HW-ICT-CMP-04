@@ -1,6 +1,7 @@
 package com.ecommerce.payment.service;
 
-import com.ecommerce.common.exception.BusinessException;
+import com.ecommerce.common.audit.AuditLogService;
+import com.ecommerce.common.exception.ConflictException;
 import com.ecommerce.payment.dto.RefundApplyRequest;
 import com.ecommerce.payment.dto.RefundResponse;
 import com.ecommerce.payment.dto.RefundReviewRequest;
@@ -42,6 +43,9 @@ class RefundServiceTest {
     @Mock
     private RefundStageService refundStageService;
 
+    @Mock
+    private AuditLogService auditLogService;
+
     private RefundService refundService;
 
     @BeforeEach
@@ -50,12 +54,13 @@ class RefundServiceTest {
                 refundRecordRepository,
                 paymentRecordRepository,
                 refundCalculator,
-                refundStageService
+                refundStageService,
+                auditLogService
         );
     }
 
     @Test
-    @DisplayName("review approval moves refund to WAITING_WAREHOUSE_ACCEPT")
+    @DisplayName("review approval moves refund to WAITING_WAREHOUSE_ACCEPT and audits")
     void testReviewRefund_movesToWaitingWarehouseAccept() {
         RefundRecord refund = new RefundRecord();
         refund.setId(1L);
@@ -73,28 +78,15 @@ class RefundServiceTest {
 
         assertEquals(RefundStatus.WAITING_WAREHOUSE_ACCEPT, response.getStatus());
         assertEquals("Approved by admin", response.getReviewNote());
+        verify(auditLogService).record("999", "999", "REFUND_REVIEW", "REFUND", "RF001",
+                "PENDING_REVIEW", "WAITING_WAREHOUSE_ACCEPT", "Approved by admin");
     }
 
     @Test
     @DisplayName("warehouse acceptance can complete refund in separate stage")
     void testWarehouseAccept_completesRefundWhenExecutionSucceeds() {
-        RefundRecord accepted = new RefundRecord();
-        accepted.setId(2L);
-        accepted.setRefundNo("RF002");
-        accepted.setPaymentNo("PAY002");
-        accepted.setOrderId(20L);
-        accepted.setUserId(200L);
-        accepted.setRefundAmount(new BigDecimal("97.00"));
-        accepted.setStatus(RefundStatus.WAREHOUSE_ACCEPTED);
-
-        RefundRecord completed = new RefundRecord();
-        completed.setId(2L);
-        completed.setRefundNo("RF002");
-        completed.setPaymentNo("PAY002");
-        completed.setOrderId(20L);
-        completed.setUserId(200L);
-        completed.setRefundAmount(new BigDecimal("97.00"));
-        completed.setStatus(RefundStatus.COMPLETED);
+        RefundRecord accepted = refundRecord(2L, "RF002", RefundStatus.WAREHOUSE_ACCEPTED, new BigDecimal("97.00"));
+        RefundRecord completed = refundRecord(2L, "RF002", RefundStatus.COMPLETED, new BigDecimal("97.00"));
 
         when(refundStageService.acceptWarehouse(2L, 999L)).thenReturn(accepted);
         when(refundStageService.completeRefund(2L)).thenReturn(completed);
@@ -109,18 +101,11 @@ class RefundServiceTest {
     @Test
     @DisplayName("warehouse acceptance stays committed when refund execution fails")
     void testWarehouseAccept_keepsAcceptedStatusWhenExecutionFails() {
-        RefundRecord accepted = new RefundRecord();
-        accepted.setId(3L);
-        accepted.setRefundNo("RF003");
-        accepted.setPaymentNo("PAY003");
-        accepted.setOrderId(30L);
-        accepted.setUserId(300L);
-        accepted.setRefundAmount(new BigDecimal("88.00"));
-        accepted.setStatus(RefundStatus.WAREHOUSE_ACCEPTED);
+        RefundRecord accepted = refundRecord(3L, "RF003", RefundStatus.WAREHOUSE_ACCEPTED, new BigDecimal("88.00"));
 
         when(refundStageService.acceptWarehouse(3L, 1000L)).thenReturn(accepted);
         when(refundStageService.completeRefund(3L))
-                .thenThrow(new BusinessException("CONFLICT", "refund gateway temporarily unavailable"));
+                .thenThrow(new ConflictException("refund gateway temporarily unavailable"));
 
         RefundResponse response = refundService.warehouseAccept(3L, 1000L);
 
@@ -136,6 +121,8 @@ class RefundServiceTest {
         payment.setPaidAmount(new BigDecimal("200.00"));
         payment.setStatus(PaymentStatus.SUCCESS);
 
+        when(refundRecordRepository.findByRefundRequestNo("REQ004"))
+                .thenReturn(Optional.empty());
         when(paymentRecordRepository.findByPaymentNo("PAY004"))
                 .thenReturn(Optional.of(payment));
         when(refundCalculator.calculate(new BigDecimal("200.00")))
@@ -143,21 +130,43 @@ class RefundServiceTest {
         when(refundRecordRepository.save(any(RefundRecord.class)))
                 .thenAnswer(invocation -> invocation.getArgument(0));
 
-        RefundApplyRequest request = new RefundApplyRequest(40L, "PAY004", "Defective item");
+        RefundApplyRequest request = new RefundApplyRequest(40L, "PAY004", "REQ004", "Defective item");
 
         RefundResponse response = refundService.applyRefund(100L, request);
 
         assertNotNull(response);
+        assertEquals("REQ004", response.getRefundRequestNo());
         assertEquals("PAY004", response.getPaymentNo());
         assertEquals(40L, response.getOrderId());
         assertEquals(100L, response.getUserId());
         assertEquals(RefundStatus.PENDING_REVIEW, response.getStatus());
         assertEquals("Defective item", response.getReason());
         assertNotNull(response.getRefundNo());
+        verify(refundCalculator).validateRefundAmount(new BigDecimal("195.00"), new BigDecimal("200.00"));
     }
 
     @Test
-    @DisplayName("applyRefund rejects non-success payment with CONFLICT")
+    @DisplayName("applyRefund returns first response for same refundRequestNo")
+    void testApplyRefund_duplicateRequest_returnsExistingRefund() {
+        RefundRecord existing = refundRecord(4L, "RF004", RefundStatus.PENDING_REVIEW, new BigDecimal("195.00"));
+        existing.setRefundRequestNo("REQ004");
+        existing.setPaymentNo("PAY004");
+        existing.setOrderId(40L);
+        existing.setUserId(100L);
+
+        when(refundRecordRepository.findByRefundRequestNo("REQ004"))
+                .thenReturn(Optional.of(existing));
+
+        RefundApplyRequest request = new RefundApplyRequest(40L, "PAY004", "REQ004", "Defective item");
+
+        RefundResponse response = refundService.applyRefund(100L, request);
+
+        assertEquals("RF004", response.getRefundNo());
+        assertEquals("REQ004", response.getRefundRequestNo());
+    }
+
+    @Test
+    @DisplayName("applyRefund rejects non-success payment with ConflictException")
     void testApplyRefund_rejectsNonSuccessPayment() {
         PaymentRecord payment = new PaymentRecord();
         payment.setPaymentNo("PAY005");
@@ -165,13 +174,26 @@ class RefundServiceTest {
         payment.setPaidAmount(new BigDecimal("100.00"));
         payment.setStatus(PaymentStatus.PENDING);
 
+        when(refundRecordRepository.findByRefundRequestNo("REQ005"))
+                .thenReturn(Optional.empty());
         when(paymentRecordRepository.findByPaymentNo("PAY005"))
                 .thenReturn(Optional.of(payment));
 
-        RefundApplyRequest request = new RefundApplyRequest(50L, "PAY005", "No longer needed");
+        RefundApplyRequest request = new RefundApplyRequest(50L, "PAY005", "REQ005", "No longer needed");
 
-        BusinessException ex = assertThrows(BusinessException.class,
-                () -> refundService.applyRefund(101L, request));
-        assertEquals("CONFLICT", ex.getCode());
+        assertThrows(ConflictException.class, () -> refundService.applyRefund(101L, request));
+    }
+
+    private RefundRecord refundRecord(Long id, String refundNo, RefundStatus status, BigDecimal amount) {
+        RefundRecord refund = new RefundRecord();
+        refund.setId(id);
+        refund.setRefundNo(refundNo);
+        refund.setPaymentNo("PAY" + id);
+        refund.setOrderId(id * 10);
+        refund.setUserId(id * 100);
+        refund.setRefundAmount(amount);
+        refund.setStatus(status);
+        refund.setReason("reason");
+        return refund;
     }
 }

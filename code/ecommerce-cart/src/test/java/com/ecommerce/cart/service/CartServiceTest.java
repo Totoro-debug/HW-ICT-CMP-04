@@ -9,6 +9,7 @@ import com.ecommerce.cart.dto.CartItemResponse;
 import com.ecommerce.cart.dto.CartResponse;
 import com.ecommerce.cart.dto.UpdateCartItemRequest;
 import com.ecommerce.common.exception.BusinessException;
+import com.ecommerce.common.exception.OrderValidationException;
 import com.ecommerce.common.exception.ResourceNotFoundException;
 import com.ecommerce.common.integration.PointsRedeemEstimator;
 import com.ecommerce.product.query.SkuDto;
@@ -203,18 +204,91 @@ class CartServiceTest {
     }
 
     @Test
-    @DisplayName("estimate returns zero for empty cached cart")
-    void testEstimate_emptyCart_returnsZero() {
-        when(cartCacheManager.getCart(USER_ID)).thenReturn(null);
+    @DisplayName("estimate keeps intermediate precision and rounds final amounts to cents")
+    void testEstimate_keepsIntermediatePrecisionAndRoundsFinalAmounts() {
+        CartData cart = new CartData(USER_ID);
+        cart.getItems().add(new com.ecommerce.cart.cache.CartItemData(101L, "A", new BigDecimal("0.333"), 1));
+        cart.getItems().add(new com.ecommerce.cart.cache.CartItemData(102L, "B", new BigDecimal("0.333"), 1));
+        cart.getItems().add(new com.ecommerce.cart.cache.CartItemData(103L, "C", new BigDecimal("0.333"), 1));
+        when(cartCacheManager.getCart(USER_ID)).thenReturn(cart);
+        when(cartValidationService.validateSku(101L)).thenReturn(sku(101L, "A", "0.333"));
+        when(cartValidationService.validateSku(102L)).thenReturn(sku(102L, "B", "0.333"));
+        when(cartValidationService.validateSku(103L)).thenReturn(sku(103L, "C", "0.333"));
+        doNothing().when(cartValidationService).validateStock(101L, 1);
+        doNothing().when(cartValidationService).validateStock(102L, 1);
+        doNothing().when(cartValidationService).validateStock(103L, 1);
+        PromotionCalculateResponse promotionResponse = new PromotionCalculateResponse();
+        promotionResponse.setTotalDiscount(BigDecimal.ZERO);
+        doReturn(promotionResponse).when(promotionCalculationService).calculate(any());
 
         CartEstimateResponse response = cartService.estimate(USER_ID, new CartEstimateRequest());
 
-        assertThat(response.getItemTotal()).isEqualByComparingTo(BigDecimal.ZERO);
-        assertThat(response.getShippingFee()).isEqualByComparingTo(BigDecimal.ZERO);
-        assertThat(response.getPackagingFee()).isEqualByComparingTo(BigDecimal.ZERO);
+        assertThat(response.getItemTotal()).isEqualByComparingTo(new BigDecimal("1.00"));
+        assertThat(response.getPayableAmount()).isEqualByComparingTo(new BigDecimal("11.00"));
+    }
+
+    @Test
+    @DisplayName("estimate normalizes negative promotion discount to zero")
+    void testEstimate_negativeDiscount_normalizedToZero() {
+        CartData cart = cartWithDefaultSku(2);
+        when(cartCacheManager.getCart(USER_ID)).thenReturn(cart);
+        when(cartValidationService.validateSku(SKU_ID)).thenReturn(skuDto);
+        doNothing().when(cartValidationService).validateStock(SKU_ID, 2);
+        PromotionCalculateResponse promotionResponse = new PromotionCalculateResponse();
+        promotionResponse.setTotalDiscount(new BigDecimal("-5.00"));
+        doReturn(promotionResponse).when(promotionCalculationService).calculate(any());
+
+        CartEstimateResponse response = cartService.estimate(USER_ID, new CartEstimateRequest());
+
         assertThat(response.getDiscountAmount()).isEqualByComparingTo(BigDecimal.ZERO);
-        assertThat(response.getPointsDeductionAmount()).isEqualByComparingTo(BigDecimal.ZERO);
-        assertThat(response.getPayableAmount()).isEqualByComparingTo(BigDecimal.ZERO);
+        assertThat(response.getPayableAmount()).isEqualByComparingTo(new BigDecimal("60.00"));
+    }
+
+    @Test
+    @DisplayName("estimate caps promotion discount at item total")
+    void testEstimate_excessiveDiscount_cappedAtItemTotal() {
+        CartData cart = cartWithDefaultSku(2);
+        when(cartCacheManager.getCart(USER_ID)).thenReturn(cart);
+        when(cartValidationService.validateSku(SKU_ID)).thenReturn(skuDto);
+        doNothing().when(cartValidationService).validateStock(SKU_ID, 2);
+        PromotionCalculateResponse promotionResponse = new PromotionCalculateResponse();
+        promotionResponse.setTotalDiscount(new BigDecimal("999.00"));
+        doReturn(promotionResponse).when(promotionCalculationService).calculate(any());
+
+        CartEstimateResponse response = cartService.estimate(USER_ID, new CartEstimateRequest());
+
+        assertThat(response.getItemTotal()).isEqualByComparingTo(new BigDecimal("50.00"));
+        assertThat(response.getDiscountAmount()).isEqualByComparingTo(new BigDecimal("50.00"));
+        assertThat(response.getPayableAmount()).isEqualByComparingTo(new BigDecimal("10.00"));
+    }
+
+    @Test
+    @DisplayName("estimate blocks empty cart checkout estimate")
+    void testEstimate_emptyCart_throwsOrderValidationException() {
+        when(cartCacheManager.getCart(USER_ID)).thenReturn(null);
+
+        assertThatThrownBy(() -> cartService.estimate(USER_ID, new CartEstimateRequest()))
+                .isInstanceOf(OrderValidationException.class)
+                .hasFieldOrPropertyWithValue("code", "PAYABLE_AMOUNT_TOO_LOW");
+    }
+
+    @Test
+    @DisplayName("estimate blocks payable amount below minimum")
+    void testEstimate_payableAmountTooLow_throwsOrderValidationException() {
+        CartData cart = cartWithDefaultSku(2);
+        when(cartCacheManager.getCart(USER_ID)).thenReturn(cart);
+        when(cartValidationService.validateSku(SKU_ID)).thenReturn(skuDto);
+        doNothing().when(cartValidationService).validateStock(SKU_ID, 2);
+        PromotionCalculateResponse promotionResponse = new PromotionCalculateResponse();
+        promotionResponse.setTotalDiscount(BigDecimal.ZERO);
+        doReturn(promotionResponse).when(promotionCalculationService).calculate(any());
+        doReturn(6000).when(pointsRedeemEstimator).estimateRedeemPoints(any(), any());
+        CartEstimateRequest request = new CartEstimateRequest();
+        request.setRedeemPoints(6000);
+
+        assertThatThrownBy(() -> cartService.estimate(USER_ID, request))
+                .isInstanceOf(OrderValidationException.class)
+                .hasFieldOrPropertyWithValue("code", "PAYABLE_AMOUNT_TOO_LOW");
     }
 
     @Test
@@ -229,5 +303,20 @@ class CartServiceTest {
         assertThatThrownBy(() -> cartService.estimate(USER_ID, new CartEstimateRequest()))
                 .isInstanceOf(BusinessException.class)
                 .hasFieldOrPropertyWithValue("code", "PRODUCT_NOT_FOR_SALE");
+    }
+
+    private CartData cartWithDefaultSku(int quantity) {
+        CartData cart = new CartData(USER_ID);
+        cart.getItems().add(new com.ecommerce.cart.cache.CartItemData(SKU_ID, "Cached SKU", new BigDecimal("10.00"), quantity));
+        return cart;
+    }
+
+    private SkuDto sku(Long skuId, String name, String price) {
+        SkuDto sku = new SkuDto();
+        sku.setSkuId(skuId);
+        sku.setName(name);
+        sku.setPrice(new BigDecimal(price));
+        sku.setStatus("ON_SHELF");
+        return sku;
     }
 }

@@ -1,11 +1,13 @@
 package com.ecommerce.product.controller;
 
 import com.ecommerce.common.dto.PageResponse;
+import com.ecommerce.common.ratelimit.RateLimit;
 import com.ecommerce.product.dto.ProductDetailResponse;
 import com.ecommerce.product.dto.ProductListResponse;
 import com.ecommerce.product.dto.ProductSearchRequest;
 import com.ecommerce.product.service.ProductDetailService;
 import com.ecommerce.product.service.ProductSearchService;
+import jakarta.servlet.http.HttpServletRequest;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.http.ResponseEntity;
@@ -48,7 +50,9 @@ public class ProductController {
      * Searches for products by keyword, category, brand, price range, etc.
      */
     @GetMapping("/search")
-    public ResponseEntity<PageResponse<ProductListResponse>> searchProducts(ProductSearchRequest request) {
+    @RateLimit(key = "#httpRequest.remoteAddr", permitsPerMinute = 120)
+    public ResponseEntity<PageResponse<ProductListResponse>> searchProducts(ProductSearchRequest request,
+                                                                            HttpServletRequest httpRequest) {
         log.debug("Searching products: keyword={}, onlyOnShelf={}", request.getKeyword(), request.isOnlyOnShelf());
         PageResponse<ProductListResponse> result = productSearchService.search(request);
         return ResponseEntity.ok(result);

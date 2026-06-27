@@ -1,23 +1,25 @@
 package com.ecommerce.loyalty.entity;
 
+import java.math.BigDecimal;
+
 /**
  * Represents the membership tier of a loyalty account.
  * Each level has an associated point-earning multiplier.
  */
 public enum MemberLevel {
 
-    NORMAL(1.0),
-    SILVER(1.1),
-    GOLD(1.1),
-    PLATINUM(1.5);
+    NORMAL("1.0"),
+    SILVER("1.1"),
+    GOLD("1.1"),
+    PLATINUM("1.5");
 
-    private final double multiplier;
+    private final BigDecimal multiplier;
 
-    MemberLevel(double multiplier) {
-        this.multiplier = multiplier;
+    MemberLevel(String multiplier) {
+        this.multiplier = new BigDecimal(multiplier);
     }
 
-    public double getMultiplier() {
+    public BigDecimal getMultiplier() {
         return multiplier;
     }
 }

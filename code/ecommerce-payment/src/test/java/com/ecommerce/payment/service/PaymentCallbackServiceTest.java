@@ -1,5 +1,8 @@
 package com.ecommerce.payment.service;
 
+import com.ecommerce.common.exception.AuthorizationException;
+import com.ecommerce.common.exception.ConflictException;
+import com.ecommerce.common.exception.OrderValidationException;
 import com.ecommerce.order.query.OrderPaymentStatusUpdater;
 import com.ecommerce.payment.config.PaymentConfig;
 import com.ecommerce.payment.dto.PaymentCallbackRequest;
@@ -19,6 +22,7 @@ import java.util.Optional;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
@@ -59,19 +63,16 @@ class PaymentCallbackServiceTest {
                 "valid-signature"
         );
 
-        PaymentRecord payment = new PaymentRecord();
-        payment.setPaymentNo("PAY001");
-        payment.setOrderId(1L);
-        payment.setStatus(PaymentStatus.PENDING);
-        payment.setPaidAmount(new BigDecimal("99.00"));
+        PaymentRecord payment = payment("PAY001", 1L, new BigDecimal("99.00"), PaymentStatus.PENDING);
 
         when(paymentRecordRepository.findByPaymentNo("PAY001"))
                 .thenReturn(Optional.of(payment));
         when(paymentRecordRepository.save(any(PaymentRecord.class)))
                 .thenAnswer(invocation -> invocation.getArgument(0));
 
-        callbackService.processCallback(request);
+        String response = callbackService.processCallback(request);
 
+        assertEquals("OK", response);
         verify(paymentRecordRepository).save(any(PaymentRecord.class));
         verify(orderPaymentStatusUpdater).markAsPaid(1L, "PAY001");
         verify(paymentService).confirmPayment(any(PaymentRecord.class));
@@ -86,11 +87,7 @@ class PaymentCallbackServiceTest {
                 "valid-signature"
         );
 
-        PaymentRecord payment = new PaymentRecord();
-        payment.setPaymentNo("PAY002");
-        payment.setOrderId(2L);
-        payment.setPaidAmount(new BigDecimal("199.00"));
-        payment.setStatus(PaymentStatus.PENDING);
+        PaymentRecord payment = payment("PAY002", 2L, new BigDecimal("199.00"), PaymentStatus.PENDING);
 
         when(paymentRecordRepository.findByPaymentNo("PAY002"))
                 .thenReturn(Optional.of(payment));
@@ -109,7 +106,7 @@ class PaymentCallbackServiceTest {
     }
 
     @Test
-    @DisplayName("duplicate callback with same sequence is handled idempotently")
+    @DisplayName("duplicate callback with same sequence returns first result without side effects")
     void testProcessCallback_duplicateCallback_handledIdempotently() {
         PaymentCallbackRequest request = new PaymentCallbackRequest(
                 "PAY003", 3L, "SUCCESS",
@@ -117,20 +114,62 @@ class PaymentCallbackServiceTest {
                 "valid-signature"
         );
 
-        PaymentRecord payment = new PaymentRecord();
-        payment.setPaymentNo("PAY003");
-        payment.setOrderId(3L);
-        payment.setPaidAmount(new BigDecimal("299.00"));
-        payment.setStatus(PaymentStatus.SUCCESS);
+        PaymentRecord payment = payment("PAY003", 3L, new BigDecimal("299.00"), PaymentStatus.SUCCESS);
         payment.setCallbackSequence("seq-003");
 
         when(paymentRecordRepository.findByPaymentNo("PAY003"))
                 .thenReturn(Optional.of(payment));
 
-        callbackService.processCallback(request);
+        String response = callbackService.processCallback(request);
 
+        assertEquals("OK", response);
         verify(paymentRecordRepository, never()).save(any());
         verify(paymentService, never()).confirmPayment(any());
         verify(orderPaymentStatusUpdater, never()).markAsPaid(any(), any());
+    }
+
+    @Test
+    @DisplayName("invalid signature throws AuthorizationException")
+    void testProcessCallback_invalidSignature_throwsAuthorizationException() {
+        PaymentCallbackRequest request = new PaymentCallbackRequest(
+                "PAY004", 4L, "SUCCESS", new BigDecimal("10.00"), "seq-004", "bad");
+
+        assertThrows(AuthorizationException.class, () -> callbackService.processCallback(request));
+    }
+
+    @Test
+    @DisplayName("amount mismatch throws OrderValidationException")
+    void testProcessCallback_amountMismatch_throwsOrderValidationException() {
+        PaymentCallbackRequest request = new PaymentCallbackRequest(
+                "PAY005", 5L, "SUCCESS", new BigDecimal("10.01"), "seq-005", "valid-signature");
+        PaymentRecord payment = payment("PAY005", 5L, new BigDecimal("10.00"), PaymentStatus.PENDING);
+
+        when(paymentRecordRepository.findByPaymentNo("PAY005"))
+                .thenReturn(Optional.of(payment));
+
+        assertThrows(OrderValidationException.class, () -> callbackService.processCallback(request));
+    }
+
+    @Test
+    @DisplayName("failed callback after success throws ConflictException")
+    void testProcessCallback_failedAfterSuccess_throwsConflictException() {
+        PaymentCallbackRequest request = new PaymentCallbackRequest(
+                "PAY006", 6L, "FAILED", new BigDecimal("10.00"), "seq-006", "valid-signature");
+        PaymentRecord payment = payment("PAY006", 6L, new BigDecimal("10.00"), PaymentStatus.SUCCESS);
+
+        when(paymentRecordRepository.findByPaymentNo("PAY006"))
+                .thenReturn(Optional.of(payment));
+
+        assertThrows(ConflictException.class, () -> callbackService.processCallback(request));
+    }
+
+    private PaymentRecord payment(String paymentNo, Long orderId, BigDecimal amount, PaymentStatus status) {
+        PaymentRecord payment = new PaymentRecord();
+        payment.setPaymentNo(paymentNo);
+        payment.setOrderId(orderId);
+        payment.setOrderAmount(amount);
+        payment.setPaidAmount(amount);
+        payment.setStatus(status);
+        return payment;
     }
 }

@@ -6,6 +6,7 @@ import jakarta.persistence.Entity;
 import jakarta.persistence.EnumType;
 import jakarta.persistence.Enumerated;
 import jakarta.persistence.Table;
+import jakarta.persistence.UniqueConstraint;
 
 import java.time.LocalDateTime;
 
@@ -17,7 +18,9 @@ import java.time.LocalDateTime;
  * {@link BaseEntity}.
  */
 @Entity
-@Table(name = "points_transaction")
+@Table(name = "points_transaction",
+        uniqueConstraints = @UniqueConstraint(name = "uk_points_tx_idempotency",
+                columnNames = {"user_id", "type", "biz_type", "biz_id"}))
 public class PointsTransaction extends BaseEntity {
 
     @Column(name = "user_id", nullable = false)

@@ -2,6 +2,7 @@ package com.ecommerce.logistics.service;
 
 import com.ecommerce.common.exception.AuthorizationException;
 import com.ecommerce.common.exception.ResourceNotFoundException;
+import com.ecommerce.common.idempotency.Idempotent;
 import com.ecommerce.logistics.dto.LogisticsCallbackRequest;
 import com.ecommerce.logistics.entity.Shipment;
 import com.ecommerce.logistics.entity.ShipmentStatus;
@@ -12,9 +13,11 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
+import java.lang.reflect.Method;
 import java.time.LocalDateTime;
 import java.util.Optional;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
@@ -49,8 +52,9 @@ class LogisticsCallbackServiceTest {
         shipment.setTrackingNo("TN12345");
         when(shipmentRepository.findByTrackingNo("TN12345")).thenReturn(Optional.of(shipment));
 
-        callbackService.processCallback(request);
+        String response = callbackService.processCallback(request);
 
+        assertEquals("OK", response);
         verify(shipmentService).updateStatus(1L, ShipmentStatus.DELIVERED,
                 "Shanghai Distribution Center", "Package delivered to recipient");
     }
@@ -84,6 +88,15 @@ class LogisticsCallbackServiceTest {
         when(shipmentRepository.findByTrackingNo("TN404")).thenReturn(Optional.empty());
 
         assertThrows(ResourceNotFoundException.class, () -> callbackService.processCallback(request));
+    }
+
+    @Test
+    void processCallback_usesTrackingNoEventTimeStatusIdempotencyKey() throws NoSuchMethodException {
+        Method method = LogisticsCallbackService.class.getMethod("processCallback", LogisticsCallbackRequest.class);
+        Idempotent idempotent = method.getAnnotation(Idempotent.class);
+
+        assertEquals("LOGISTICS_CALLBACK", idempotent.businessType());
+        assertEquals("#request.trackingNo + ':' + #request.eventTime + ':' + #request.status", idempotent.key());
     }
 
     private LogisticsCallbackRequest callback(String trackingNo, String status) {

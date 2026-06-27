@@ -19,7 +19,7 @@ public interface LoyaltyCommandService {
      * @param activityMultiplier promotional activity multiplier (default 1.0)
      * @return the number of points earned
      */
-    int earnPaymentPoints(Long userId, BigDecimal orderAmount, double activityMultiplier);
+    int earnPaymentPoints(Long userId, BigDecimal orderAmount, BigDecimal activityMultiplier);
 
     /**
      * Redeem points toward an order payment.

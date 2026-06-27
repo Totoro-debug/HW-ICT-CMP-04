@@ -1,5 +1,7 @@
 package com.ecommerce.payment.controller;
 
+import com.ecommerce.common.exception.RateLimitException;
+import com.ecommerce.common.ratelimit.RateLimit;
 import com.ecommerce.payment.dto.PayRequest;
 import com.ecommerce.payment.dto.PayResponse;
 import com.ecommerce.payment.dto.PaymentCallbackRequest;
@@ -19,7 +21,9 @@ import org.springframework.security.test.context.support.WithMockUser;
 import org.springframework.test.web.servlet.MockMvc;
 
 import java.math.BigDecimal;
+import java.lang.reflect.Method;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -43,8 +47,6 @@ class PaymentControllerTest {
 
     @MockBean
     private PaymentCallbackService paymentCallbackService;
-
-    // ---- POST /api/v1/payment/pay -> 201 ----
 
     @Test
     @WithMockUser(username = "100", roles = {"USER"})
@@ -71,8 +73,6 @@ class PaymentControllerTest {
         verify(paymentService).pay(any(PayRequest.class));
     }
 
-    // ---- GET /api/v1/payment/{paymentNo} -> 200 ----
-
     @Test
     @WithMockUser(username = "100", roles = {"USER"})
     @DisplayName("GET /api/v1/payment/{paymentNo} should return 200")
@@ -93,16 +93,16 @@ class PaymentControllerTest {
         verify(paymentService).getPayment(paymentNo);
     }
 
-    // ---- POST /api/v1/payment/callback -> 200 ----
-
     @Test
-    @DisplayName("POST /api/v1/payment/callback should return 200")
+    @DisplayName("POST /api/v1/payment/callback should return service result")
     void postCallback_shouldReturn200() throws Exception {
         PaymentCallbackRequest request = new PaymentCallbackRequest(
                 "PAY123", 1L, "SUCCESS",
                 new BigDecimal("99.00"), "seq-001",
-                "test_signature" // Signature is not validated
+                "test_signature"
         );
+        when(paymentCallbackService.processCallback(any(PaymentCallbackRequest.class), any(String.class)))
+                .thenReturn("OK");
 
         mockMvc.perform(post("/api/v1/payment/callback")
                         .header("X-Payment-Signature", "valid-signature")
@@ -113,4 +113,34 @@ class PaymentControllerTest {
 
         verify(paymentCallbackService).processCallback(any(PaymentCallbackRequest.class), any(String.class));
     }
+
+    @Test
+    @DisplayName("POST /api/v1/payment/callback rate limited returns 429")
+    void postCallback_rateLimited_shouldReturn429() throws Exception {
+        PaymentCallbackRequest request = new PaymentCallbackRequest(
+                "PAY429", 1L, "SUCCESS",
+                new BigDecimal("99.00"), "seq-001",
+                "test_signature"
+        );
+        when(paymentCallbackService.processCallback(any(PaymentCallbackRequest.class), any(String.class)))
+                .thenThrow(new RateLimitException("Too many callback requests"));
+
+        mockMvc.perform(post("/api/v1/payment/callback")
+                        .header("X-Payment-Signature", "valid-signature")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(request)))
+                .andExpect(status().isTooManyRequests());
+    }
+
+    @Test
+    @DisplayName("callback endpoint is rate limited by paymentNo")
+    void callbackEndpoint_hasPaymentNoRateLimitAnnotation() throws Exception {
+        Method method = PaymentController.class.getMethod(
+                "callback", PaymentCallbackRequest.class, String.class);
+        RateLimit rateLimit = method.getAnnotation(RateLimit.class);
+
+        assertEquals("#request.paymentNo", rateLimit.key());
+        assertEquals(20, rateLimit.permitsPerMinute());
+    }
 }
+

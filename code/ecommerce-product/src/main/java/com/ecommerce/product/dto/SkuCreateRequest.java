@@ -1,8 +1,8 @@
 package com.ecommerce.product.dto;
 
+import jakarta.validation.constraints.DecimalMin;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
-import jakarta.validation.constraints.PositiveOrZero;
 import jakarta.validation.constraints.Size;
 
 import java.math.BigDecimal;
@@ -25,9 +25,10 @@ public class SkuCreateRequest {
     private String name;
 
     @NotNull(message = "price is required")
-    @PositiveOrZero(message = "price must be non-negative")
+    @DecimalMin(value = "0.01", inclusive = true, message = "price must be at least 0.01")
     private BigDecimal price;
 
+    @DecimalMin(value = "0.01", inclusive = true, message = "marketPrice must be at least 0.01")
     private BigDecimal marketPrice;
 
     private Map<String, String> specs;

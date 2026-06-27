@@ -1,6 +1,7 @@
 package com.ecommerce.payment.service;
 
-import com.ecommerce.common.exception.BusinessException;
+import com.ecommerce.common.exception.ConflictException;
+import com.ecommerce.common.exception.OrderValidationException;
 import com.ecommerce.common.exception.ValidationException;
 import com.ecommerce.order.query.OrderDto;
 import com.ecommerce.payment.dto.PayRequest;
@@ -38,69 +39,89 @@ class PaymentValidatorTest {
     }
 
     @Test
-    @DisplayName("partial payment is rejected with PAYMENT_AMOUNT_MISMATCH")
+    @DisplayName("partial payment is rejected with OrderValidationException")
     void testValidate_partialPayment_rejected() {
         OrderDto order = createOrder(1L, new BigDecimal("100.00"), "CREATED");
         PayRequest request = new PayRequest(1L, new BigDecimal("50.00"),
                 PaymentMethod.ALIPAY, "CLIENT1");
 
-        assertThrows(BusinessException.class, () -> validator.validate(request, order));
+        assertThrows(OrderValidationException.class, () -> validator.validate(request, order));
     }
 
     @Test
-    @DisplayName("over-payment is rejected with PAYMENT_AMOUNT_MISMATCH")
+    @DisplayName("over-payment is rejected with OrderValidationException")
     void testValidate_overPayment_rejected() {
         OrderDto order = createOrder(2L, new BigDecimal("100.00"), "PAYING");
         PayRequest request = new PayRequest(2L, new BigDecimal("999.00"),
                 PaymentMethod.BALANCE, "CLIENT2");
 
-        assertThrows(BusinessException.class, () -> validator.validate(request, order));
+        assertThrows(OrderValidationException.class, () -> validator.validate(request, order));
     }
 
     @Test
-    @DisplayName("zero amount fails validation")
+    @DisplayName("zero amount fails order amount validation")
     void testValidate_zeroAmount_fails() {
         OrderDto order = createOrder(3L, new BigDecimal("100.00"), "CREATED");
         PayRequest request = new PayRequest(3L, BigDecimal.ZERO,
                 PaymentMethod.ALIPAY, "CLIENT3");
 
-        assertThrows(ValidationException.class, () -> validator.validate(request, order));
+        assertThrows(OrderValidationException.class, () -> validator.validate(request, order));
     }
 
     @Test
-    @DisplayName("negative amount fails validation")
-    void testValidate_negativeAmount_fails() {
+    @DisplayName("amount below 0.01 fails order amount validation")
+    void testValidate_amountBelowCent_fails() {
         OrderDto order = createOrder(4L, new BigDecimal("100.00"), "CREATED");
-        PayRequest request = new PayRequest(4L, new BigDecimal("-10.00"),
+        PayRequest request = new PayRequest(4L, new BigDecimal("0.001"),
                 PaymentMethod.ALIPAY, "CLIENT4");
 
-        assertThrows(ValidationException.class, () -> validator.validate(request, order));
+        assertThrows(OrderValidationException.class, () -> validator.validate(request, order));
+    }
+
+    @Test
+    @DisplayName("negative amount fails order amount validation")
+    void testValidate_negativeAmount_fails() {
+        OrderDto order = createOrder(5L, new BigDecimal("100.00"), "CREATED");
+        PayRequest request = new PayRequest(5L, new BigDecimal("-10.00"),
+                PaymentMethod.ALIPAY, "CLIENT5");
+
+        assertThrows(OrderValidationException.class, () -> validator.validate(request, order));
     }
 
     @Test
     @DisplayName("exact amount match passes validation")
     void testValidate_exactMatch_passes() {
-        OrderDto order = createOrder(5L, new BigDecimal("99.99"), "CREATED");
-        PayRequest request = new PayRequest(5L, new BigDecimal("99.99"),
-                PaymentMethod.ALIPAY, "CLIENT5");
+        OrderDto order = createOrder(6L, new BigDecimal("0.01"), "CREATED");
+        PayRequest request = new PayRequest(6L, new BigDecimal("0.01"),
+                PaymentMethod.ALIPAY, "CLIENT6");
 
-        when(paymentRecordRepository.existsByOrderIdAndStatus(eq(5L), eq(PaymentStatus.SUCCESS)))
+        when(paymentRecordRepository.existsByOrderIdAndStatus(eq(6L), eq(PaymentStatus.SUCCESS)))
                 .thenReturn(false);
 
         assertDoesNotThrow(() -> validator.validate(request, order));
     }
 
     @Test
-    @DisplayName("successful duplicate payment is rejected with CONFLICT")
+    @DisplayName("successful duplicate payment is rejected with ConflictException")
     void testValidate_duplicatePayment_rejected() {
-        OrderDto order = createOrder(6L, new BigDecimal("88.00"), "CREATED");
-        PayRequest request = new PayRequest(6L, new BigDecimal("88.00"),
-                PaymentMethod.WECHAT, "CLIENT6");
+        OrderDto order = createOrder(7L, new BigDecimal("88.00"), "CREATED");
+        PayRequest request = new PayRequest(7L, new BigDecimal("88.00"),
+                PaymentMethod.WECHAT, "CLIENT7");
 
-        when(paymentRecordRepository.existsByOrderIdAndStatus(eq(6L), eq(PaymentStatus.SUCCESS)))
+        when(paymentRecordRepository.existsByOrderIdAndStatus(eq(7L), eq(PaymentStatus.SUCCESS)))
                 .thenReturn(true);
 
-        assertThrows(BusinessException.class, () -> validator.validate(request, order));
+        assertThrows(ConflictException.class, () -> validator.validate(request, order));
+    }
+
+    @Test
+    @DisplayName("unsupported method still fails field validation")
+    void testValidate_missingMethod_fails() {
+        OrderDto order = createOrder(8L, new BigDecimal("88.00"), "CREATED");
+        PayRequest request = new PayRequest(8L, new BigDecimal("88.00"),
+                null, "CLIENT8");
+
+        assertThrows(ValidationException.class, () -> validator.validate(request, order));
     }
 
     private OrderDto createOrder(Long orderId, BigDecimal payableAmount, String status) {

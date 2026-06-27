@@ -1,7 +1,10 @@
 package com.ecommerce.payment.service;
 
-import com.ecommerce.common.exception.BusinessException;
+import com.ecommerce.common.exception.AuthorizationException;
+import com.ecommerce.common.exception.ConflictException;
+import com.ecommerce.common.exception.OrderValidationException;
 import com.ecommerce.common.exception.ResourceNotFoundException;
+import com.ecommerce.common.idempotency.Idempotent;
 import com.ecommerce.order.query.OrderPaymentStatusUpdater;
 import com.ecommerce.payment.config.PaymentConfig;
 import com.ecommerce.payment.dto.PaymentCallbackRequest;
@@ -43,7 +46,8 @@ public class PaymentCallbackService {
      * Processes a payment callback from the payment gateway.
      */
     @Transactional
-    public void processCallback(PaymentCallbackRequest request, String headerSignature) {
+    @Idempotent(businessType = "PAYMENT_CALLBACK", key = "#request.paymentNo + ':' + #request.callbackSequence")
+    public String processCallback(PaymentCallbackRequest request, String headerSignature) {
         verifySignature(headerSignature);
         request.setSignature(headerSignature);
         log.info("Processing payment callback: paymentNo={}, status={}",
@@ -57,7 +61,7 @@ public class PaymentCallbackService {
             if (request.getCallbackSequence().equals(existing.getCallbackSequence())) {
                 log.info("Duplicate callback ignored: paymentNo={}, sequence={}",
                         request.getPaymentNo(), request.getCallbackSequence());
-                return;
+                return "OK";
             }
         }
 
@@ -69,10 +73,11 @@ public class PaymentCallbackService {
         } else {
             log.warn("Unknown callback status: {}", status);
         }
+        return "OK";
     }
 
-    public void processCallback(PaymentCallbackRequest request) {
-        processCallback(request, request.getSignature());
+    public String processCallback(PaymentCallbackRequest request) {
+        return processCallback(request, request.getSignature());
     }
 
     private void verifySignature(String headerSignature) {
@@ -80,7 +85,7 @@ public class PaymentCallbackService {
         if (headerSignature == null || headerSignature.isBlank()
                 || expected == null || expected.isBlank()
                 || !expected.equals(headerSignature)) {
-            throw new BusinessException("UNAUTHORIZED", "Invalid payment callback signature");
+            throw AuthorizationException.forbidden("Invalid payment callback signature");
         }
     }
 
@@ -100,7 +105,7 @@ public class PaymentCallbackService {
                 ? payment.getOrderAmount() : payment.getPaidAmount();
         if (callbackAmount == null || expectedAmount == null
                 || callbackAmount.compareTo(expectedAmount) != 0) {
-            throw new BusinessException("PAYMENT_AMOUNT_MISMATCH",
+            throw new OrderValidationException("PAYMENT_AMOUNT_MISMATCH",
                     "Payment callback amount must equal payment payable amount");
         }
 
@@ -124,8 +129,7 @@ public class PaymentCallbackService {
                         "PaymentRecord", request.getPaymentNo()));
 
         if (payment.getStatus() == PaymentStatus.SUCCESS) {
-            throw new BusinessException("CONFLICT",
-                    "Cannot mark as FAILED when already SUCCESS");
+            throw new ConflictException("Cannot mark as FAILED when already SUCCESS");
         }
 
         payment.setStatus(PaymentStatus.FAILED);

@@ -44,6 +44,12 @@ public class CouponUsageService implements PromotionUsageCommandService {
             if (!userId.equals(userCoupon.getUserId())) {
                 throw new ConflictException("Coupon does not belong to the user");
             }
+            if (userCoupon.getStatus() == CouponStatus.USED) {
+                if (orderId.equals(userCoupon.getUsedOrderId())) {
+                    continue;
+                }
+                throw new ConflictException("Coupon has already been used by another order");
+            }
             couponValidator.validate(userCoupon);
             userCoupon.setStatus(CouponStatus.USED);
             userCoupon.setUsedOrderId(orderId);

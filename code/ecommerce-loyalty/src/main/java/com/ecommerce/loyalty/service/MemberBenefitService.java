@@ -3,6 +3,7 @@ package com.ecommerce.loyalty.service;
 import com.ecommerce.loyalty.entity.MemberLevel;
 import org.springframework.stereotype.Service;
 
+import java.math.BigDecimal;
 import java.util.List;
 
 /**
@@ -14,17 +15,17 @@ public class MemberBenefitService {
 
     public MemberBenefits getBenefits(MemberLevel level) {
         return switch (level) {
-            case PLATINUM -> new MemberBenefits(1.5, List.of("POINTS_MULTIPLIER_1_5", "PRIORITY_SERVICE"));
-            case GOLD -> new MemberBenefits(1.1, List.of("POINTS_MULTIPLIER_1_1", "MEMBER_PROMOTION"));
-            case SILVER -> new MemberBenefits(1.1, List.of("POINTS_MULTIPLIER_1_1"));
-            case NORMAL -> new MemberBenefits(1.0, List.of("POINTS_MULTIPLIER_1_0"));
+            case PLATINUM -> new MemberBenefits(new BigDecimal("1.5"), List.of("POINTS_MULTIPLIER_1_5", "PRIORITY_SERVICE"));
+            case GOLD -> new MemberBenefits(new BigDecimal("1.1"), List.of("POINTS_MULTIPLIER_1_1", "MEMBER_PROMOTION"));
+            case SILVER -> new MemberBenefits(new BigDecimal("1.1"), List.of("POINTS_MULTIPLIER_1_1"));
+            case NORMAL -> new MemberBenefits(BigDecimal.ONE, List.of("POINTS_MULTIPLIER_1_0"));
         };
     }
 
-    public double getPointsMultiplier(MemberLevel level) {
+    public BigDecimal getPointsMultiplier(MemberLevel level) {
         return getBenefits(level).pointsMultiplier();
     }
 
-    public record MemberBenefits(double pointsMultiplier, List<String> benefitCodes) {
+    public record MemberBenefits(BigDecimal pointsMultiplier, List<String> benefitCodes) {
     }
 }

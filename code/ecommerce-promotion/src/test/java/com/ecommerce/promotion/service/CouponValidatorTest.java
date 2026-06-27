@@ -143,11 +143,11 @@ class CouponValidatorTest {
         }
 
         @Test
-        @DisplayName("testValidate_nullCoupon_throwsException")
-        void testValidate_nullCoupon_throwsException() {
+        @DisplayName("testValidate_nullCoupon_throwsResourceNotFound")
+        void testValidate_nullCoupon_throwsResourceNotFound() {
             assertThatThrownBy(() -> couponValidator.validate(null))
-                    .isInstanceOf(BusinessException.class)
-                    .hasMessageContaining("Coupon not found");
+                    .isInstanceOf(ResourceNotFoundException.class)
+                    .hasMessageContaining("UserCoupon");
         }
 
         @Test

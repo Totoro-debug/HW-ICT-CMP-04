@@ -54,10 +54,10 @@ public class LogisticsController {
      * require user authentication. It uses signature-based verification.
      */
     @PostMapping("/callback")
-    public ResponseEntity<Void> receiveCallback(@RequestBody LogisticsCallbackRequest request) {
+    public ResponseEntity<String> receiveCallback(@RequestBody LogisticsCallbackRequest request) {
         log.info("POST /api/v1/logistics/callback: trackingNo={}, status={}",
                 request.getTrackingNo(), request.getStatus());
-        callbackService.processCallback(request);
-        return ResponseEntity.ok().build();
+        String response = callbackService.processCallback(request);
+        return ResponseEntity.ok(response);
     }
 }

@@ -1,6 +1,7 @@
 package com.ecommerce.loyalty.service;
 
 import com.ecommerce.common.exception.BusinessException;
+import com.ecommerce.common.money.MoneyValidationUtil;
 import com.ecommerce.common.integration.LoyaltyCommandService;
 import com.ecommerce.common.integration.LoyaltyQueryService;
 import com.ecommerce.common.integration.PointsRedeemEstimator;
@@ -63,6 +64,7 @@ public class LoyaltyPointService implements LoyaltyQueryService, LoyaltyCommandS
 
     @Override
     public int estimateRedeemPoints(BigDecimal orderAmount, Long userId) {
+        MoneyValidationUtil.validatePayableAmount(orderAmount);
         LoyaltyAccount account = getAccount(userId);
         int available = account.getAvailablePoints();
 
@@ -81,7 +83,7 @@ public class LoyaltyPointService implements LoyaltyQueryService, LoyaltyCommandS
         return account.getMemberLevel();
     }
 
-    public double getMemberMultiplier(Long userId) {
+    public BigDecimal getMemberMultiplier(Long userId) {
         LoyaltyAccount account = getAccount(userId);
         return memberBenefitService.getPointsMultiplier(account.getMemberLevel());
     }
@@ -91,17 +93,34 @@ public class LoyaltyPointService implements LoyaltyQueryService, LoyaltyCommandS
     @Override
     @Transactional
     public int earnPaymentPoints(Long userId, BigDecimal orderAmount, double activityMultiplier) {
-        int points = calcOrderPoints(orderAmount, userId, activityMultiplier);
+        int points = calcOrderPoints(orderAmount, userId, BigDecimal.valueOf(activityMultiplier));
         if (points <= 0) {
             return 0;
         }
-        earnPoints(userId, points, "ORDER_PAYMENT", null, "Order payment reward");
+        earnPoints(userId, points, "ORDER_PAYMENT", buildFallbackRedeemKey(userId, orderAmount, points), "Order payment reward");
         return points;
     }
 
     @Override
     @Transactional
     public int redeemPoints(Long userId, int points, BigDecimal orderAmount) {
+        return redeemPoints(userId, points, orderAmount, "ORDER_REDEEM",
+                buildFallbackRedeemKey(userId, orderAmount, points));
+    }
+
+    @Transactional
+    public int redeemPoints(Long userId, int points, BigDecimal orderAmount, String bizType, String bizId) {
+        validateIdempotencyKey(bizType, bizId);
+        java.util.Optional<PointsTransaction> existing = transactionRepository.findFirstByUserIdAndTypeAndBizTypeAndBizId(
+                userId, PointsTransactionType.REDEEM, bizType, bizId);
+        if (existing != null && existing.isPresent()) {
+            return Math.abs(existing.get().getAmount());
+        }
+        return doRedeemPoints(userId, points, orderAmount, bizType, bizId);
+    }
+
+    private int doRedeemPoints(Long userId, int points, BigDecimal orderAmount, String bizType, String bizId) {
+        MoneyValidationUtil.validatePayableAmount(orderAmount);
         LoyaltyAccount account = getAccount(userId);
 
         // Apply 10,000 cap and 50% cap
@@ -118,7 +137,7 @@ public class LoyaltyPointService implements LoyaltyQueryService, LoyaltyCommandS
         accountRepository.save(account);
 
         recordTransaction(userId, PointsTransactionType.REDEEM, -actual, account.getAvailablePoints(),
-                "ORDER_REDEEM", null, "Points redeem, deducted " + actual + " points");
+                bizType, bizId, "Points redeem, deducted " + actual + " points");
 
         log.info("Redeemed {} points for userId={}, balance={}", actual, userId, account.getAvailablePoints());
         return actual;
@@ -128,6 +147,10 @@ public class LoyaltyPointService implements LoyaltyQueryService, LoyaltyCommandS
     @Transactional
     public void freezePoints(Long userId, int points, String bizType, String bizId, String description) {
         validatePositivePoints(points);
+        validateIdempotencyKey(bizType, bizId);
+        if (hasProcessed(userId, PointsTransactionType.FREEZE, bizType, bizId)) {
+            return;
+        }
         LoyaltyAccount account = getAccount(userId);
         if (account.getAvailablePoints() < points) {
             throw new BusinessException("LOYALTY_POINTS_NOT_ENOUGH", "Available points are not enough to freeze");
@@ -143,6 +166,10 @@ public class LoyaltyPointService implements LoyaltyQueryService, LoyaltyCommandS
     @Transactional
     public void unfreezePoints(Long userId, int points, String bizType, String bizId, String description) {
         validatePositivePoints(points);
+        validateIdempotencyKey(bizType, bizId);
+        if (hasProcessed(userId, PointsTransactionType.UNFREEZE, bizType, bizId)) {
+            return;
+        }
         LoyaltyAccount account = getAccount(userId);
         if (account.getFrozenPoints() < points) {
             throw new BusinessException("LOYALTY_POINTS_NOT_ENOUGH", "Frozen points are not enough to unfreeze");
@@ -158,6 +185,10 @@ public class LoyaltyPointService implements LoyaltyQueryService, LoyaltyCommandS
     @Transactional
     public void consumeFrozenPoints(Long userId, int points, String bizType, String bizId, String description) {
         validatePositivePoints(points);
+        validateIdempotencyKey(bizType, bizId);
+        if (hasProcessed(userId, PointsTransactionType.CONSUME_FROZEN, bizType, bizId)) {
+            return;
+        }
         LoyaltyAccount account = getAccount(userId);
         if (account.getFrozenPoints() < points) {
             throw new BusinessException("LOYALTY_POINTS_NOT_ENOUGH", "Frozen points are not enough to consume");
@@ -189,17 +220,22 @@ public class LoyaltyPointService implements LoyaltyQueryService, LoyaltyCommandS
      * @param activityMultiplier promotional activity coefficient (default 1.0)
      * @return calculated points
      */
-    public int calcOrderPoints(BigDecimal amount, Long userId, double activityMultiplier) {
+    public int calcOrderPoints(BigDecimal amount, Long userId, BigDecimal activityMultiplier) {
+        MoneyValidationUtil.validatePayableAmount(amount);
         LoyaltyAccount account = getAccount(userId);
-        BigDecimal levelMultiplier = BigDecimal.valueOf(
-                memberBenefitService.getPointsMultiplier(account.getMemberLevel()));
-        double configuredActivityMultiplier =
-                RuntimeConfigRegistry.getDouble("loyalty.activity-multiplier", 1.0d);
+        BigDecimal levelMultiplier = memberBenefitService.getPointsMultiplier(account.getMemberLevel());
+        BigDecimal configuredActivityMultiplier = BigDecimal.valueOf(
+                RuntimeConfigRegistry.getDouble("loyalty.activity-multiplier", 1.0d));
+        BigDecimal requestActivityMultiplier = activityMultiplier != null ? activityMultiplier : BigDecimal.ONE;
         BigDecimal points = amount.multiply(BigDecimal.valueOf(POINTS_PER_YUAN))
                 .multiply(levelMultiplier)
-                .multiply(BigDecimal.valueOf(activityMultiplier))
-                .multiply(BigDecimal.valueOf(configuredActivityMultiplier));
+                .multiply(requestActivityMultiplier)
+                .multiply(configuredActivityMultiplier);
         return points.setScale(0, RoundingMode.DOWN).intValue();
+    }
+
+    public int calcOrderPoints(BigDecimal amount, Long userId, double activityMultiplier) {
+        return calcOrderPoints(amount, userId, BigDecimal.valueOf(activityMultiplier));
     }
 
     /**
@@ -216,6 +252,11 @@ public class LoyaltyPointService implements LoyaltyQueryService, LoyaltyCommandS
         // Fault injection check
         if (com.ecommerce.common.test.FaultInjectionRegistry.isActive("loyalty-award-points-failure")) {
             throw new RuntimeException("Fault injected: loyalty-award-points-failure");
+        }
+
+        if (bizType != null && bizId != null
+                && hasProcessed(userId, PointsTransactionType.EARN, bizType, bizId)) {
+            return;
         }
 
         LoyaltyAccount account = getAccount(userId);
@@ -289,6 +330,21 @@ public class LoyaltyPointService implements LoyaltyQueryService, LoyaltyCommandS
         if (points <= 0) {
             throw new BusinessException("VALIDATION_FAILED", "points must be greater than zero");
         }
+    }
+
+    private void validateIdempotencyKey(String bizType, String bizId) {
+        if (bizType == null || bizType.isBlank() || bizId == null || bizId.isBlank()) {
+            throw new BusinessException("VALIDATION_FAILED", "bizType and bizId are required for idempotent points operation");
+        }
+    }
+
+    private boolean hasProcessed(Long userId, PointsTransactionType type, String bizType, String bizId) {
+        return transactionRepository.existsByUserIdAndTypeAndBizTypeAndBizId(userId, type, bizType, bizId);
+    }
+
+    private String buildFallbackRedeemKey(Long userId, BigDecimal orderAmount, int points) {
+        String normalizedAmount = orderAmount == null ? "null" : orderAmount.stripTrailingZeros().toPlainString();
+        return userId + ":" + normalizedAmount + ":" + points;
     }
 
     private void recordTransaction(Long userId, PointsTransactionType type, int amount, int balance,

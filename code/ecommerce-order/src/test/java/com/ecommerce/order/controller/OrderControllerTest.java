@@ -3,6 +3,7 @@ package com.ecommerce.order.controller;
 import com.ecommerce.common.exception.BusinessException;
 import com.ecommerce.common.exception.GlobalExceptionHandler;
 import com.ecommerce.common.exception.ResourceNotFoundException;
+import com.ecommerce.common.ratelimit.RateLimit;
 import com.ecommerce.order.dto.BatchCreateOrderRequest;
 import com.ecommerce.order.dto.BatchCreateOrderResponse;
 import com.ecommerce.order.dto.CancelOrderResponse;
@@ -86,6 +87,7 @@ class OrderControllerTest {
 
         createRequest = new CreateOrderRequest();
         createRequest.setAddressId(10L);
+        createRequest.setExternalOrderNo("EXT-ORDER-CTRL-001");
 
         CreateOrderRequest.OrderItemRequest item = new CreateOrderRequest.OrderItemRequest();
         item.setSkuId(100L);
@@ -111,6 +113,18 @@ class OrderControllerTest {
     }
 
     // ======================== createOrder ========================
+
+    @Test
+    @DisplayName("createOrder method is limited by current user")
+    void testCreateOrder_hasUserRateLimitAnnotation() throws Exception {
+        RateLimit rateLimit = OrderController.class
+                .getMethod("createOrder", CreateOrderRequest.class)
+                .getAnnotation(RateLimit.class);
+
+        org.assertj.core.api.Assertions.assertThat(rateLimit).isNotNull();
+        org.assertj.core.api.Assertions.assertThat(rateLimit.permitsPerMinute()).isEqualTo(20);
+        org.assertj.core.api.Assertions.assertThat(rateLimit.key()).contains("SecurityContextHolder");
+    }
 
     @Test
     @DisplayName("createOrder returns created order")

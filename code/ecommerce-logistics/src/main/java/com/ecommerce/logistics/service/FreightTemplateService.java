@@ -45,10 +45,10 @@ public class FreightTemplateService {
     public FreightTemplate createTemplate(FreightTemplateRequest request) {
         FreightTemplate template = new FreightTemplate();
         template.setName(request.getName());
-        template.setDefaultFreight(request.getDefaultFreight() != null
-                ? request.getDefaultFreight() : DEFAULT_FREIGHT);
-        template.setFreeShippingThreshold(request.getFreeShippingThreshold() != null
-                ? request.getFreeShippingThreshold() : DEFAULT_FREE_SHIPPING_THRESHOLD);
+        template.setDefaultFreight(FreightCalculator.normalizeFreightAmount(request.getDefaultFreight() != null
+                ? request.getDefaultFreight() : DEFAULT_FREIGHT));
+        template.setFreeShippingThreshold(FreightCalculator.normalizeFreightAmount(request.getFreeShippingThreshold() != null
+                ? request.getFreeShippingThreshold() : DEFAULT_FREE_SHIPPING_THRESHOLD));
         template.setProvinceRules(request.getProvinceRules());
         template.setWeightRules(request.getWeightRules());
 
@@ -79,10 +79,10 @@ public class FreightTemplateService {
             template.setName(request.getName());
         }
         if (request.getDefaultFreight() != null) {
-            template.setDefaultFreight(request.getDefaultFreight());
+            template.setDefaultFreight(FreightCalculator.normalizeFreightAmount(request.getDefaultFreight()));
         }
         if (request.getFreeShippingThreshold() != null) {
-            template.setFreeShippingThreshold(request.getFreeShippingThreshold());
+            template.setFreeShippingThreshold(FreightCalculator.normalizeFreightAmount(request.getFreeShippingThreshold()));
         }
         if (request.getProvinceRules() != null) {
             template.setProvinceRules(request.getProvinceRules());

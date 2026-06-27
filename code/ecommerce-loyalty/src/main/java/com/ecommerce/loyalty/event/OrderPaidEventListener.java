@@ -11,6 +11,7 @@ import org.springframework.stereotype.Component;
 import org.springframework.transaction.event.TransactionPhase;
 import org.springframework.transaction.event.TransactionalEventListener;
 
+import java.math.BigDecimal;
 import java.time.LocalDateTime;
 
 /**
@@ -44,11 +45,11 @@ public class OrderPaidEventListener {
 
         try {
             int points = loyaltyPointService.calcOrderPoints(
-                    event.getPaidAmount(), event.getUserId(), 1.0);
+                    event.getPaidAmount(), event.getUserId(), BigDecimal.ONE);
             if (points > 0) {
                 loyaltyPointService.earnPoints(
-                        event.getUserId(), points, "ORDER",
-                        event.getOrderId().toString(),
+                        event.getUserId(), points, "PAYMENT",
+                        event.getPaymentNo(),
                         "Order payment reward, orderId=" + event.getOrderId());
             }
             log.info("Awarded {} points for orderId={}", points, event.getOrderId());

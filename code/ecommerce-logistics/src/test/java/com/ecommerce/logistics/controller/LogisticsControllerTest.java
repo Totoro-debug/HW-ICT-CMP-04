@@ -114,7 +114,7 @@ class LogisticsControllerTest {
         request.setEventTime(LocalDateTime.of(2024, 6, 1, 12, 0));
         request.setSignature("SIG001");
 
-        doNothing().when(callbackService).processCallback(any(LogisticsCallbackRequest.class));
+        when(callbackService.processCallback(any(LogisticsCallbackRequest.class))).thenReturn("OK");
 
         mockMvc.perform(post("/api/v1/logistics/callback")
                         .contentType(MediaType.APPLICATION_JSON)
@@ -128,7 +128,7 @@ class LogisticsControllerTest {
     void testReceiveCallback_emptyBody_returnsOk() throws Exception {
         TestApplication.TestSecurityContextRepository.clearTestAuth();
 
-        doNothing().when(callbackService).processCallback(any(LogisticsCallbackRequest.class));
+        when(callbackService.processCallback(any(LogisticsCallbackRequest.class))).thenReturn("OK");
 
         mockMvc.perform(post("/api/v1/logistics/callback")
                         .contentType(MediaType.APPLICATION_JSON)

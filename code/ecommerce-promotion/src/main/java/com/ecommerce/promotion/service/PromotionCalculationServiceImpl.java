@@ -2,6 +2,7 @@ package com.ecommerce.promotion.service;
 
 import com.ecommerce.common.integration.PromotionDiscountCalculator;
 import com.ecommerce.common.money.MonetaryUtil;
+import com.ecommerce.common.money.MoneyValidationUtil;
 import com.ecommerce.common.test.RuntimeConfigRegistry;
 import com.ecommerce.promotion.dto.PromotionCalculateRequest;
 import com.ecommerce.promotion.dto.PromotionCalculateResponse;
@@ -78,12 +79,15 @@ public class PromotionCalculationServiceImpl implements PromotionCalculationServ
         context.applyCoupon(couponResult.discount());
 
         PromotionCalculateResponse response = new PromotionCalculateResponse();
-        response.setItemTotal(itemTotal);
-        response.setFullReductionDiscount(context.fullReductionDiscount());
-        response.setCouponDiscount(context.couponDiscount());
-        response.setMemberDiscount(context.memberDiscount());
-        response.setTotalDiscount(context.totalDiscount());
-        response.setFinalAmount(context.currentAmount());
+        BigDecimal finalAmount = MonetaryUtil.roundToCent(context.currentAmount());
+        MoneyValidationUtil.validatePayableAmount(finalAmount);
+
+        response.setItemTotal(MonetaryUtil.roundToCent(itemTotal));
+        response.setFullReductionDiscount(MonetaryUtil.roundToCent(context.fullReductionDiscount()));
+        response.setCouponDiscount(MonetaryUtil.roundToCent(context.couponDiscount()));
+        response.setMemberDiscount(MonetaryUtil.roundToCent(context.memberDiscount()));
+        response.setTotalDiscount(MonetaryUtil.roundToCent(context.totalDiscount()));
+        response.setFinalAmount(finalAmount);
         response.setApplicableCoupons(couponResult.applicableCoupons());
 
         return response;
@@ -156,8 +160,11 @@ public class PromotionCalculationServiceImpl implements PromotionCalculationServ
 
             CouponTemplate template = templateOpt.get();
             BigDecimal discount = couponService.calculateDiscount(currentAmount, template);
-            if (discount.compareTo(currentAmount) > 0) {
-                discount = currentAmount;
+            BigDecimal maxDiscount = currentAmount.subtract(MoneyValidationUtil.MIN_PAYABLE_AMOUNT);
+            if (maxDiscount.compareTo(BigDecimal.ZERO) <= 0) {
+                discount = BigDecimal.ZERO;
+            } else if (discount.compareTo(maxDiscount) > 0) {
+                discount = maxDiscount;
             }
             if (discount.compareTo(bestDiscount) > 0) {
                 bestDiscount = discount;
@@ -189,6 +196,8 @@ public class PromotionCalculationServiceImpl implements PromotionCalculationServ
      * amount so discounts cannot drive payable amount below zero.
      */
     private static class StackingContext {
+        private static final BigDecimal MIN_PAYABLE = MoneyValidationUtil.MIN_PAYABLE_AMOUNT;
+
         private BigDecimal currentAmount;
         private BigDecimal memberDiscount = BigDecimal.ZERO;
         private BigDecimal fullReductionDiscount = BigDecimal.ZERO;
@@ -244,8 +253,12 @@ public class PromotionCalculationServiceImpl implements PromotionCalculationServ
             if (discount == null || discount.compareTo(BigDecimal.ZERO) <= 0) {
                 return BigDecimal.ZERO;
             }
-            if (discount.compareTo(currentAmount) > 0) {
-                return currentAmount;
+            BigDecimal maxDiscount = currentAmount.subtract(MIN_PAYABLE);
+            if (maxDiscount.compareTo(BigDecimal.ZERO) <= 0) {
+                return BigDecimal.ZERO;
+            }
+            if (discount.compareTo(maxDiscount) > 0) {
+                return maxDiscount;
             }
             return discount;
         }

@@ -2,6 +2,7 @@ package com.ecommerce.order.service;
 
 import com.ecommerce.common.event.DomainEventPublisher;
 import com.ecommerce.common.exception.BusinessException;
+import com.ecommerce.common.exception.OrderValidationException;
 import com.ecommerce.common.integration.LoyaltyCommandService;
 import com.ecommerce.common.integration.LoyaltyQueryService;
 import com.ecommerce.inventory.query.InventoryReservationService;
@@ -95,6 +96,7 @@ class OrderServiceTest {
     void setUp() {
         request = new CreateOrderRequest();
         request.setAddressId(10L);
+        request.setExternalOrderNo("EXT-ORDER-001");
 
         CreateOrderRequest.OrderItemRequest item = new CreateOrderRequest.OrderItemRequest();
         item.setSkuId(100L);
@@ -118,6 +120,8 @@ class OrderServiceTest {
         productSnapshot.setPrice(new BigDecimal("50.00"));
 
         lenient().when(productQueryService.getSkuForSale(100L)).thenReturn(sku);
+        lenient().when(orderRepository.findByExternalOrderNoAndUserId("EXT-ORDER-001", 1L))
+                .thenReturn(java.util.Optional.empty());
         lenient().when(productQueryService.getProductSnapshot(100L)).thenReturn(productSnapshot);
         lenient().when(totalCalculator.calculateShippingFee(new BigDecimal("100.00"))).thenReturn(new BigDecimal("8.00"));
         lenient().when(totalCalculator.calculatePackagingFee(1)).thenReturn(new BigDecimal("1.00"));
@@ -163,7 +167,7 @@ class OrderServiceTest {
         request.setRedeemPoints(500);
         when(loyaltyQueryService.estimateRedeemPoints(new BigDecimal("101.00"), 1L)).thenReturn(300);
         when(totalCalculator.calculate(new BigDecimal("100.00"), new BigDecimal("8.00"), new BigDecimal("1.00"),
-                BigDecimal.ZERO, new BigDecimal("3.00"))).thenReturn(new BigDecimal("106.00"));
+                new BigDecimal("0.00"), new BigDecimal("3.00"))).thenReturn(new BigDecimal("106.00"));
 
         Order savedOrder = new Order();
         savedOrder.setId(501L);
@@ -194,6 +198,70 @@ class OrderServiceTest {
         orderService.createOrder(1L, request);
 
         verify(promotionUsageCommandService).markCouponsUsed(1L, 500L, List.of(11L, 12L));
+    }
+
+    @Test
+    @DisplayName("createOrder rejects negative promotion discount")
+    void testCreateOrder_negativeDiscount_throwsOrderValidationException() {
+        com.ecommerce.promotion.dto.PromotionCalculateResponse promoResponse =
+                new com.ecommerce.promotion.dto.PromotionCalculateResponse();
+        promoResponse.setTotalDiscount(new BigDecimal("-0.01"));
+        when(promotionCalculationService.calculate(any())).thenReturn(promoResponse);
+
+        assertThatThrownBy(() -> orderService.createOrder(1L, request))
+                .isInstanceOf(OrderValidationException.class)
+                .extracting(ex -> ((BusinessException) ex).getCode())
+                .isEqualTo("DISCOUNT_AMOUNT_INVALID");
+
+        verify(orderRepository, never()).save(any(Order.class));
+        verify(loyaltyCommandService, never()).freezePoints(anyLong(), org.mockito.ArgumentMatchers.anyInt(), any(), any(), any());
+        verify(inventoryReservationService, never()).reserve(anyLong(), anyList());
+    }
+
+    @Test
+    @DisplayName("createOrder rejects discount greater than item total")
+    void testCreateOrder_excessDiscount_throwsOrderValidationException() {
+        com.ecommerce.promotion.dto.PromotionCalculateResponse promoResponse =
+                new com.ecommerce.promotion.dto.PromotionCalculateResponse();
+        promoResponse.setTotalDiscount(new BigDecimal("100.01"));
+        when(promotionCalculationService.calculate(any())).thenReturn(promoResponse);
+
+        assertThatThrownBy(() -> orderService.createOrder(1L, request))
+                .isInstanceOf(OrderValidationException.class)
+                .extracting(ex -> ((BusinessException) ex).getCode())
+                .isEqualTo("DISCOUNT_AMOUNT_INVALID");
+
+        verify(orderRepository, never()).save(any(Order.class));
+        verify(inventoryReservationService, never()).reserve(anyLong(), anyList());
+    }
+
+    @Test
+    @DisplayName("createOrder returns existing order for duplicate externalOrderNo")
+    void testCreateOrder_duplicateExternalOrderNo_returnsFirstOrderWithoutSideEffects() {
+        Order existingOrder = new Order();
+        existingOrder.setId(700L);
+        existingOrder.setOrderNo("SO202606070700");
+        existingOrder.setUserId(1L);
+        existingOrder.setExternalOrderNo("EXT-ORDER-001");
+        existingOrder.setStatus(OrderStatus.CREATED);
+        existingOrder.setItemTotal(new BigDecimal("100.00"));
+        existingOrder.setShippingFee(new BigDecimal("8.00"));
+        existingOrder.setPackagingFee(new BigDecimal("1.00"));
+        existingOrder.setDiscountAmount(BigDecimal.ZERO);
+        existingOrder.setPointsDeductionAmount(BigDecimal.ZERO);
+        existingOrder.setPayableAmount(new BigDecimal("109.00"));
+        when(orderRepository.findByExternalOrderNoAndUserId("EXT-ORDER-001", 1L))
+                .thenReturn(java.util.Optional.of(existingOrder));
+
+        CreateOrderResponse response = orderService.createOrder(1L, request);
+
+        assertThat(response.getOrderId()).isEqualTo(700L);
+        assertThat(response.getOrderNo()).isEqualTo("SO202606070700");
+        verify(preconditionChecker, never()).check(anyLong(), org.mockito.ArgumentMatchers.anyInt());
+        verify(orderRepository, never()).save(any(Order.class));
+        verify(loyaltyCommandService, never()).freezePoints(anyLong(), org.mockito.ArgumentMatchers.anyInt(), any(), any(), any());
+        verify(inventoryReservationService, never()).reserve(anyLong(), anyList());
+        verify(eventPublisher, never()).publish(any());
     }
 
     @Test

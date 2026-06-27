@@ -1,6 +1,8 @@
 package com.ecommerce.payment.service;
 
-import com.ecommerce.common.exception.BusinessException;
+import com.ecommerce.common.audit.AuditLogService;
+import com.ecommerce.common.exception.ConflictException;
+import com.ecommerce.common.exception.OrderValidationException;
 import com.ecommerce.common.exception.ResourceNotFoundException;
 import com.ecommerce.payment.dto.RefundApplyRequest;
 import com.ecommerce.payment.dto.RefundResponse;
@@ -17,6 +19,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
+import java.util.Objects;
 import java.util.UUID;
 
 /**
@@ -31,15 +34,18 @@ public class RefundService {
     private final PaymentRecordRepository paymentRecordRepository;
     private final RefundCalculator refundCalculator;
     private final RefundStageService refundStageService;
+    private final AuditLogService auditLogService;
 
     public RefundService(RefundRecordRepository refundRecordRepository,
                          PaymentRecordRepository paymentRecordRepository,
                          RefundCalculator refundCalculator,
-                         RefundStageService refundStageService) {
+                         RefundStageService refundStageService,
+                         AuditLogService auditLogService) {
         this.refundRecordRepository = refundRecordRepository;
         this.paymentRecordRepository = paymentRecordRepository;
         this.refundCalculator = refundCalculator;
         this.refundStageService = refundStageService;
+        this.auditLogService = auditLogService;
     }
 
     /**
@@ -50,20 +56,37 @@ public class RefundService {
         log.info("Applying refund: userId={}, orderId={}, paymentNo={}",
                 userId, request.getOrderId(), request.getPaymentNo());
 
+        if (request.getRefundRequestNo() == null || request.getRefundRequestNo().isBlank()) {
+            throw new OrderValidationException("REFUND_REQUEST_NO_REQUIRED",
+                    "refundRequestNo is required");
+        }
+
+        var existing = refundRecordRepository.findByRefundRequestNo(request.getRefundRequestNo());
+        if (existing.isPresent()) {
+            RefundRecord existingRefund = existing.get();
+            if (!Objects.equals(existingRefund.getUserId(), userId)
+                    || !Objects.equals(existingRefund.getOrderId(), request.getOrderId())
+                    || !Objects.equals(existingRefund.getPaymentNo(), request.getPaymentNo())) {
+                throw new ConflictException("refundRequestNo was reused with different refund parameters");
+            }
+            return toRefundResponse(existingRefund);
+        }
+
         PaymentRecord payment = paymentRecordRepository
                 .findByPaymentNo(request.getPaymentNo())
                 .orElseThrow(() -> new ResourceNotFoundException(
                         "PaymentRecord", request.getPaymentNo()));
 
         if (payment.getStatus() != PaymentStatus.SUCCESS) {
-            throw new BusinessException("CONFLICT",
-                    "Refund can only be applied for successfully paid orders");
+            throw new ConflictException("Refund can only be applied for successfully paid orders");
         }
 
         BigDecimal refundAmount = refundCalculator.calculate(payment.getPaidAmount());
+        refundCalculator.validateRefundAmount(refundAmount, payment.getPaidAmount());
 
         RefundRecord refund = new RefundRecord();
         refund.setRefundNo(generateRefundNo());
+        refund.setRefundRequestNo(request.getRefundRequestNo());
         refund.setPaymentNo(request.getPaymentNo());
         refund.setOrderId(request.getOrderId());
         refund.setUserId(userId);
@@ -89,9 +112,9 @@ public class RefundService {
         RefundRecord refund = refundRecordRepository.findById(refundId)
                 .orElseThrow(() -> new ResourceNotFoundException("RefundRecord", refundId));
 
-        if (refund.getStatus() != RefundStatus.PENDING_REVIEW) {
-            throw new BusinessException("CONFLICT",
-                    "Refund is not in PENDING_REVIEW status: " + refund.getStatus());
+        RefundStatus beforeStatus = refund.getStatus();
+        if (beforeStatus != RefundStatus.PENDING_REVIEW) {
+            throw new ConflictException("Refund is not in PENDING_REVIEW status: " + refund.getStatus());
         }
 
         if (request.isApproved()) {
@@ -109,6 +132,8 @@ public class RefundService {
 
             log.info("Refund rejected: refundNo={}", refund.getRefundNo());
         }
+        recordAudit(reviewerId, "REFUND_REVIEW", "REFUND", refund.getRefundNo(),
+                beforeStatus.name(), refund.getStatus().name(), request.getNote());
 
         return toRefundResponse(refund);
     }
@@ -139,6 +164,12 @@ public class RefundService {
         return toRefundResponse(refund);
     }
 
+    private void recordAudit(Long operatorId, String operationType, String bizType, String bizId,
+                             String beforeState, String afterState, String remark) {
+        auditLogService.record(String.valueOf(operatorId), String.valueOf(operatorId), operationType,
+                bizType, bizId, beforeState, afterState, remark);
+    }
+
     private String generateRefundNo() {
         return "RF" + System.currentTimeMillis() + UUID.randomUUID()
                 .toString().replace("-", "").substring(0, 8).toUpperCase();
@@ -148,6 +179,7 @@ public class RefundService {
         RefundResponse response = new RefundResponse();
         response.setId(refund.getId());
         response.setRefundNo(refund.getRefundNo());
+        response.setRefundRequestNo(refund.getRefundRequestNo());
         response.setPaymentNo(refund.getPaymentNo());
         response.setOrderId(refund.getOrderId());
         response.setUserId(refund.getUserId());

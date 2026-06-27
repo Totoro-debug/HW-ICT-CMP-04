@@ -157,9 +157,11 @@ public class CoreNotificationEventListener {
             record.setEventType("Notification:" + event.getClass().getSimpleName());
             record.setEventPayload(serializeEvent(event));
             record.setErrorMessage(exception.getMessage());
+            record.setLastError(exception.getMessage());
             record.setOccurredAt(LocalDateTime.now());
             record.setRetried(false);
             record.setRetryCount(0);
+            record.setStatus(com.ecommerce.common.event.FailedEventStatus.PENDING);
             failedEventRecordRepository.save(record);
         } catch (Exception persistenceException) {
             log.error("Failed to persist notification failure record: {}", persistenceException.getMessage(), persistenceException);

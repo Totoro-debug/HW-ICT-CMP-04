@@ -1,5 +1,6 @@
 package com.ecommerce.user.service;
 
+import com.ecommerce.common.audit.AuditLogService;
 import com.ecommerce.common.exception.AuthorizationException;
 import com.ecommerce.common.exception.BusinessException;
 import com.ecommerce.common.exception.ResourceNotFoundException;
@@ -17,6 +18,8 @@ import com.ecommerce.user.repository.LoginSessionRepository;
 import com.ecommerce.user.repository.UserRepository;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.security.core.Authentication;
+import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -39,19 +42,22 @@ public class UserAuthService {
     private final BCryptPasswordEncoder passwordEncoder;
     private final JwtTokenProvider jwtTokenProvider;
     private final UserRoleCacheManager userRoleCacheManager;
+    private final AuditLogService auditLogService;
 
     public UserAuthService(UserRepository userRepository,
                            EmailActivationTokenRepository activationTokenRepository,
                            LoginSessionRepository loginSessionRepository,
                            BCryptPasswordEncoder passwordEncoder,
                            JwtTokenProvider jwtTokenProvider,
-                           UserRoleCacheManager userRoleCacheManager) {
+                           UserRoleCacheManager userRoleCacheManager,
+                           AuditLogService auditLogService) {
         this.userRepository = userRepository;
         this.activationTokenRepository = activationTokenRepository;
         this.loginSessionRepository = loginSessionRepository;
         this.passwordEncoder = passwordEncoder;
         this.jwtTokenProvider = jwtTokenProvider;
         this.userRoleCacheManager = userRoleCacheManager;
+        this.auditLogService = auditLogService;
     }
 
     /**
@@ -125,9 +131,12 @@ public class UserAuthService {
     public void freezeUser(Long userId) {
         User user = userRepository.findById(userId)
                 .orElseThrow(() -> new ResourceNotFoundException("User not found: " + userId));
+        UserStatus beforeStatus = user.getStatus();
         user.setStatus(UserStatus.FROZEN);
         userRepository.save(user);
         userRoleCacheManager.refresh(userId, Collections.emptyList());
+        recordUserStatusAudit(user, "USER_FREEZE", beforeStatus, UserStatus.FROZEN,
+                "User frozen by admin operation");
         log.info("User frozen: id={}", userId);
     }
 
@@ -138,9 +147,27 @@ public class UserAuthService {
     public void unfreezeUser(Long userId) {
         User user = userRepository.findById(userId)
                 .orElseThrow(() -> new ResourceNotFoundException("User not found: " + userId));
+        UserStatus beforeStatus = user.getStatus();
         user.setStatus(UserStatus.ACTIVE);
         userRepository.save(user);
         userRoleCacheManager.refresh(userId, Collections.singletonList(user.getRole().name()));
+        recordUserStatusAudit(user, "USER_UNFREEZE", beforeStatus, UserStatus.ACTIVE,
+                "User unfrozen by admin operation");
         log.info("User unfrozen: id={}", userId);
+    }
+
+    private void recordUserStatusAudit(User user, String operationType, UserStatus beforeStatus,
+                                       UserStatus afterStatus, String remark) {
+        String operator = currentOperator();
+        auditLogService.record(operator, operator, operationType, "USER",
+                String.valueOf(user.getId()), beforeStatus.name(), afterStatus.name(), remark);
+    }
+
+    private String currentOperator() {
+        Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
+        if (authentication == null || authentication.getName() == null || authentication.getName().isBlank()) {
+            return "SYSTEM";
+        }
+        return authentication.getName();
     }
 }

@@ -21,7 +21,8 @@ import java.time.LocalDateTime;
         @Index(name = "idx_orders_order_no", columnList = "orderNo", unique = true),
         @Index(name = "idx_orders_user_id", columnList = "userId"),
         @Index(name = "idx_orders_status", columnList = "status"),
-        @Index(name = "idx_orders_status_expires", columnList = "status,expiresAt")
+        @Index(name = "idx_orders_status_expires", columnList = "status,expiresAt"),
+        @Index(name = "idx_orders_user_external", columnList = "user_id,external_order_no", unique = true)
 })
 public class Order extends BaseEntity {
 

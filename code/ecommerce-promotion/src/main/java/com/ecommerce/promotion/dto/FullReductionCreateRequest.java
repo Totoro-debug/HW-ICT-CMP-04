@@ -1,5 +1,6 @@
 package com.ecommerce.promotion.dto;
 
+import jakarta.validation.constraints.DecimalMin;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
 
@@ -16,9 +17,11 @@ public class FullReductionCreateRequest {
     private String name;
 
     @NotNull
+    @DecimalMin(value = "0.01", inclusive = true)
     private BigDecimal thresholdAmount;
 
     @NotNull
+    @DecimalMin(value = "0.01", inclusive = true)
     private BigDecimal reductionAmount;
 
     private LocalDateTime startTime;

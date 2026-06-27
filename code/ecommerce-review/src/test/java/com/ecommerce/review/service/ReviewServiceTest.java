@@ -1,7 +1,9 @@
 package com.ecommerce.review.service;
 
 import com.ecommerce.common.event.DomainEventPublisher;
+import com.ecommerce.common.exception.AuthorizationException;
 import com.ecommerce.common.exception.BusinessException;
+import com.ecommerce.common.exception.ConflictException;
 import com.ecommerce.order.dto.VerifyPurchaseResponse;
 import com.ecommerce.order.query.OrderQueryService;
 import com.ecommerce.review.dto.ReviewAppendRequest;
@@ -36,6 +38,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
@@ -157,6 +160,25 @@ class ReviewServiceTest {
         verify(reviewRepository, never()).save(any(Review.class));
     }
 
+    @Test
+    @DisplayName("createReview: duplicate review throws ConflictException")
+    void testCreateReview_duplicateReview_throwsConflictException() {
+        Review existing = new Review();
+        existing.setId(99L);
+        when(userQueryService.isActive(1L)).thenReturn(true);
+        when(userQueryService.isFrozen(1L)).thenReturn(false);
+        when(orderQueryService.verifyPurchase(1L, createRequest.getProductId()))
+                .thenReturn(new VerifyPurchaseResponse(true, createRequest.getOrderId(), null));
+        when(reviewRepository.findByUserIdAndOrderItemId(1L, createRequest.getOrderItemId()))
+                .thenReturn(Optional.of(existing));
+
+        assertThatThrownBy(() -> reviewService.createReview(1L, createRequest))
+                .isInstanceOf(ConflictException.class)
+                .extracting("code")
+                .isEqualTo("CONFLICT");
+        verify(reviewRepository, never()).save(any(Review.class));
+    }
+
     // -----------------------------------------------------------------------
     // Points are awarded only after admin approval
     // -----------------------------------------------------------------------
@@ -269,15 +291,15 @@ class ReviewServiceTest {
             existingReview.setStatus(ReviewStatus.APPROVED);
             existingReview.setAppended(false);
 
-            when(sensitiveWordFilter.containsSensitiveWord(any())).thenReturn(false);
-            when(sensitiveWordFilter.filter(any())).thenAnswer(inv -> inv.getArgument(0));
-            when(reviewAppendRepository.save(any(ReviewAppend.class))).thenAnswer(inv -> {
+            lenient().when(sensitiveWordFilter.containsSensitiveWord(any())).thenReturn(false);
+            lenient().when(sensitiveWordFilter.filter(any())).thenAnswer(inv -> inv.getArgument(0));
+            lenient().when(reviewAppendRepository.save(any(ReviewAppend.class))).thenAnswer(inv -> {
                 ReviewAppend a = inv.getArgument(0);
                 a.setId(100L);
                 return a;
             });
-            when(reviewRepository.save(any(Review.class))).thenAnswer(inv -> inv.getArgument(0));
-            when(reviewAppendRepository.findByReviewIdOrderByCreatedAtAsc(anyLong()))
+            lenient().when(reviewRepository.save(any(Review.class))).thenAnswer(inv -> inv.getArgument(0));
+            lenient().when(reviewAppendRepository.findByReviewIdOrderByCreatedAtAsc(anyLong()))
                     .thenReturn(Collections.emptyList());
         }
 
@@ -299,6 +321,21 @@ class ReviewServiceTest {
             ReviewAppend savedAppend = appendCaptor.getValue();
             assertThat(savedAppend.getReviewId()).isEqualTo(10L);
             assertThat(savedAppend.getContent()).isEqualTo("Updated my thoughts after a week");
+        }
+
+        @Test
+        @DisplayName("appendReview: rejects non-owner with AuthorizationException")
+        void testAppendReview_nonOwner_throwsAuthorizationException() {
+            when(reviewRepository.findById(10L)).thenReturn(Optional.of(existingReview));
+
+            ReviewAppendRequest appendRequest = new ReviewAppendRequest();
+            appendRequest.setContent("Updated my thoughts");
+
+            assertThatThrownBy(() -> reviewService.appendReview(2L, 10L, appendRequest))
+                    .isInstanceOf(AuthorizationException.class)
+                    .extracting("code")
+                    .isEqualTo("FORBIDDEN");
+            verify(reviewAppendRepository, never()).save(any(ReviewAppend.class));
         }
     }
 

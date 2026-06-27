@@ -57,19 +57,19 @@ class OrderPaidEventListenerTest {
         OrderPaidEvent event = new OrderPaidEvent(new Object(), orderId, userId, "PAY-100", paidAmount);
 
         // Mock calcOrderPoints with the default activity multiplier.
-        when(loyaltyPointService.calcOrderPoints(paidAmount, userId, 1.0))
+        when(loyaltyPointService.calcOrderPoints(paidAmount, userId, BigDecimal.ONE))
                 .thenReturn(16500);
 
         listener.onOrderPaid(event);
 
         // Verify calcOrderPoints was called with the correct arguments
         verify(loyaltyPointService).calcOrderPoints(
-                eq(paidAmount), eq(userId), eq(1.0));
+                eq(paidAmount), eq(userId), eq(BigDecimal.ONE));
 
         // Verify earnPoints was called with the calculated points
         verify(loyaltyPointService).earnPoints(
-                eq(userId), eq(16500), eq("ORDER"),
-                eq(orderId.toString()),
+                eq(userId), eq(16500), eq("PAYMENT"),
+                eq("PAY-100"),
                 eq("Order payment reward, orderId=" + orderId));
     }
 
@@ -80,7 +80,7 @@ class OrderPaidEventListenerTest {
     void testZeroPoints_doesNotEarnPoints() {
         OrderPaidEvent event = new OrderPaidEvent(new Object(), 300L, 400L, "PAY-300", BigDecimal.ZERO);
 
-        when(loyaltyPointService.calcOrderPoints(BigDecimal.ZERO, 400L, 1.0))
+        when(loyaltyPointService.calcOrderPoints(BigDecimal.ZERO, 400L, BigDecimal.ONE))
                 .thenReturn(0);
 
         listener.onOrderPaid(event);
@@ -92,7 +92,7 @@ class OrderPaidEventListenerTest {
     @Test
     void testAwardFailure_persistsFailedEventRecord() {
         OrderPaidEvent event = new OrderPaidEvent(new Object(), 500L, 600L, "PAY-500", new BigDecimal("88.00"));
-        when(loyaltyPointService.calcOrderPoints(event.getPaidAmount(), event.getUserId(), 1.0)).thenReturn(8800);
+        when(loyaltyPointService.calcOrderPoints(event.getPaidAmount(), event.getUserId(), BigDecimal.ONE)).thenReturn(8800);
         doThrow(new RuntimeException("award failed"))
                 .when(loyaltyPointService)
                 .earnPoints(any(), anyInt(), anyString(), anyString(), anyString());
@@ -107,6 +107,6 @@ class OrderPaidEventListenerTest {
         assertEquals(0, record.getRetryCount());
         assertEquals(false, record.isRetried());
         verify(loyaltyPointService).earnPoints(
-                eq(600L), eq(8800), eq("ORDER"), eq("500"), contains("orderId=500"));
+                eq(600L), eq(8800), eq("PAYMENT"), eq("PAY-500"), contains("orderId=500"));
     }
 }

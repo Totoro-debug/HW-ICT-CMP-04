@@ -1,5 +1,6 @@
 package com.ecommerce.logistics.service;
 
+import com.ecommerce.common.exception.ConflictException;
 import com.ecommerce.common.exception.ResourceNotFoundException;
 import com.ecommerce.logistics.entity.PickList;
 import com.ecommerce.logistics.entity.Shipment;
@@ -133,7 +134,7 @@ class PickListServiceTest {
         pickList.setStatus("COMPLETED");
         when(pickListRepository.findById(102L)).thenReturn(Optional.of(pickList));
 
-        assertThrows(IllegalStateException.class,
+        assertThrows(ConflictException.class,
                 () -> pickListService.completePicking(102L, 50L));
     }
 

@@ -2,7 +2,7 @@ package com.ecommerce.review.service;
 
 import com.ecommerce.common.event.DomainEventPublisher;
 import com.ecommerce.common.event.ReviewApprovedEvent;
-import com.ecommerce.common.exception.BusinessException;
+import com.ecommerce.common.exception.ConflictException;
 import com.ecommerce.common.exception.ResourceNotFoundException;
 import com.ecommerce.review.entity.Review;
 import com.ecommerce.review.entity.ReviewStatus;
@@ -45,7 +45,7 @@ public class ReviewModerationService {
                 .orElseThrow(() -> new ResourceNotFoundException("Review", reviewId));
 
         if (review.getStatus() != ReviewStatus.PENDING_REVIEW) {
-            throw new BusinessException("INVALID_REVIEW_STATUS",
+            throw new ConflictException(
                     "Only PENDING_REVIEW reviews can be approved, current status: " + review.getStatus());
         }
 
@@ -77,7 +77,7 @@ public class ReviewModerationService {
                 .orElseThrow(() -> new ResourceNotFoundException("Review", reviewId));
 
         if (review.getStatus() != ReviewStatus.PENDING_REVIEW) {
-            throw new BusinessException("INVALID_REVIEW_STATUS",
+            throw new ConflictException(
                     "Only PENDING_REVIEW reviews can be rejected, current status: " + review.getStatus());
         }
 

@@ -1,5 +1,6 @@
 package com.ecommerce.payment.controller;
 
+import com.ecommerce.common.ratelimit.RateLimit;
 import com.ecommerce.payment.dto.PayRequest;
 import com.ecommerce.payment.dto.PayResponse;
 import com.ecommerce.payment.dto.PaymentCallbackRequest;
@@ -51,13 +52,14 @@ public class PaymentController {
      * POST /api/v1/payment/callback -> 200 OK (authenticated via signature, not JWT)
      */
     @PostMapping("/callback")
+    @RateLimit(key = "#request.paymentNo", permitsPerMinute = 20)
     public ResponseEntity<String> callback(@RequestBody PaymentCallbackRequest request,
                                            @RequestHeader(value = "X-Payment-Signature", required = false)
                                            String signature) {
         log.info("Payment callback received: paymentNo={}, status={}",
                 request.getPaymentNo(), request.getStatus());
-        paymentCallbackService.processCallback(request, signature);
-        return ResponseEntity.ok("OK");
+        String response = paymentCallbackService.processCallback(request, signature);
+        return ResponseEntity.ok(response);
     }
 
     /**

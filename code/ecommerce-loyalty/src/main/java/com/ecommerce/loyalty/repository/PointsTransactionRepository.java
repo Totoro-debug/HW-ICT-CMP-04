@@ -9,6 +9,7 @@ import org.springframework.stereotype.Repository;
 
 import java.time.LocalDateTime;
 import java.util.List;
+import java.util.Optional;
 
 /**
  * Spring Data JPA repository for {@link PointsTransaction}.
@@ -28,4 +29,9 @@ public interface PointsTransactionRepository extends JpaRepository<PointsTransac
     List<PointsTransaction> findByTypeAndExpiresAtLessThanEqual(PointsTransactionType type, LocalDateTime expiresAt);
 
     boolean existsByTypeAndBizTypeAndBizId(PointsTransactionType type, String bizType, String bizId);
+
+    boolean existsByUserIdAndTypeAndBizTypeAndBizId(Long userId, PointsTransactionType type, String bizType, String bizId);
+
+    Optional<PointsTransaction> findFirstByUserIdAndTypeAndBizTypeAndBizId(
+            Long userId, PointsTransactionType type, String bizType, String bizId);
 }

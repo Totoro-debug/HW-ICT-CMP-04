@@ -1,6 +1,8 @@
 package com.ecommerce.review.controller;
 
+import com.ecommerce.common.exception.AuthorizationException;
 import com.ecommerce.common.exception.BusinessException;
+import com.ecommerce.common.exception.ConflictException;
 import com.ecommerce.common.exception.GlobalExceptionHandler;
 import com.ecommerce.review.dto.ReviewAppendRequest;
 import com.ecommerce.review.dto.ReviewCreateRequest;
@@ -136,8 +138,8 @@ class ReviewControllerTest {
         }
 
         @Test
-        @DisplayName("createReview: purchase gate failure returns 403 REVIEW_PURCHASE_REQUIRED")
-        void testCreateReview_purchaseGateFailure_returns403() throws Exception {
+        @DisplayName("createReview: purchase gate failure returns 400 REVIEW_PURCHASE_REQUIRED")
+        void testCreateReview_purchaseGateFailure_returns400() throws Exception {
             setupMockAuthentication("1", "ROLE_USER");
             when(reviewService.createReview(eq(1L), any(ReviewCreateRequest.class)))
                     .thenThrow(new BusinessException("REVIEW_PURCHASE_REQUIRED",
@@ -146,8 +148,22 @@ class ReviewControllerTest {
             mockMvc.perform(post("/api/v1/reviews")
                             .contentType(MediaType.APPLICATION_JSON)
                             .content(objectMapper.writeValueAsString(createRequest)))
-                    .andExpect(status().isForbidden())
+                    .andExpect(status().isBadRequest())
                     .andExpect(jsonPath("$.code").value("REVIEW_PURCHASE_REQUIRED"));
+        }
+
+        @Test
+        @DisplayName("createReview: duplicate review returns 409")
+        void testCreateReview_duplicateReview_returns409() throws Exception {
+            setupMockAuthentication("1", "ROLE_USER");
+            when(reviewService.createReview(eq(1L), any(ReviewCreateRequest.class)))
+                    .thenThrow(new ConflictException("You have already reviewed this order item"));
+
+            mockMvc.perform(post("/api/v1/reviews")
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content(objectMapper.writeValueAsString(createRequest)))
+                    .andExpect(status().isConflict())
+                    .andExpect(jsonPath("$.code").value("CONFLICT"));
         }
     }
 
@@ -176,6 +192,23 @@ class ReviewControllerTest {
                     .andExpect(status().isCreated())
                     .andExpect(jsonPath("$.id").value(1))
                     .andExpect(jsonPath("$.appended").value(true));
+        }
+
+        @Test
+        @DisplayName("appendReview: non-owner returns 403")
+        void testAppendReview_nonOwner_returns403() throws Exception {
+            setupMockAuthentication("1", "ROLE_USER");
+            when(reviewService.appendReview(eq(1L), eq(10L), any(ReviewAppendRequest.class)))
+                    .thenThrow(AuthorizationException.forbidden("You can only append to your own reviews"));
+
+            ReviewAppendRequest appendRequest = new ReviewAppendRequest();
+            appendRequest.setContent("Updated my thoughts");
+
+            mockMvc.perform(post("/api/v1/reviews/10/append")
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content(objectMapper.writeValueAsString(appendRequest)))
+                    .andExpect(status().isForbidden())
+                    .andExpect(jsonPath("$.code").value("FORBIDDEN"));
         }
     }
 

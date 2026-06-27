@@ -1,6 +1,7 @@
 package com.ecommerce.inventory.service;
 
 import com.ecommerce.common.exception.BusinessException;
+import com.ecommerce.common.exception.ConflictException;
 import com.ecommerce.common.exception.ResourceNotFoundException;
 import com.ecommerce.inventory.cache.InventorySummaryCache;
 import com.ecommerce.inventory.entity.InventoryStock;
@@ -38,6 +39,16 @@ public class InventoryReservationServiceImpl implements InventoryReservationServ
     @Override
     @Transactional
     public void reserve(Long orderId, List<ReserveItem> items) {
+        List<StockReservation> existingReservations = stockReservationRepository.findByOrderId(orderId);
+        if (existingReservations != null && !existingReservations.isEmpty()) {
+            if (matchesExistingReservation(existingReservations, items)) {
+                log.info("Stock reserve idempotent hit for orderId={}, reservationsCount={}",
+                        orderId, existingReservations.size());
+                return;
+            }
+            throw new ConflictException("Stock reservation idempotency conflict for orderId=" + orderId);
+        }
+
         for (ReserveItem item : items) {
             List<InventoryStock> stocks = inventoryStockRepository.findBySkuId(item.getSkuId());
             int remaining = item.getQuantity();
@@ -75,6 +86,17 @@ public class InventoryReservationServiceImpl implements InventoryReservationServ
             }
         }
         log.info("Stock reserved for orderId={}, itemsCount={}", orderId, items.size());
+    }
+
+    private boolean matchesExistingReservation(List<StockReservation> existingReservations, List<ReserveItem> items) {
+        return items.stream().allMatch(item -> {
+            int reservedQuantity = existingReservations.stream()
+                    .filter(reservation -> reservation.getSkuId().equals(item.getSkuId()))
+                    .mapToInt(StockReservation::getQuantity)
+                    .sum();
+            return reservedQuantity == item.getQuantity();
+        }) && existingReservations.stream().allMatch(reservation -> items.stream()
+                .anyMatch(item -> item.getSkuId().equals(reservation.getSkuId())));
     }
 
     @Override

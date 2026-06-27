@@ -1,5 +1,6 @@
 package com.ecommerce.user.service;
 
+import com.ecommerce.common.audit.AuditLogService;
 import com.ecommerce.common.exception.AuthorizationException;
 import com.ecommerce.common.exception.BusinessException;
 import com.ecommerce.common.exception.ResourceNotFoundException;
@@ -30,6 +31,7 @@ import java.util.Optional;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -55,6 +57,9 @@ class UserAuthServiceTest {
 
     @Mock
     private UserRoleCacheManager userRoleCacheManager;
+
+    @Mock
+    private AuditLogService auditLogService;
 
     @InjectMocks
     private UserAuthService userAuthService;
@@ -237,6 +242,8 @@ class UserAuthServiceTest {
 
         assertThat(user.getStatus()).isEqualTo(UserStatus.FROZEN);
         verify(userRepository).save(user);
+        verify(auditLogService).record(eq("SYSTEM"), eq("SYSTEM"), eq("USER_FREEZE"), eq("USER"),
+                eq("1"), eq("ACTIVE"), eq("FROZEN"), eq("User frozen by admin operation"));
     }
 
     @Test
@@ -250,6 +257,8 @@ class UserAuthServiceTest {
 
         assertThat(user.getStatus()).isEqualTo(UserStatus.ACTIVE);
         verify(userRepository).save(user);
+        verify(auditLogService).record(eq("SYSTEM"), eq("SYSTEM"), eq("USER_UNFREEZE"), eq("USER"),
+                eq("1"), eq("FROZEN"), eq("ACTIVE"), eq("User unfrozen by admin operation"));
     }
 
     @Test

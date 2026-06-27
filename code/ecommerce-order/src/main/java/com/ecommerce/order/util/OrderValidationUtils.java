@@ -1,6 +1,8 @@
 package com.ecommerce.order.util;
 
 import com.ecommerce.common.exception.BusinessException;
+import com.ecommerce.common.exception.OrderValidationException;
+import com.ecommerce.common.money.MoneyValidationUtil;
 import com.ecommerce.order.entity.OrderStatus;
 
 import java.math.BigDecimal;
@@ -81,12 +83,9 @@ public final class OrderValidationUtils {
      * Validate that an order amount is within acceptable bounds.
      */
     public static void validateOrderAmount(BigDecimal amount) {
-        if (amount == null || amount.compareTo(BigDecimal.ZERO) <= 0) {
-            throw new BusinessException("ORDER_INVALID_AMOUNT",
-                    "Order amount must be positive, got: " + amount);
-        }
+        MoneyValidationUtil.validatePayableAmount(amount);
         if (amount.compareTo(MAX_ORDER_AMOUNT) > 0) {
-            throw new BusinessException("ORDER_AMOUNT_TOO_LARGE",
+            throw new OrderValidationException("ORDER_AMOUNT_TOO_LARGE",
                     "Order amount cannot exceed " + MAX_ORDER_AMOUNT
                             + ", got: " + amount);
         }

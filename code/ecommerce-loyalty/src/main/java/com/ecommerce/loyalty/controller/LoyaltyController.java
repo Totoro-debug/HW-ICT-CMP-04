@@ -1,6 +1,7 @@
 package com.ecommerce.loyalty.controller;
 
 import com.ecommerce.common.dto.PageResponse;
+import com.ecommerce.common.money.MonetaryUtil;
 import com.ecommerce.loyalty.dto.MemberLevelResponse;
 import com.ecommerce.loyalty.dto.PointsEstimateRequest;
 import com.ecommerce.loyalty.dto.PointsEstimateResponse;
@@ -80,8 +81,8 @@ public class LoyaltyController {
 
         int maxRedeemable = loyaltyPointService.estimateRedeemPoints(request.getOrderAmount(), userId);
         int actual = Math.min(request.getRedeemPoints(), maxRedeemable);
-        BigDecimal redeemAmount = BigDecimal.valueOf(actual)
-                .divide(BigDecimal.valueOf(100), 2, java.math.RoundingMode.DOWN);
+        BigDecimal redeemAmount = MonetaryUtil.roundToCent(
+                BigDecimal.valueOf(actual).divide(BigDecimal.valueOf(100)));
 
         PointsEstimateResponse resp = new PointsEstimateResponse();
         resp.setMaxRedeemablePoints(maxRedeemable);

@@ -25,6 +25,7 @@ import java.math.BigDecimal;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.doNothing;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
@@ -108,6 +109,19 @@ class AdminProductControllerTest {
                 .andExpect(jsonPath("$.skuCode").value("SKU-001"))
                 .andExpect(jsonPath("$.name").value("Test SKU"))
                 .andExpect(jsonPath("$.status").value("DRAFT"));
+    }
+
+    @Test
+    @DisplayName("POST /sku rejects zero price")
+    void testCreateSku_rejectsZeroPrice() throws Exception {
+        skuRequest.setPrice(BigDecimal.ZERO);
+
+        mockMvc.perform(post("/api/v1/admin/products/sku")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(skuRequest)))
+                .andExpect(status().isBadRequest());
+
+        verify(skuService, never()).createSku(any(SkuCreateRequest.class));
     }
 
     @Test

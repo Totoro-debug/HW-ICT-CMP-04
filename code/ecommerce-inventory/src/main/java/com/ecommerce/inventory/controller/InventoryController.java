@@ -1,5 +1,6 @@
 package com.ecommerce.inventory.controller;
 
+import com.ecommerce.common.ratelimit.RateLimit;
 import com.ecommerce.inventory.dto.InventoryCheckRequest;
 import com.ecommerce.inventory.dto.InventoryCheckResponse;
 import com.ecommerce.inventory.dto.StockSummaryResponse;
@@ -28,6 +29,7 @@ public class InventoryController {
     }
 
     @PostMapping("/check")
+    @RateLimit(key = "'inventory:check:' + #request.skuId", permitsPerMinute = 120)
     public InventoryCheckResponse checkAvailability(@Valid @RequestBody InventoryCheckRequest request) {
         return inventoryService.checkAndReport(request.getSkuId(), request.getQuantity());
     }

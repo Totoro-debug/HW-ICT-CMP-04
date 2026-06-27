@@ -1,12 +1,14 @@
 package com.ecommerce.user.service;
 
 import com.ecommerce.common.exception.ConflictException;
+import com.ecommerce.common.notification.NotificationChannel;
+import com.ecommerce.common.notification.NotificationRequest;
 import com.ecommerce.user.dto.RegisterRequest;
 import com.ecommerce.user.dto.UserResponse;
 import com.ecommerce.user.entity.User;
 import com.ecommerce.user.entity.UserRole;
 import com.ecommerce.user.entity.UserStatus;
-import com.ecommerce.user.event.UserRegisteredEvent;
+import com.ecommerce.user.event.UserRegistrationNotificationEvent;
 import com.ecommerce.user.repository.UserRepository;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -14,6 +16,8 @@ import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+
+import java.util.Map;
 
 /**
  * Handles user registration.
@@ -56,8 +60,24 @@ public class UserRegisterService {
         User saved = userRepository.save(user);
         log.info("User registered: id={}, email={}, status={}", saved.getId(), saved.getEmail(), saved.getStatus());
 
-        eventPublisher.publishEvent(new UserRegisteredEvent(this, saved.getId(), saved.getEmail(), saved.getNickname()));
+        eventPublisher.publishEvent(new UserRegistrationNotificationEvent(this, saved.getId(), saved.getEmail(),
+                buildRegistrationNotification(saved)));
 
         return UserResponse.from(saved);
+    }
+
+    private NotificationRequest buildRegistrationNotification(User user) {
+        return NotificationRequest.builder()
+                .bizType("USER_REGISTERED")
+                .bizId(String.valueOf(user.getId()))
+                .receiver(user.getEmail())
+                .channel(NotificationChannel.EMAIL)
+                .templateCode("USER_REGISTERED")
+                .variables(Map.of(
+                        "userId", user.getId(),
+                        "email", user.getEmail(),
+                        "nickname", user.getNickname() == null ? "" : user.getNickname()))
+                .idempotencyKey("USER_REGISTERED:" + user.getId())
+                .build();
     }
 }

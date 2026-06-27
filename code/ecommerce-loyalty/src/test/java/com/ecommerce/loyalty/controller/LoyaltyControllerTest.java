@@ -207,7 +207,7 @@ class LoyaltyControllerTest {
         account.setAnnualConsumption(new BigDecimal("3500"));
 
         when(memberLevelService.evaluateAndUpgrade(1L)).thenReturn(MemberLevel.SILVER);
-        when(memberBenefitService.getPointsMultiplier(MemberLevel.SILVER)).thenReturn(1.1);
+        when(memberBenefitService.getPointsMultiplier(MemberLevel.SILVER)).thenReturn(new BigDecimal("1.1"));
         when(loyaltyPointService.getAccountByUserId(1L)).thenReturn(account);
 
         mockMvc.perform(get("/api/v1/loyalty/member-level"))

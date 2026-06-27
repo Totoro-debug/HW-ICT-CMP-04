@@ -1,6 +1,7 @@
 package com.ecommerce.inventory.service;
 
 import com.ecommerce.common.exception.BusinessException;
+import com.ecommerce.common.exception.ConflictException;
 import com.ecommerce.common.exception.ResourceNotFoundException;
 import com.ecommerce.inventory.cache.InventorySummaryCache;
 import com.ecommerce.inventory.dto.InboundRequest;
@@ -150,6 +151,21 @@ public class InventoryService implements InventoryQueryService {
 
     @Transactional
     public InventoryStock outbound(Long warehouseId, Long skuId, int quantity, Long orderId) {
+        if (orderId != null) {
+            List<OutboundOrder> existingOrders = outboundOrderRepository.findByOrderId(orderId);
+            if (existingOrders != null && !existingOrders.isEmpty()) {
+                OutboundOrder existingOrder = existingOrders.get(0);
+                if (isSameOutbound(existingOrder, warehouseId, skuId, quantity)) {
+                    log.info("Outbound idempotent hit: warehouseId={}, skuId={}, qty={}, orderId={}",
+                            warehouseId, skuId, quantity, orderId);
+                    return inventoryStockRepository.findByWarehouseIdAndSkuId(warehouseId, skuId)
+                            .orElseThrow(() -> new ResourceNotFoundException(
+                                    "InventoryStock", "warehouse=" + warehouseId + ", sku=" + skuId));
+                }
+                throw new ConflictException("Outbound idempotency conflict for orderId=" + orderId);
+            }
+        }
+
         InventoryStock stock = inventoryStockRepository
                 .findByWarehouseIdAndSkuId(warehouseId, skuId)
                 .orElseThrow(() -> new ResourceNotFoundException(
@@ -176,6 +192,13 @@ public class InventoryService implements InventoryQueryService {
         log.info("Outbound completed: warehouseId={}, skuId={}, qty={}, orderId={}",
                 warehouseId, skuId, quantity, orderId);
         return saved;
+    }
+
+    private boolean isSameOutbound(OutboundOrder existingOrder, Long warehouseId, Long skuId, int quantity) {
+        return "COMPLETED".equals(existingOrder.getStatus())
+                && existingOrder.getWarehouseId().equals(warehouseId)
+                && existingOrder.getSkuId().equals(skuId)
+                && existingOrder.getQuantity() == quantity;
     }
 
     private InventorySummaryCache.StockSnapshot getStockSnapshot(Long skuId) {

@@ -1,5 +1,6 @@
 package com.ecommerce.promotion.service;
 
+import com.ecommerce.common.exception.ValidationException;
 import com.ecommerce.common.money.MonetaryUtil;
 import com.ecommerce.promotion.dto.FullReductionCreateRequest;
 import com.ecommerce.promotion.entity.FullReductionActivity;
@@ -35,10 +36,12 @@ public class FullReductionService {
      */
     @Transactional
     public FullReductionActivity create(FullReductionCreateRequest request) {
+        validateCreateRequest(request);
+
         FullReductionActivity activity = new FullReductionActivity();
         activity.setName(request.getName());
-        activity.setThresholdAmount(request.getThresholdAmount());
-        activity.setReductionAmount(request.getReductionAmount());
+        activity.setThresholdAmount(MonetaryUtil.roundToCent(request.getThresholdAmount()));
+        activity.setReductionAmount(MonetaryUtil.roundToCent(request.getReductionAmount()));
         activity.setStartTime(request.getStartTime());
         activity.setEndTime(request.getEndTime());
         activity.setProductScope(request.getProductScope() != null ? request.getProductScope() : "ALL");
@@ -87,6 +90,20 @@ public class FullReductionService {
             return Optional.of(MonetaryUtil.roundToCent(bestReduction));
         }
         return Optional.empty();
+    }
+
+    private void validateCreateRequest(FullReductionCreateRequest request) {
+        if (request.getThresholdAmount() == null
+                || request.getThresholdAmount().compareTo(BigDecimal.ZERO) <= 0) {
+            throw new ValidationException("thresholdAmount", "must be greater than 0");
+        }
+        if (request.getReductionAmount() == null
+                || request.getReductionAmount().compareTo(BigDecimal.ZERO) <= 0) {
+            throw new ValidationException("reductionAmount", "must be greater than 0");
+        }
+        if (request.getReductionAmount().compareTo(request.getThresholdAmount()) > 0) {
+            throw new ValidationException("reductionAmount", "must not exceed threshold amount");
+        }
     }
 
     private boolean isEffective(FullReductionActivity activity, LocalDateTime now) {

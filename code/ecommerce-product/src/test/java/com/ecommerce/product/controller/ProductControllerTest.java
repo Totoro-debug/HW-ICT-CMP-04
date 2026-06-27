@@ -1,6 +1,8 @@
 package com.ecommerce.product.controller;
 
 import com.ecommerce.common.dto.PageResponse;
+import com.ecommerce.common.exception.GlobalExceptionHandler;
+import com.ecommerce.common.ratelimit.RateLimitAspect;
 import com.ecommerce.product.dto.ProductDetailResponse;
 import com.ecommerce.product.dto.ProductListResponse;
 import com.ecommerce.product.dto.ProductSearchRequest;
@@ -13,6 +15,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.aop.aspectj.annotation.AspectJProxyFactory;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 
@@ -45,7 +48,12 @@ class ProductControllerTest {
     @BeforeEach
     void setUp() {
         ProductController controller = new ProductController(productSearchService, productDetailService);
-        mockMvc = MockMvcBuilders.standaloneSetup(controller).build();
+        AspectJProxyFactory proxyFactory = new AspectJProxyFactory(controller);
+        proxyFactory.addAspect(new RateLimitAspect());
+        ProductController proxiedController = proxyFactory.getProxy();
+        mockMvc = MockMvcBuilders.standaloneSetup(proxiedController)
+                .setControllerAdvice(new GlobalExceptionHandler())
+                .build();
 
         listItem1 = new ProductListResponse();
         listItem1.setSkuId(1L);
@@ -107,6 +115,31 @@ class ProductControllerTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.total").value(1))
                 .andExpect(jsonPath("$.items[0].name").value("Product 1"));
+    }
+
+    @Test
+    @DisplayName("GET /api/v1/products/search returns 429 after 120 requests from same IP")
+    void testSearchProducts_rateLimitedByIp() throws Exception {
+        PageResponse<ProductListResponse> page = PageResponse.of(0, 20, 1,
+                List.of(listItem1));
+        when(productSearchService.search(any(ProductSearchRequest.class))).thenReturn(page);
+
+        for (int i = 0; i < 120; i++) {
+            mockMvc.perform(get("/api/v1/products/search")
+                            .with(request -> {
+                                request.setRemoteAddr("10.0.0.1");
+                                return request;
+                            }))
+                    .andExpect(status().isOk());
+        }
+
+        mockMvc.perform(get("/api/v1/products/search")
+                        .with(request -> {
+                            request.setRemoteAddr("10.0.0.1");
+                            return request;
+                        }))
+                .andExpect(status().isTooManyRequests())
+                .andExpect(jsonPath("$.code").value("RATE_LIMITED"));
     }
 
     @Test

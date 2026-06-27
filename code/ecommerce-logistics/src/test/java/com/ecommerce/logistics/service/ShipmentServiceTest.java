@@ -1,5 +1,6 @@
 package com.ecommerce.logistics.service;
 
+import com.ecommerce.common.audit.AuditLogService;
 import com.ecommerce.common.exception.ConflictException;
 import com.ecommerce.common.exception.ResourceNotFoundException;
 import com.ecommerce.logistics.dto.ShipmentResponse;
@@ -53,6 +54,8 @@ class ShipmentServiceTest {
     private OrderLogisticsStatusUpdater orderLogisticsStatusUpdater;
     @Mock
     private ApplicationEventPublisher eventPublisher;
+    @Mock
+    private AuditLogService auditLogService;
 
     @InjectMocks
     private ShipmentService shipmentService;
@@ -97,7 +100,22 @@ class ShipmentServiceTest {
         Shipment result = shipmentService.createShipment(100L, 200L,
                 null, "");
 
-        assertEquals(BigDecimal.ZERO, result.getFreightAmount());
+        assertEquals(new BigDecimal("0.00"), result.getFreightAmount());
+    }
+
+    @Test
+    void testCreateShipment_roundsFreightHalfUpToCent() {
+        when(shipmentRepository.save(any(Shipment.class))).thenAnswer(inv -> {
+            Shipment s = inv.getArgument(0);
+            s.setId(1L);
+            return s;
+        });
+        when(trackingRepository.save(any(ShipmentTracking.class))).thenReturn(new ShipmentTracking());
+
+        Shipment result = shipmentService.createShipment(100L, 200L,
+                new BigDecimal("8.005"), "");
+
+        assertEquals(new BigDecimal("8.01"), result.getFreightAmount());
     }
 
     // ==================== pick ====================
@@ -214,6 +232,15 @@ class ShipmentServiceTest {
         ArgumentCaptor<Shipment> captor = ArgumentCaptor.forClass(Shipment.class);
         verify(shipmentRepository).save(captor.capture());
         assertEquals(ShipmentStatus.OUTBOUND, captor.getValue().getStatus());
+        verify(auditLogService).record(
+                "SYSTEM",
+                "SYSTEM",
+                "WAREHOUSE_ACCEPTANCE",
+                "SHIPMENT",
+                "1",
+                "LABEL_PRINTED",
+                "OUTBOUND",
+                "Warehouse accepted outbound package for order 101");
     }
 
     // ==================== getShipmentByOrderId ====================

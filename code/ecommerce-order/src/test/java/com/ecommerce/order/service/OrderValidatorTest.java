@@ -17,33 +17,33 @@ class OrderValidatorTest {
     private final OrderValidator validator = new OrderValidator();
 
     @Test
-    @DisplayName("validateAmount with zero amount throws ORDER_INVALID_AMOUNT")
-    void testValidateAmount_zero_throwsOrderInvalidAmount() {
+    @DisplayName("validateAmount with zero amount throws OrderValidationException")
+    void testValidateAmount_zero_throwsOrderValidationException() {
         assertThatThrownBy(() -> validator.validateAmount(BigDecimal.ZERO))
-                .isInstanceOf(com.ecommerce.common.exception.BusinessException.class)
-                .hasMessageContaining("Order amount must be positive")
+                .isInstanceOf(com.ecommerce.common.exception.OrderValidationException.class)
+                .hasMessageContaining("Payable amount must be at least 0.01")
                 .extracting(ex -> ((com.ecommerce.common.exception.BusinessException) ex).getCode())
-                .isEqualTo("ORDER_INVALID_AMOUNT");
+                .isEqualTo("PAYABLE_AMOUNT_TOO_LOW");
     }
 
     @Test
-    @DisplayName("validateAmount with negative amount throws ORDER_INVALID_AMOUNT")
-    void testValidateAmount_negative_throwsOrderInvalidAmount() {
+    @DisplayName("validateAmount with negative amount throws OrderValidationException")
+    void testValidateAmount_negative_throwsOrderValidationException() {
         assertThatThrownBy(() -> validator.validateAmount(new BigDecimal("-50.00")))
-                .isInstanceOf(com.ecommerce.common.exception.BusinessException.class)
-                .hasMessageContaining("Order amount must be positive")
+                .isInstanceOf(com.ecommerce.common.exception.OrderValidationException.class)
+                .hasMessageContaining("Payable amount must be at least 0.01")
                 .extracting(ex -> ((com.ecommerce.common.exception.BusinessException) ex).getCode())
-                .isEqualTo("ORDER_INVALID_AMOUNT");
+                .isEqualTo("PAYABLE_AMOUNT_TOO_LOW");
     }
 
     @Test
-    @DisplayName("validateAmount with null amount throws ORDER_INVALID_AMOUNT")
-    void testValidateAmount_null_throwsOrderInvalidAmount() {
+    @DisplayName("validateAmount with null amount throws OrderValidationException")
+    void testValidateAmount_null_throwsOrderValidationException() {
         assertThatThrownBy(() -> validator.validateAmount(null))
-                .isInstanceOf(com.ecommerce.common.exception.BusinessException.class)
-                .hasMessageContaining("Order amount must be positive")
+                .isInstanceOf(com.ecommerce.common.exception.OrderValidationException.class)
+                .hasMessageContaining("Payable amount must be at least 0.01")
                 .extracting(ex -> ((com.ecommerce.common.exception.BusinessException) ex).getCode())
-                .isEqualTo("ORDER_INVALID_AMOUNT");
+                .isEqualTo("PAYABLE_AMOUNT_TOO_LOW");
     }
 
     @Test

@@ -1,6 +1,7 @@
 package com.ecommerce.order.controller;
 
 import com.ecommerce.common.dto.PageResponse;
+import com.ecommerce.common.ratelimit.RateLimit;
 import com.ecommerce.order.dto.BatchCreateOrderRequest;
 import com.ecommerce.order.dto.BatchCreateOrderResponse;
 import com.ecommerce.order.dto.CancelOrderResponse;
@@ -55,6 +56,7 @@ public class OrderController {
      * Create a new order.
      */
     @PostMapping("/create")
+    @RateLimit(key = "#request != null ? T(org.springframework.security.core.context.SecurityContextHolder).getContext().getAuthentication().getName() : 'anonymous'", permitsPerMinute = 20)
     public ResponseEntity<CreateOrderResponse> createOrder(
             @Valid @RequestBody CreateOrderRequest request) {
         Long userId = getCurrentUserId();

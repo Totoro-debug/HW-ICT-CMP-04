@@ -3,6 +3,7 @@ package com.ecommerce.common.notification;
 import com.ecommerce.common.test.FaultInjectionRegistry;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
 import java.time.Instant;
@@ -33,10 +34,19 @@ public class LocalNotificationServiceImpl implements LocalNotificationService {
     private final Map<String, Boolean> idempotencyCache = new ConcurrentHashMap<>();
     private final MockMailSender mockMailSender;
     private final MockSmsSender mockSmsSender;
+    private final NotificationFailureRecordService failureRecordService;
 
     public LocalNotificationServiceImpl(MockMailSender mockMailSender, MockSmsSender mockSmsSender) {
+        this(mockMailSender, mockSmsSender, null);
+    }
+
+    @Autowired
+    public LocalNotificationServiceImpl(MockMailSender mockMailSender,
+                                        MockSmsSender mockSmsSender,
+                                        NotificationFailureRecordService failureRecordService) {
         this.mockMailSender = mockMailSender;
         this.mockSmsSender = mockSmsSender;
+        this.failureRecordService = failureRecordService;
     }
 
     @Override
@@ -105,6 +115,10 @@ public class LocalNotificationServiceImpl implements LocalNotificationService {
         } catch (Exception e) {
             log.error("Failed to send notification: bizType={}, bizId={}, channel={}, error={}",
                     request.getBizType(), request.getBizId(), request.getChannel(), e.getMessage(), e);
+            if (failureRecordService != null) {
+                failureRecordService.recordFailure(request, e);
+            }
+            throw new NotificationSendException("Failed to send notification", e);
         }
     }
 

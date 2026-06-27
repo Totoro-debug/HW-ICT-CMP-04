@@ -5,6 +5,7 @@ import com.ecommerce.common.exception.BusinessException;
 import com.ecommerce.common.exception.OrderValidationException;
 import com.ecommerce.common.exception.ResourceNotFoundException;
 import com.ecommerce.common.money.MonetaryUtil;
+import com.ecommerce.common.money.MoneyValidationUtil;
 import com.ecommerce.common.test.SystemClockService;
 import com.ecommerce.inventory.query.InventoryReservationService;
 import com.ecommerce.inventory.query.ReserveItem;
@@ -140,6 +141,14 @@ public class OrderService {
     public CreateOrderResponse createOrder(Long userId, CreateOrderRequest request) {
         log.info("Creating order for userId={}, itemsCount={}", userId,
                 request.getItems() != null ? request.getItems().size() : 0);
+
+        Optional<Order> existingOrder = orderRepository.findByExternalOrderNoAndUserId(request.getExternalOrderNo(), userId);
+        if (existingOrder.isPresent()) {
+            Order existing = existingOrder.get();
+            log.info("Duplicate create order request detected: userId={}, externalOrderNo={}, orderId={}",
+                    userId, request.getExternalOrderNo(), existing.getId());
+            return buildCreateResponse(existing);
+        }
 
         // ===== Step 1: Validate preconditions =====
         // Checks user existence only (does not check frozen status)
@@ -435,7 +444,10 @@ public class OrderService {
         com.ecommerce.promotion.dto.PromotionCalculateResponse calcResponse =
                 promotionCalculationService.calculate(calcRequest);
 
-        return calcResponse.getTotalDiscount();
+        BigDecimal discountAmount = calcResponse != null && calcResponse.getTotalDiscount() != null
+                ? calcResponse.getTotalDiscount() : BigDecimal.ZERO;
+        MoneyValidationUtil.validateDiscountAmount(discountAmount, itemTotal);
+        return MonetaryUtil.roundToCent(discountAmount);
     }
 
     private String toAddressSnapshot(AddressDto address) {

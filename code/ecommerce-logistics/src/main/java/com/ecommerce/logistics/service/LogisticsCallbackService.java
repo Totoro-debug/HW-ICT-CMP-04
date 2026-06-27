@@ -2,6 +2,7 @@ package com.ecommerce.logistics.service;
 
 import com.ecommerce.common.exception.AuthorizationException;
 import com.ecommerce.common.exception.ResourceNotFoundException;
+import com.ecommerce.common.idempotency.Idempotent;
 import com.ecommerce.logistics.dto.LogisticsCallbackRequest;
 import com.ecommerce.logistics.entity.Shipment;
 import com.ecommerce.logistics.entity.ShipmentStatus;
@@ -50,7 +51,8 @@ public class LogisticsCallbackService {
      * @param request the callback request from the carrier
      */
     @Transactional
-    public void processCallback(LogisticsCallbackRequest request) {
+    @Idempotent(businessType = "LOGISTICS_CALLBACK", key = "#request.trackingNo + ':' + #request.eventTime + ':' + #request.status")
+    public String processCallback(LogisticsCallbackRequest request) {
         log.info("Received logistics callback: trackingNo={}, status={}, location={}, "
                         + "description={}, eventTime={}",
                 request.getTrackingNo(), request.getStatus(),
@@ -65,6 +67,7 @@ public class LogisticsCallbackService {
         ShipmentStatus newStatus = mapToShipmentStatus(request.getStatus());
         shipmentService.updateStatus(shipment.getId(), newStatus,
                 request.getLocation(), request.getDescription());
+        return "OK";
     }
 
     /**

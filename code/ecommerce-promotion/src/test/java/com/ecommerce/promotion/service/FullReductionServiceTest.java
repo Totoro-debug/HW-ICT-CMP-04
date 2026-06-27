@@ -1,5 +1,6 @@
 package com.ecommerce.promotion.service;
 
+import com.ecommerce.common.exception.ValidationException;
 import com.ecommerce.promotion.dto.FullReductionCreateRequest;
 import com.ecommerce.promotion.entity.FullReductionActivity;
 import com.ecommerce.promotion.repository.FullReductionRepository;
@@ -23,6 +24,7 @@ import java.util.List;
 import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -158,6 +160,43 @@ class FullReductionServiceTest {
 
             verify(fullReductionRepository).save(activityCaptor.capture());
             assertThat(activityCaptor.getValue().getApplicableCategoryIds()).isNull();
+        }
+
+        @Test
+        @DisplayName("create: rounds persisted amounts to cents with HALF_UP")
+        void testCreate_roundsAmountsHalfUp() {
+            createRequest.setThresholdAmount(new BigDecimal("100.005"));
+            createRequest.setReductionAmount(new BigDecimal("10.005"));
+
+            when(fullReductionRepository.save(any(FullReductionActivity.class))).thenReturn(activity);
+
+            fullReductionService.create(createRequest);
+
+            verify(fullReductionRepository).save(activityCaptor.capture());
+            FullReductionActivity saved = activityCaptor.getValue();
+            assertThat(saved.getThresholdAmount()).isEqualByComparingTo(new BigDecimal("100.01"));
+            assertThat(saved.getReductionAmount()).isEqualByComparingTo(new BigDecimal("10.01"));
+        }
+
+        @Test
+        @DisplayName("create: rejects reduction greater than threshold")
+        void testCreate_reductionGreaterThanThreshold() {
+            createRequest.setThresholdAmount(new BigDecimal("10.00"));
+            createRequest.setReductionAmount(new BigDecimal("10.01"));
+
+            assertThatThrownBy(() -> fullReductionService.create(createRequest))
+                    .isInstanceOf(ValidationException.class)
+                    .hasMessageContaining("reductionAmount");
+        }
+
+        @Test
+        @DisplayName("create: rejects zero reduction")
+        void testCreate_zeroReduction() {
+            createRequest.setReductionAmount(BigDecimal.ZERO);
+
+            assertThatThrownBy(() -> fullReductionService.create(createRequest))
+                    .isInstanceOf(ValidationException.class)
+                    .hasMessageContaining("reductionAmount");
         }
     }
 

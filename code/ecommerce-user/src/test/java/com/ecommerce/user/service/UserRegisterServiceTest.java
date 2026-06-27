@@ -1,12 +1,14 @@
 package com.ecommerce.user.service;
 
 import com.ecommerce.common.exception.ConflictException;
+import com.ecommerce.common.notification.NotificationChannel;
+import com.ecommerce.common.notification.NotificationRequest;
 import com.ecommerce.user.dto.RegisterRequest;
 import com.ecommerce.user.dto.UserResponse;
 import com.ecommerce.user.entity.User;
 import com.ecommerce.user.entity.UserRole;
 import com.ecommerce.user.entity.UserStatus;
-import com.ecommerce.user.event.UserRegisteredEvent;
+import com.ecommerce.user.event.UserRegistrationNotificationEvent;
 import com.ecommerce.user.repository.UserRepository;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -118,8 +120,8 @@ class UserRegisterServiceTest {
     }
 
     @Test
-    @DisplayName("publishes UserRegisteredEvent after registration")
-    void testRegister_userRegisteredEventPublished() {
+    @DisplayName("publishes registration notification event after registration")
+    void testRegister_registrationNotificationEventPublished() {
         RegisterRequest request = validRequest();
         when(userRepository.existsByEmail(request.getEmail())).thenReturn(false);
         when(userRepository.existsByPhone(request.getPhone())).thenReturn(false);
@@ -135,14 +137,22 @@ class UserRegisterServiceTest {
 
         userRegisterService.register(request);
 
-        ArgumentCaptor<UserRegisteredEvent> eventCaptor =
-                ArgumentCaptor.forClass(UserRegisteredEvent.class);
+        ArgumentCaptor<UserRegistrationNotificationEvent> eventCaptor =
+                ArgumentCaptor.forClass(UserRegistrationNotificationEvent.class);
         verify(eventPublisher).publishEvent(eventCaptor.capture());
 
-        UserRegisteredEvent event = eventCaptor.getValue();
+        UserRegistrationNotificationEvent event = eventCaptor.getValue();
         assertThat(event.getUserId()).isEqualTo(1L);
         assertThat(event.getEmail()).isEqualTo("newuser@example.com");
-        assertThat(event.getNickname()).isEqualTo("NewUser");
+
+        NotificationRequest notification = event.getNotificationRequest();
+        assertThat(notification.getBizType()).isEqualTo("USER_REGISTERED");
+        assertThat(notification.getBizId()).isEqualTo("1");
+        assertThat(notification.getReceiver()).isEqualTo("newuser@example.com");
+        assertThat(notification.getChannel()).isEqualTo(NotificationChannel.EMAIL);
+        assertThat(notification.getTemplateCode()).isEqualTo("USER_REGISTERED");
+        assertThat(notification.getIdempotencyKey()).isEqualTo("USER_REGISTERED:1");
+        assertThat(notification.getVariables()).containsEntry("nickname", "NewUser");
     }
 
     @Test

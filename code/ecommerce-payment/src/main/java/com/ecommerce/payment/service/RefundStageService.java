@@ -1,7 +1,8 @@
 package com.ecommerce.payment.service;
 
+import com.ecommerce.common.audit.AuditLogService;
 import com.ecommerce.common.event.DomainEventPublisher;
-import com.ecommerce.common.exception.BusinessException;
+import com.ecommerce.common.exception.ConflictException;
 import com.ecommerce.common.exception.ResourceNotFoundException;
 import com.ecommerce.payment.entity.PaymentRecord;
 import com.ecommerce.payment.entity.PaymentStatus;
@@ -29,13 +30,16 @@ public class RefundStageService {
     private final RefundRecordRepository refundRecordRepository;
     private final PaymentRecordRepository paymentRecordRepository;
     private final DomainEventPublisher eventPublisher;
+    private final AuditLogService auditLogService;
 
     public RefundStageService(RefundRecordRepository refundRecordRepository,
                               PaymentRecordRepository paymentRecordRepository,
-                              DomainEventPublisher eventPublisher) {
+                              DomainEventPublisher eventPublisher,
+                              AuditLogService auditLogService) {
         this.refundRecordRepository = refundRecordRepository;
         this.paymentRecordRepository = paymentRecordRepository;
         this.eventPublisher = eventPublisher;
+        this.auditLogService = auditLogService;
     }
 
     @Transactional
@@ -43,14 +47,18 @@ public class RefundStageService {
         RefundRecord refund = refundRecordRepository.findById(refundId)
                 .orElseThrow(() -> new ResourceNotFoundException("RefundRecord", refundId));
 
-        if (refund.getStatus() != RefundStatus.WAITING_WAREHOUSE_ACCEPT) {
-            throw new BusinessException("REFUND_WAITING_WAREHOUSE_ACCEPT",
+        RefundStatus beforeStatus = refund.getStatus();
+        if (beforeStatus != RefundStatus.WAITING_WAREHOUSE_ACCEPT) {
+            throw new ConflictException(
                     "Refund must pass review and wait for warehouse acceptance before completion");
         }
 
         refund.setStatus(RefundStatus.WAREHOUSE_ACCEPTED);
         refund.setWarehouseAcceptorId(acceptorId);
         RefundRecord saved = refundRecordRepository.save(refund);
+        auditLogService.record(String.valueOf(acceptorId), String.valueOf(acceptorId),
+                "REFUND_WAREHOUSE_ACCEPT", "REFUND", saved.getRefundNo(),
+                beforeStatus.name(), saved.getStatus().name(), "Warehouse accepted returned goods");
         log.info("Refund warehouse acceptance committed: refundNo={}", saved.getRefundNo());
         return saved;
     }
@@ -64,15 +72,13 @@ public class RefundStageService {
             return refund;
         }
         if (refund.getStatus() != RefundStatus.WAREHOUSE_ACCEPTED) {
-            throw new BusinessException("CONFLICT",
-                    "Refund is not ready for completion: " + refund.getStatus());
+            throw new ConflictException("Refund is not ready for completion: " + refund.getStatus());
         }
 
         PaymentRecord payment = paymentRecordRepository.findByPaymentNo(refund.getPaymentNo())
                 .orElseThrow(() -> new ResourceNotFoundException("PaymentRecord", refund.getPaymentNo()));
         if (payment.getStatus() != PaymentStatus.SUCCESS && payment.getStatus() != PaymentStatus.REFUNDED) {
-            throw new BusinessException("CONFLICT",
-                    "Cannot complete refund for payment in status: " + payment.getStatus());
+            throw new ConflictException("Cannot complete refund for payment in status: " + payment.getStatus());
         }
 
         refund.setStatus(RefundStatus.COMPLETED);

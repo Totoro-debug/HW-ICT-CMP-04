@@ -89,6 +89,25 @@ class FreightTemplateServiceTest {
         assertEquals(new BigDecimal("199.00"), result.getFreeShippingThreshold());
     }
 
+    @Test
+    void testCreateTemplate_roundsAmountsHalfUpToCent() {
+        FreightTemplateRequest request = new FreightTemplateRequest();
+        request.setName("Rounded Template");
+        request.setDefaultFreight(new BigDecimal("0.005"));
+        request.setFreeShippingThreshold(new BigDecimal("199.235"));
+
+        when(freightTemplateRepository.save(any(FreightTemplate.class))).thenAnswer(inv -> {
+            FreightTemplate t = inv.getArgument(0);
+            t.setId(3L);
+            return t;
+        });
+
+        FreightTemplate result = freightTemplateService.createTemplate(request);
+
+        assertEquals(new BigDecimal("0.01"), result.getDefaultFreight());
+        assertEquals(new BigDecimal("199.24"), result.getFreeShippingThreshold());
+    }
+
     // ==================== updateTemplate ====================
 
     @Test

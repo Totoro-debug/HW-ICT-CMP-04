@@ -1,5 +1,6 @@
 package com.ecommerce.payment.service;
 
+import com.ecommerce.common.audit.AuditLogService;
 import com.ecommerce.common.exception.ConflictException;
 import com.ecommerce.common.money.MonetaryUtil;
 import com.ecommerce.payment.dto.SettlementBatchResponse;
@@ -38,15 +39,18 @@ public class SettlementBatchService {
     private final SettlementOrderItemRepository settlementOrderItemRepository;
     private final PaymentRecordRepository paymentRecordRepository;
     private final InvoiceRecordRepository invoiceRecordRepository;
+    private final AuditLogService auditLogService;
 
     public SettlementBatchService(SettlementBatchRepository settlementBatchRepository,
                                   SettlementOrderItemRepository settlementOrderItemRepository,
                                   PaymentRecordRepository paymentRecordRepository,
-                                  InvoiceRecordRepository invoiceRecordRepository) {
+                                  InvoiceRecordRepository invoiceRecordRepository,
+                                  AuditLogService auditLogService) {
         this.settlementBatchRepository = settlementBatchRepository;
         this.settlementOrderItemRepository = settlementOrderItemRepository;
         this.paymentRecordRepository = paymentRecordRepository;
         this.invoiceRecordRepository = invoiceRecordRepository;
+        this.auditLogService = auditLogService;
     }
 
     /**
@@ -56,7 +60,6 @@ public class SettlementBatchService {
     public SettlementBatchResponse generateBatch(LocalDate batchDate) {
         log.info("Generating settlement batch for date: {}", batchDate);
 
-        // Check if batch already exists for this date
         settlementBatchRepository.findByBatchDate(batchDate).ifPresent(existing -> {
             throw new ConflictException("Settlement batch already exists for date: " + batchDate);
         });
@@ -70,20 +73,18 @@ public class SettlementBatchService {
         if (payments.isEmpty()) {
             log.info("No payments found for date: {}", batchDate);
 
-            // Create empty batch
             SettlementBatch batch = createBatchEntity(batchDate, BigDecimal.ZERO,
                     BigDecimal.ZERO, BigDecimal.ZERO, 0);
             batch = settlementBatchRepository.save(batch);
+            recordBatchAudit(batch, "No payments found");
             return toBatchResponse(batch);
         }
 
-        // Calculate totals from payment records found in the settlement window.
         BigDecimal totalPaymentAmount = payments.stream()
                 .map(PaymentRecord::getPaidAmount)
                 .filter(a -> a != null)
                 .reduce(BigDecimal.ZERO, MonetaryUtil::add);
 
-        // Get invoices for the same date range
         List<InvoiceRecord> invoices = invoiceRecordRepository.findAll().stream()
                 .filter(inv -> inv.getStatus() == InvoiceStatus.ISSUED)
                 .filter(inv -> inv.getIssuedAt() != null
@@ -101,31 +102,29 @@ public class SettlementBatchService {
                 .distinct()
                 .count();
 
-        // Create batch entity
         SettlementBatch batch = createBatchEntity(batchDate, totalPaymentAmount,
                 BigDecimal.ZERO, totalInvoiceAmount, orderCount);
         batch = settlementBatchRepository.save(batch);
 
-        // Create settlement order items for each payment
         for (PaymentRecord payment : payments) {
             SettlementOrderItem item = new SettlementOrderItem();
             item.setBatchId(batch.getId());
             item.setOrderId(payment.getOrderId());
             item.setPaymentNo(payment.getPaymentNo());
-            item.setPaidAmount(payment.getPaidAmount());
+            item.setPaidAmount(MonetaryUtil.roundToCent(payment.getPaidAmount()));
 
-            // Find related invoice if any
             invoices.stream()
                     .filter(inv -> inv.getOrderId().equals(payment.getOrderId()))
                     .findFirst()
                     .ifPresent(inv -> {
                         item.setInvoiceId(inv.getId());
-                        item.setInvoiceAmount(inv.getInvoiceAmount());
+                        item.setInvoiceAmount(MonetaryUtil.roundToCent(inv.getInvoiceAmount()));
                     });
 
             settlementOrderItemRepository.save(item);
         }
 
+        recordBatchAudit(batch, "Settlement batch generated for " + batchDate);
         log.info("Settlement batch generated: batchNo={}, orderCount={}, totalPayment={}",
                 batch.getBatchNo(), orderCount, totalPaymentAmount);
 
@@ -139,13 +138,18 @@ public class SettlementBatchService {
         batch.setBatchNo("BAT" + batchDate.toString().replace("-", "")
                 + UUID.randomUUID().toString().replace("-", "").substring(0, 6).toUpperCase());
         batch.setBatchDate(batchDate);
-        batch.setTotalPaymentAmount(totalPayment);
-        batch.setTotalRefundAmount(totalRefund);
-        batch.setTotalInvoiceAmount(totalInvoice);
+        batch.setTotalPaymentAmount(MonetaryUtil.roundToCent(totalPayment));
+        batch.setTotalRefundAmount(MonetaryUtil.roundToCent(totalRefund));
+        batch.setTotalInvoiceAmount(MonetaryUtil.roundToCent(totalInvoice));
         batch.setOrderCount(orderCount);
         batch.setStatus(SettlementStatus.GENERATED);
         batch.setGeneratedAt(LocalDateTime.now());
         return batch;
+    }
+
+    private void recordBatchAudit(SettlementBatch batch, String remark) {
+        auditLogService.record("SYSTEM", "SYSTEM", "SETTLEMENT_BATCH_GENERATED",
+                "SETTLEMENT_BATCH", batch.getBatchNo(), null, batch.getStatus().name(), remark);
     }
 
     private SettlementBatchResponse toBatchResponse(SettlementBatch batch) {

@@ -1,6 +1,7 @@
 package com.ecommerce.loyalty.service;
 
 import com.ecommerce.common.exception.BusinessException;
+import com.ecommerce.common.exception.OrderValidationException;
 import com.ecommerce.loyalty.entity.LoyaltyAccount;
 import com.ecommerce.loyalty.entity.MemberLevel;
 import com.ecommerce.loyalty.entity.PointsTransaction;
@@ -211,6 +212,64 @@ class LoyaltyPointServiceTest {
 
         assertThrows(BusinessException.class,
                 () -> service.freezePoints(1L, 1000, "ORDER", "100", "Freeze for order"));
+    }
+
+    @Test
+    void testCalcOrderPoints_usesPreciseBigDecimalMultiplier() {
+        LoyaltyAccount account = createAccount(1L, MemberLevel.GOLD, 0, 0);
+        when(accountRepository.findByUserId(1L)).thenReturn(Optional.of(account));
+
+        int result = service.calcOrderPoints(new BigDecimal("0.03"), 1L, new BigDecimal("1.1"));
+
+        assertEquals(3, result);
+    }
+
+    @Test
+    void testRedeemPoints_invalidAmount_throwsOrderValidationException() {
+        assertThrows(OrderValidationException.class,
+                () -> service.redeemPoints(1L, 100, BigDecimal.ZERO, "ORDER_REDEEM", "REQ-1"));
+        assertThrows(OrderValidationException.class,
+                () -> service.redeemPoints(1L, 100, new BigDecimal("0.009"), "ORDER_REDEEM", "REQ-2"));
+        assertThrows(OrderValidationException.class,
+                () -> service.redeemPoints(1L, 100, null, "ORDER_REDEEM", "REQ-3"));
+    }
+
+    @Test
+    void testRedeemPoints_sameIdempotencyKey_returnsFirstResult() {
+        PointsTransaction existing = new PointsTransaction();
+        existing.setAmount(-300);
+        when(transactionRepository.findFirstByUserIdAndTypeAndBizTypeAndBizId(
+                1L, PointsTransactionType.REDEEM, "ORDER_REDEEM", "REQ-1"))
+                .thenReturn(Optional.of(existing));
+
+        int redeemed = service.redeemPoints(1L, 500, new BigDecimal("100.00"), "ORDER_REDEEM", "REQ-1");
+
+        assertEquals(300, redeemed);
+    }
+
+    @Test
+    void testFreezePoints_sameIdempotencyKeyDoesNotMutateAgain() {
+        LoyaltyAccount account = createAccount(1L, MemberLevel.NORMAL, 5000, 5000);
+        when(accountRepository.findByUserId(1L)).thenReturn(Optional.of(account));
+        service.freezePoints(1L, 1000, "ORDER", "100", "Freeze for order");
+
+        when(transactionRepository.existsByUserIdAndTypeAndBizTypeAndBizId(
+                1L, PointsTransactionType.FREEZE, "ORDER", "100"))
+                .thenReturn(true);
+        service.freezePoints(1L, 1000, "ORDER", "100", "Freeze for order");
+
+        assertEquals(4000, account.getAvailablePoints());
+        assertEquals(1000, account.getFrozenPoints());
+    }
+
+    @Test
+    void testPointsWriteOperations_requireIdempotencyKey() {
+        assertThrows(BusinessException.class,
+                () -> service.freezePoints(1L, 100, "ORDER", null, "Freeze"));
+        assertThrows(BusinessException.class,
+                () -> service.unfreezePoints(1L, 100, "ORDER", "", "Unfreeze"));
+        assertThrows(BusinessException.class,
+                () -> service.consumeFrozenPoints(1L, 100, null, "100", "Consume"));
     }
 
     // ======================== helpers ========================

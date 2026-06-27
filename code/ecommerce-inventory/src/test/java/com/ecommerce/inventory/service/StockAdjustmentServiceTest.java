@@ -1,5 +1,6 @@
 package com.ecommerce.inventory.service;
 
+import com.ecommerce.common.audit.AuditLogService;
 import com.ecommerce.common.exception.ResourceNotFoundException;
 import com.ecommerce.inventory.entity.InventoryStock;
 import com.ecommerce.inventory.entity.StockAdjustment;
@@ -11,6 +12,8 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
+import org.springframework.security.authentication.TestingAuthenticationToken;
+import org.springframework.security.core.context.SecurityContextHolder;
 import org.mockito.junit.jupiter.MockitoExtension;
 
 import java.util.List;
@@ -19,6 +22,7 @@ import java.util.Optional;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -31,6 +35,9 @@ class StockAdjustmentServiceTest {
 
     @Mock
     private StockAdjustmentRepository adjustmentRepo;
+
+    @Mock
+    private AuditLogService auditLogService;
 
     @InjectMocks
     private StockAdjustmentService adjustmentService;
@@ -52,6 +59,7 @@ class StockAdjustmentServiceTest {
             a.setId(1L);
             return a;
         });
+        SecurityContextHolder.getContext().setAuthentication(new TestingAuthenticationToken("admin", "password"));
 
         StockAdjustment result = adjustmentService.create(1L, 100L, 80, "Physical inventory count");
 
@@ -65,6 +73,9 @@ class StockAdjustmentServiceTest {
         assertThat(result.getBeforeQty()).isEqualTo(100);
         assertThat(result.getAfterQty()).isEqualTo(80);
         assertThat(result.getReason()).isEqualTo("Physical inventory count");
+        verify(auditLogService).record("admin", "admin", "STOCK_ADJUSTMENT", "STOCK_ADJUSTMENT",
+                "1", "100", "80", "Physical inventory count");
+        SecurityContextHolder.clearContext();
     }
 
     @Test
@@ -98,6 +109,7 @@ class StockAdjustmentServiceTest {
 
         assertThatThrownBy(() -> adjustmentService.create(1L, 100L, 80, "reason"))
                 .isInstanceOf(ResourceNotFoundException.class);
+        verify(auditLogService, never()).record(any(), any(), any(), any(), any(), any(), any(), any());
     }
 
     @Test

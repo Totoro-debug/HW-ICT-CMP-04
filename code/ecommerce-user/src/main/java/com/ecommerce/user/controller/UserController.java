@@ -1,6 +1,7 @@
 package com.ecommerce.user.controller;
 
 import com.ecommerce.common.exception.ResourceNotFoundException;
+import com.ecommerce.common.ratelimit.RateLimit;
 import com.ecommerce.user.dto.ActivateRequest;
 import com.ecommerce.user.dto.LoginRequest;
 import com.ecommerce.user.dto.LoginResponse;
@@ -49,6 +50,7 @@ public class UserController {
     }
 
     @PostMapping("/api/v1/users/login")
+    @RateLimit(key = "#request.email", permitsPerMinute = 5)
     public ResponseEntity<LoginResponse> login(@Valid @RequestBody LoginRequest request) {
         LoginResponse response = userAuthService.login(request);
         return ResponseEntity.ok(response);

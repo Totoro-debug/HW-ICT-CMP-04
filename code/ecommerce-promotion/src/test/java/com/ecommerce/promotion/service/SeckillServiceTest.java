@@ -140,6 +140,29 @@ class SeckillServiceTest {
             SeckillActivity result = seckillService.create(activity);
             assertThat(result).isNotNull();
         }
+
+        @Test
+        @DisplayName("create: rounds seckill price to cents with HALF_UP")
+        void testCreate_roundsSeckillPriceHalfUp() {
+            activity.setSeckillPrice(new BigDecimal("999.005"));
+            when(seckillRepository.save(any(SeckillActivity.class))).thenReturn(activity);
+
+            seckillService.create(activity);
+
+            verify(seckillRepository).save(activityCaptor.capture());
+            assertThat(activityCaptor.getValue().getSeckillPrice())
+                    .isEqualByComparingTo(new BigDecimal("999.01"));
+        }
+
+        @Test
+        @DisplayName("create: rejects zero seckill price")
+        void testCreate_zeroSeckillPrice() {
+            activity.setSeckillPrice(BigDecimal.ZERO);
+
+            assertThatThrownBy(() -> seckillService.create(activity))
+                    .isInstanceOf(ValidationException.class)
+                    .hasMessageContaining("seckillPrice");
+        }
     }
 
     // -----------------------------------------------------------------------

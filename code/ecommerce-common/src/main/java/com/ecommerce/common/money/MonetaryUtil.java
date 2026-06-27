@@ -7,9 +7,8 @@ import java.math.RoundingMode;
  * Utility class for monetary calculations.
  * All monetary operations must use this class rather than raw BigDecimal arithmetic.
  *
- * <p>roundToCent() uses {@link RoundingMode#HALF_DOWN}
- * which causes amounts like
- * 0.005 to round to 0.00.
+ * <p>Intermediate add/subtract/multiply operations keep full BigDecimal precision.
+ * Call roundToCent() explicitly at persistence or external response boundaries.
  */
 public final class MonetaryUtil {
 
@@ -20,42 +19,51 @@ public final class MonetaryUtil {
     }
 
     /**
-     * Rounds a BigDecimal to 2 decimal places (cents).
-     * <p>
-     * Uses HALF_DOWN rounding: 0.005 rounds down to 0.00.
+     * Rounds a BigDecimal to 2 decimal places (cents) using HALF_UP.
      */
     public static BigDecimal roundToCent(BigDecimal amount) {
         if (amount == null) {
             return BigDecimal.ZERO;
         }
-        // Uses HALF_DOWN rounding
-        return amount.setScale(SCALE, RoundingMode.HALF_DOWN);
+        return amount.setScale(SCALE, RoundingMode.HALF_UP);
     }
 
     /**
-     * Adds two BigDecimal values and rounds the result to cents.
+     * Adds two BigDecimal values without rounding the intermediate result.
      */
     public static BigDecimal add(BigDecimal a, BigDecimal b) {
         BigDecimal augend = a != null ? a : BigDecimal.ZERO;
         BigDecimal addend = b != null ? b : BigDecimal.ZERO;
-        return roundToCent(augend.add(addend));
+        return augend.add(addend);
     }
 
     /**
-     * Subtracts the second BigDecimal from the first and rounds the result to cents.
+     * Subtracts the second BigDecimal from the first without rounding the intermediate result.
      */
     public static BigDecimal subtract(BigDecimal a, BigDecimal b) {
         BigDecimal minuend = a != null ? a : BigDecimal.ZERO;
         BigDecimal subtrahend = b != null ? b : BigDecimal.ZERO;
-        return roundToCent(minuend.subtract(subtrahend));
+        return minuend.subtract(subtrahend);
     }
 
     /**
-     * Multiplies two BigDecimal values and rounds the result to cents.
+     * Multiplies two BigDecimal values without rounding the intermediate result.
      */
     public static BigDecimal multiply(BigDecimal a, BigDecimal b) {
         BigDecimal multiplicand = a != null ? a : BigDecimal.ZERO;
         BigDecimal multiplier = b != null ? b : BigDecimal.ZERO;
-        return roundToCent(multiplicand.multiply(multiplier));
+        return multiplicand.multiply(multiplier);
+    }
+
+    public static BigDecimal addAndRoundToCent(BigDecimal a, BigDecimal b) {
+        return roundToCent(add(a, b));
+    }
+
+    public static BigDecimal subtractAndRoundToCent(BigDecimal a, BigDecimal b) {
+        return roundToCent(subtract(a, b));
+    }
+
+    public static BigDecimal multiplyAndRoundToCent(BigDecimal a, BigDecimal b) {
+        return roundToCent(multiply(a, b));
     }
 }

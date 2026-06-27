@@ -13,6 +13,8 @@ public interface RefundRecordRepository extends JpaRepository<RefundRecord, Long
 
     Optional<RefundRecord> findByRefundNo(String refundNo);
 
+    Optional<RefundRecord> findByRefundRequestNo(String refundRequestNo);
+
     List<RefundRecord> findByPaymentNo(String paymentNo);
 
     List<RefundRecord> findByOrderId(Long orderId);

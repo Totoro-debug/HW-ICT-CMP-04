@@ -31,7 +31,7 @@ public class CouponValidator {
      */
     public void validate(UserCoupon userCoupon) {
         if (userCoupon == null) {
-            throw new BusinessException("RESOURCE_NOT_FOUND", "Coupon not found");
+            throw new ResourceNotFoundException("UserCoupon", null);
         }
 
         CouponTemplate template = couponTemplateRepository.findById(userCoupon.getCouponTemplateId())
