@@ -46,13 +46,16 @@ public class LoyaltyPointService implements LoyaltyQueryService, LoyaltyCommandS
     private final LoyaltyAccountRepository accountRepository;
     private final PointsTransactionRepository transactionRepository;
     private final MemberBenefitService memberBenefitService;
+    private final PointsExpireService pointsExpireService;
 
     public LoyaltyPointService(LoyaltyAccountRepository accountRepository,
                                PointsTransactionRepository transactionRepository,
-                               MemberBenefitService memberBenefitService) {
+                               MemberBenefitService memberBenefitService,
+                               PointsExpireService pointsExpireService) {
         this.accountRepository = accountRepository;
         this.transactionRepository = transactionRepository;
         this.memberBenefitService = memberBenefitService;
+        this.pointsExpireService = pointsExpireService;
     }
 
     // ======================== LoyaltyQueryService ========================
@@ -65,17 +68,9 @@ public class LoyaltyPointService implements LoyaltyQueryService, LoyaltyCommandS
     @Override
     public int estimateRedeemPoints(BigDecimal orderAmount, Long userId) {
         MoneyValidationUtil.validatePayableAmount(orderAmount);
+        pointsExpireService.expireForUser(userId);
         LoyaltyAccount account = getAccount(userId);
-        int available = account.getAvailablePoints();
-
-        // 50% of order amount in points: orderAmount * 100 * 0.5
-        int ratioCapped = orderAmount.multiply(new BigDecimal(POINTS_PER_YUAN))
-                .multiply(MAX_REDEEM_RATIO)
-                .setScale(0, RoundingMode.DOWN)
-                .intValue();
-
-        // min(available, MAX_REDEEM_POINTS, ratioCapped)
-        return Math.min(Math.min(available, MAX_REDEEM_POINTS), ratioCapped);
+        return calculateRedeemablePoints(orderAmount, account.getAvailablePoints());
     }
 
     public MemberLevel getMemberLevel(Long userId) {
@@ -121,10 +116,10 @@ public class LoyaltyPointService implements LoyaltyQueryService, LoyaltyCommandS
 
     private int doRedeemPoints(Long userId, int points, BigDecimal orderAmount, String bizType, String bizId) {
         MoneyValidationUtil.validatePayableAmount(orderAmount);
+        pointsExpireService.expireForUser(userId);
         LoyaltyAccount account = getAccount(userId);
 
-        // Apply 10,000 cap and 50% cap
-        int maxRedeemable = estimateRedeemPoints(orderAmount, userId);
+        int maxRedeemable = calculateRedeemablePoints(orderAmount, account.getAvailablePoints());
         int actual = Math.min(points, maxRedeemable);
 
         if (actual <= 0) {
@@ -211,9 +206,9 @@ public class LoyaltyPointService implements LoyaltyQueryService, LoyaltyCommandS
     /**
      * Calculate order points.
      *
-     * <p>The calculation multiplies the paid amount by the points-per-yuan
-     * rate, member benefit multiplier, request activity multiplier, and runtime
-     * configured activity multiplier.
+     * <p>The calculation multiplies the paid amount by the member benefit
+     * multiplier, request activity multiplier, and runtime configured activity
+     * multiplier.
      *
      * @param amount             the order payable amount
      * @param userId             the user ID
@@ -227,11 +222,19 @@ public class LoyaltyPointService implements LoyaltyQueryService, LoyaltyCommandS
         BigDecimal configuredActivityMultiplier = BigDecimal.valueOf(
                 RuntimeConfigRegistry.getDouble("loyalty.activity-multiplier", 1.0d));
         BigDecimal requestActivityMultiplier = activityMultiplier != null ? activityMultiplier : BigDecimal.ONE;
-        BigDecimal points = amount.multiply(BigDecimal.valueOf(POINTS_PER_YUAN))
-                .multiply(levelMultiplier)
+        BigDecimal points = amount.multiply(levelMultiplier)
                 .multiply(requestActivityMultiplier)
                 .multiply(configuredActivityMultiplier);
         return points.setScale(0, RoundingMode.DOWN).intValue();
+    }
+
+    private int calculateRedeemablePoints(BigDecimal orderAmount, int availablePoints) {
+        // 50% of order amount in points: orderAmount * 100 * 0.5
+        int ratioCapped = orderAmount.multiply(new BigDecimal(POINTS_PER_YUAN))
+                .multiply(MAX_REDEEM_RATIO)
+                .setScale(0, RoundingMode.DOWN)
+                .intValue();
+        return Math.min(Math.min(availablePoints, MAX_REDEEM_POINTS), ratioCapped);
     }
 
     public int calcOrderPoints(BigDecimal amount, Long userId, double activityMultiplier) {

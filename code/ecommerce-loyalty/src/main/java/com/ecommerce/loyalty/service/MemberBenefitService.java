@@ -16,7 +16,7 @@ public class MemberBenefitService {
     public MemberBenefits getBenefits(MemberLevel level) {
         return switch (level) {
             case PLATINUM -> new MemberBenefits(new BigDecimal("1.5"), List.of("POINTS_MULTIPLIER_1_5", "PRIORITY_SERVICE"));
-            case GOLD -> new MemberBenefits(new BigDecimal("1.1"), List.of("POINTS_MULTIPLIER_1_1", "MEMBER_PROMOTION"));
+            case GOLD -> new MemberBenefits(new BigDecimal("1.2"), List.of("POINTS_MULTIPLIER_1_2", "MEMBER_PROMOTION"));
             case SILVER -> new MemberBenefits(new BigDecimal("1.1"), List.of("POINTS_MULTIPLIER_1_1"));
             case NORMAL -> new MemberBenefits(BigDecimal.ONE, List.of("POINTS_MULTIPLIER_1_0"));
         };

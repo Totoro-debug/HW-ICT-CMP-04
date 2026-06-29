@@ -68,7 +68,7 @@ public class CoreNotificationEventListener {
         Object userId = read(event, "userId");
         Object email = read(event, "email");
         Object nickname = read(event, "nickname");
-        return base(event, "USER_REGISTER", String.valueOf(userId),
+        return buildRequest(event, "USER_REGISTER", String.valueOf(userId),
                 email != null ? String.valueOf(email) : receiverForUser(userId),
                 NotificationChannel.EMAIL, "WELCOME",
                 variables("userId", userId, "email", email, "nickname", nickname));
@@ -78,7 +78,7 @@ public class CoreNotificationEventListener {
         Object orderId = read(event, "orderId");
         Object userId = read(event, "userId");
         Object payableAmount = read(event, "payableAmount");
-        return base(event, "ORDER_CREATED", String.valueOf(orderId), receiverForUser(userId),
+        return buildRequest(event, "ORDER_CREATED", String.valueOf(orderId), receiverForUser(userId),
                 NotificationChannel.IN_APP, "order_created",
                 variables("orderId", orderId, "userId", userId, "payableAmount", payableAmount));
     }
@@ -88,7 +88,7 @@ public class CoreNotificationEventListener {
         Object userId = read(event, "userId");
         Object paymentNo = read(event, "paymentNo");
         Object paidAmount = read(event, "paidAmount");
-        return base(event, "ORDER_PAID", String.valueOf(orderId), receiverForUser(userId),
+        return buildRequest(event, "ORDER_PAID", String.valueOf(orderId), receiverForUser(userId),
                 NotificationChannel.IN_APP, "order_paid",
                 variables("orderId", orderId, "userId", userId, "paymentNo", paymentNo, "paidAmount", paidAmount));
     }
@@ -98,8 +98,8 @@ public class CoreNotificationEventListener {
         Object orderId = read(event, "orderId");
         Object userId = read(event, "userId");
         Object paidAmount = read(event, "paidAmount");
-        return base(event, "PAYMENT_SUCCEEDED", String.valueOf(paymentNo), receiverForUser(userId),
-                NotificationChannel.IN_APP, "payment_succeeded",
+        return buildRequest(event, "PAYMENT_SUCCEEDED", String.valueOf(orderId), receiverForUser(userId),
+                NotificationChannel.SMS, "payment_succeeded",
                 variables("paymentNo", paymentNo, "orderId", orderId, "userId", userId, "paidAmount", paidAmount));
     }
 
@@ -109,23 +109,24 @@ public class CoreNotificationEventListener {
         Object orderId = read(event, "orderId");
         Object userId = read(event, "userId");
         Object refundAmount = read(event, "refundAmount");
-        return base(event, "REFUND_COMPLETED", String.valueOf(refundNo), receiverForUser(userId),
+        return buildRequest(event, "REFUND_COMPLETED", String.valueOf(refundNo), receiverForUser(userId),
                 NotificationChannel.IN_APP, "refund_completed",
                 variables("refundNo", refundNo, "paymentNo", paymentNo, "orderId", orderId,
                         "userId", userId, "refundAmount", refundAmount));
     }
 
-    private NotificationRequest base(AbstractDomainEvent event, String bizType, String bizId, String receiver,
-                                     NotificationChannel channel, String templateCode, Map<String, Object> variables) {
-        return NotificationRequest.builder()
-                .bizType(bizType)
-                .bizId(bizId)
-                .receiver(receiver)
-                .channel(channel)
-                .templateCode(templateCode)
-                .variables(variables)
-                .idempotencyKey("notification:" + event.getEventId())
-                .build();
+    private NotificationRequest buildRequest(AbstractDomainEvent event, String bizType, String bizId, String receiver,
+                                             NotificationChannel channel, String templateCode,
+                                             Map<String, Object> variables) {
+        NotificationRequest request = new NotificationRequest();
+        request.setBizType(bizType);
+        request.setBizId(bizId);
+        request.setReceiver(receiver);
+        request.setChannel(channel);
+        request.setTemplateCode(templateCode);
+        request.setVariables(variables);
+        request.setIdempotencyKey("notification:" + event.getEventId());
+        return request;
     }
 
     private String receiverForUser(Object userId) {

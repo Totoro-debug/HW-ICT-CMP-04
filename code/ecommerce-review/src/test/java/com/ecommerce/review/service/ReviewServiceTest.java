@@ -195,6 +195,28 @@ class ReviewServiceTest {
     }
 
     @Test
+    @DisplayName("createReview: sensitive content is filtered and saved as pending review")
+    void testCreateReview_sensitiveContentFilteredAndPending() {
+        stubStandardMocks();
+        createRequest.setContent("this contains badword here");
+        when(sensitiveWordFilter.containsSensitiveWord("this contains badword here"))
+                .thenReturn(true);
+        when(sensitiveWordFilter.filter("this contains badword here"))
+                .thenReturn("this contains *** here");
+
+        ReviewResponse response = reviewService.createReview(1L, createRequest);
+
+        assertThat(response.getStatus()).isEqualTo(ReviewStatus.PENDING_REVIEW);
+        assertThat(response.getContent()).isEqualTo("this contains *** here");
+
+        ArgumentCaptor<Review> reviewCaptor = ArgumentCaptor.forClass(Review.class);
+        verify(reviewRepository).save(reviewCaptor.capture());
+        Review savedReview = reviewCaptor.getValue();
+        assertThat(savedReview.getContent()).isEqualTo("this contains *** here");
+        assertThat(savedReview.getStatus()).isEqualTo(ReviewStatus.PENDING_REVIEW);
+    }
+
+    @Test
     @DisplayName("createReview: rejects inactive users")
     void testCreateReview_userNotActive() {
         when(userQueryService.isActive(1L)).thenReturn(false);

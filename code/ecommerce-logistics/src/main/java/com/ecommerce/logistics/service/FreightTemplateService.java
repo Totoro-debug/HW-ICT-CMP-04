@@ -51,6 +51,7 @@ public class FreightTemplateService {
                 ? request.getFreeShippingThreshold() : DEFAULT_FREE_SHIPPING_THRESHOLD));
         template.setProvinceRules(request.getProvinceRules());
         template.setWeightRules(request.getWeightRules());
+        template.setItemCountRules(request.getItemCountRules());
 
         template = freightTemplateRepository.save(template);
         freightTemplateCache.evict(template.getId());
@@ -89,6 +90,9 @@ public class FreightTemplateService {
         }
         if (request.getWeightRules() != null) {
             template.setWeightRules(request.getWeightRules());
+        }
+        if (request.getItemCountRules() != null) {
+            template.setItemCountRules(request.getItemCountRules());
         }
 
         template = freightTemplateRepository.save(template);

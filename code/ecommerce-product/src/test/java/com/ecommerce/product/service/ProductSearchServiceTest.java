@@ -3,11 +3,15 @@ package com.ecommerce.product.service;
 import com.ecommerce.common.dto.PageResponse;
 import com.ecommerce.product.dto.ProductListResponse;
 import com.ecommerce.product.dto.ProductSearchRequest;
+import com.ecommerce.product.entity.Category;
 import com.ecommerce.product.entity.ProductSku;
 import com.ecommerce.product.entity.ProductSpu;
 import com.ecommerce.product.entity.SkuStatus;
+import com.ecommerce.product.repository.CategoryRepository;
 import com.ecommerce.product.repository.ProductSkuRepository;
 import com.ecommerce.product.repository.ProductSpuRepository;
+import com.ecommerce.product.repository.ProductSpuTagRepository;
+import com.ecommerce.product.repository.ProductTagRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -25,9 +29,11 @@ import org.springframework.data.jpa.domain.Specification;
 
 import java.math.BigDecimal;
 import java.util.List;
+import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -41,13 +47,21 @@ class ProductSearchServiceTest {
     @Mock
     private ProductSpuRepository spuRepository;
 
+    @Mock
+    private CategoryRepository categoryRepository;
+
+    @Mock
+    private ProductTagRepository productTagRepository;
+
+    @Mock
+    private ProductSpuTagRepository productSpuTagRepository;
+
     @InjectMocks
     private ProductSearchService productSearchService;
 
     private ProductSku onShelfSku;
     private ProductSku offShelfSku;
     private ProductSku draftSku;
-    private ProductSku deletedSku;
     private ProductSpu spu;
 
     @BeforeEach
@@ -55,6 +69,7 @@ class ProductSearchServiceTest {
         spu = new ProductSpu();
         spu.setId(1L);
         spu.setName("Test SPU");
+        spu.setDescription("Great wireless performance");
         spu.setCategoryId(10L);
         spu.setBrandId(100L);
         spu.setMainImage("main.jpg");
@@ -85,15 +100,6 @@ class ProductSearchServiceTest {
         draftSku.setStatus(SkuStatus.DRAFT);
         draftSku.setSortOrder(0);
         draftSku.setSalesCount(0);
-
-        deletedSku = new ProductSku();
-        deletedSku.setId(4L);
-        deletedSku.setSpuId(1L);
-        deletedSku.setName("Deleted SKU");
-        deletedSku.setPrice(new BigDecimal("9.99"));
-        deletedSku.setStatus(SkuStatus.DELETED);
-        deletedSku.setSortOrder(0);
-        deletedSku.setSalesCount(0);
     }
 
     @Test
@@ -114,7 +120,7 @@ class ProductSearchServiceTest {
     }
 
     @Test
-    @DisplayName("search with onlyOnShelf=true filters to only ON_SHELF products")
+    @DisplayName("search with onlyOnShelf=true passes a specification to repository")
     void testSearch_withOnlyOnShelfTrue_filtersToOnShelf() {
         List<ProductSku> allSkus = List.of(onShelfSku, offShelfSku, draftSku);
         Page<ProductSku> page = new PageImpl<>(allSkus);
@@ -123,18 +129,16 @@ class ProductSearchServiceTest {
 
         ProductSearchRequest request = new ProductSearchRequest();
         request.setOnlyOnShelf(true);
-        PageResponse<ProductListResponse> result = productSearchService.search(request);
+        productSearchService.search(request);
 
-        // Even though repository returns all, the Specification should filter ON_SHELF
-        // Verify the specification is applied by checking that repository was called
         ArgumentCaptor<Specification<ProductSku>> specCaptor = ArgumentCaptor.forClass(Specification.class);
         verify(skuRepository).findAll(specCaptor.capture(), any(Pageable.class));
         assertThat(specCaptor.getValue()).isNotNull();
     }
 
     @Test
-    @DisplayName("search by keyword finds matching SKUs by name (case-insensitive like)")
-    void testSearch_byKeyword_findsMatchingSkus() {
+    @DisplayName("search by keyword still maps repository results")
+    void testSearch_byKeyword_returnsMatchedSkus() {
         ProductSku matchingSku = new ProductSku();
         matchingSku.setId(10L);
         matchingSku.setSpuId(1L);
@@ -157,81 +161,23 @@ class ProductSearchServiceTest {
     }
 
     @Test
-    @DisplayName("search by categoryId filters results to matching SPU categories")
-    void testSearch_byCategoryId_filtersCategory() {
-        ProductSpu spu2 = new ProductSpu();
-        spu2.setId(2L);
-        spu2.setName("Other SPU");
-        spu2.setCategoryId(20L);
-
-        ProductSku matchingSku = new ProductSku();
-        matchingSku.setId(10L);
-        matchingSku.setSpuId(2L);
-        matchingSku.setName("Matching SKU");
-        matchingSku.setPrice(new BigDecimal("100.00"));
-        matchingSku.setStatus(SkuStatus.ON_SHELF);
-        matchingSku.setSortOrder(1);
-        matchingSku.setSalesCount(0);
-
-        ProductSku nonMatchingSku = new ProductSku();
-        nonMatchingSku.setId(11L);
-        nonMatchingSku.setSpuId(3L);
-        nonMatchingSku.setName("Non-matching SKU");
-        nonMatchingSku.setPrice(new BigDecimal("200.00"));
-        nonMatchingSku.setStatus(SkuStatus.ON_SHELF);
-        nonMatchingSku.setSortOrder(2);
-        nonMatchingSku.setSalesCount(0);
-
-        ProductSpu spu3 = new ProductSpu();
-        spu3.setId(3L);
-        spu3.setCategoryId(30L);
-
-        List<ProductSku> allSkus = List.of(matchingSku, nonMatchingSku);
-        Page<ProductSku> page = new PageImpl<>(allSkus);
-        when(skuRepository.findAll(any(Specification.class), any(Pageable.class))).thenReturn(page);
-        when(spuRepository.findAllById(any())).thenReturn(List.of(spu2, spu3));
+    @DisplayName("search by categoryId returns empty page when category does not exist")
+    void testSearch_byCategoryId_returnsEmptyWhenCategoryMissing() {
+        when(categoryRepository.findById(999L)).thenReturn(Optional.empty());
 
         ProductSearchRequest request = new ProductSearchRequest();
-        request.setCategoryId(20L);
+        request.setCategoryId(999L);
         PageResponse<ProductListResponse> result = productSearchService.search(request);
 
-        // Only SKU whose SPU has categoryId=20 should be included
-        assertThat(result.getItems()).hasSize(1);
-        assertThat(result.getItems().get(0).getName()).isEqualTo("Matching SKU");
+        assertThat(result.getTotal()).isZero();
+        assertThat(result.getItems()).isEmpty();
+        verify(skuRepository, never()).findAll(any(Specification.class), any(Pageable.class));
     }
 
     @Test
     @DisplayName("search by price range filters SKUs with price between min and max")
     void testSearch_byPriceRange_filtersByPrice() {
-        ProductSku sku1 = new ProductSku();
-        sku1.setId(1L);
-        sku1.setSpuId(1L);
-        sku1.setName("Cheap SKU");
-        sku1.setPrice(new BigDecimal("10.00"));
-        sku1.setStatus(SkuStatus.ON_SHELF);
-        sku1.setSortOrder(1);
-        sku1.setSalesCount(0);
-
-        ProductSku sku2 = new ProductSku();
-        sku2.setId(2L);
-        sku2.setSpuId(1L);
-        sku2.setName("Mid SKU");
-        sku2.setPrice(new BigDecimal("50.00"));
-        sku2.setStatus(SkuStatus.ON_SHELF);
-        sku2.setSortOrder(2);
-        sku2.setSalesCount(0);
-
-        ProductSku sku3 = new ProductSku();
-        sku3.setId(3L);
-        sku3.setSpuId(1L);
-        sku3.setName("Expensive SKU");
-        sku3.setPrice(new BigDecimal("200.00"));
-        sku3.setStatus(SkuStatus.ON_SHELF);
-        sku3.setSortOrder(3);
-        sku3.setSalesCount(0);
-
-        // The Specification handles price filtering at DB level, return all for in-memory category/brand filter
-        List<ProductSku> filteredSkus = List.of(sku2);
+        List<ProductSku> filteredSkus = List.of(onShelfSku);
         Page<ProductSku> page = new PageImpl<>(filteredSkus);
         when(skuRepository.findAll(any(Specification.class), any(Pageable.class))).thenReturn(page);
         when(spuRepository.findAllById(any())).thenReturn(List.of(spu));
@@ -242,7 +188,21 @@ class ProductSearchServiceTest {
         PageResponse<ProductListResponse> result = productSearchService.search(request);
 
         assertThat(result.getItems()).hasSize(1);
-        assertThat(result.getItems().get(0).getName()).isEqualTo("Mid SKU");
+        assertThat(result.getItems().get(0).getName()).isEqualTo("OnShelf SKU");
+    }
+
+    @Test
+    @DisplayName("search by unknown tags returns empty page without querying SKUs")
+    void testSearch_byUnknownTags_returnsEmptyPage() {
+        when(productTagRepository.findIdsByNames(List.of("missing"))).thenReturn(List.of());
+
+        ProductSearchRequest request = new ProductSearchRequest();
+        request.setTags(List.of("missing"));
+        PageResponse<ProductListResponse> result = productSearchService.search(request);
+
+        assertThat(result.getTotal()).isZero();
+        assertThat(result.getItems()).isEmpty();
+        verify(skuRepository, never()).findAll(any(Specification.class), any(Pageable.class));
     }
 
     @Test
@@ -262,5 +222,29 @@ class ProductSearchServiceTest {
         assertThat(result.getSize()).isEqualTo(2);
         assertThat(result.getTotal()).isEqualTo(10L);
         assertThat(result.getItems()).hasSize(2);
+    }
+
+    @Test
+    @DisplayName("search by categoryId traverses descendant categories before querying")
+    void testSearch_byCategoryId_resolvesDescendantsBeforeQuery() {
+        Category parent = new Category();
+        parent.setId(20L);
+        Category child = new Category();
+        child.setId(21L);
+
+        when(categoryRepository.findById(20L)).thenReturn(Optional.of(parent));
+        when(categoryRepository.findByParentId(20L)).thenReturn(List.of(child));
+        when(categoryRepository.findByParentId(21L)).thenReturn(List.of());
+        when(skuRepository.findAll(any(Specification.class), any(Pageable.class)))
+                .thenReturn(new PageImpl<>(List.of(onShelfSku)));
+        when(spuRepository.findAllById(any())).thenReturn(List.of(spu));
+
+        ProductSearchRequest request = new ProductSearchRequest();
+        request.setCategoryId(20L);
+        PageResponse<ProductListResponse> result = productSearchService.search(request);
+
+        assertThat(result.getItems()).hasSize(1);
+        verify(categoryRepository).findByParentId(20L);
+        verify(categoryRepository).findByParentId(21L);
     }
 }

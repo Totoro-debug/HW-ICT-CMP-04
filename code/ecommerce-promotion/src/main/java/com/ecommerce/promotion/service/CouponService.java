@@ -42,20 +42,17 @@ public class CouponService {
 
         validateTemplateAvailable(template, LocalDateTime.now());
 
-        // Check per-user limit
         long userClaimCount = userCouponRepository.countByUserIdAndCouponTemplateId(userId, templateId);
         if (template.getPerUserLimit() != null && userClaimCount >= template.getPerUserLimit()) {
             throw new ConflictException(
                     "You have already claimed the maximum number of this coupon");
         }
 
-        // Check total quantity
         if (template.getTotalQuantity() != null && template.getIssuedQuantity() != null
                 && template.getIssuedQuantity() >= template.getTotalQuantity()) {
             throw new ConflictException("Coupon has been fully claimed");
         }
 
-        // Increment issued quantity
         template.setIssuedQuantity(
                 template.getIssuedQuantity() != null ? template.getIssuedQuantity() + 1 : 1);
         couponTemplateRepository.save(template);
@@ -80,15 +77,18 @@ public class CouponService {
 
         switch (coupon.getType()) {
             case DISCOUNT:
-                BigDecimal rate = BigDecimal.ONE.subtract(coupon.getDiscountValue());
-                BigDecimal afterDiscount = MonetaryUtil.multiply(price, rate);
-                if (coupon.getMaxDiscount() != null) {
-                    BigDecimal rawDiscount = MonetaryUtil.subtract(price, afterDiscount);
-                    if (rawDiscount.compareTo(coupon.getMaxDiscount()) > 0) {
-                        return coupon.getMaxDiscount();
-                    }
+                BigDecimal discountRate = coupon.getDiscountValue();
+                if (discountRate == null
+                        || discountRate.compareTo(BigDecimal.ZERO) <= 0
+                        || discountRate.compareTo(BigDecimal.ONE) >= 0) {
+                    return BigDecimal.ZERO;
                 }
-                return MonetaryUtil.subtract(price, afterDiscount);
+                BigDecimal afterDiscount = MonetaryUtil.multiply(price, discountRate);
+                BigDecimal rawDiscount = MonetaryUtil.subtract(price, afterDiscount);
+                if (coupon.getMaxDiscount() != null && rawDiscount.compareTo(coupon.getMaxDiscount()) > 0) {
+                    return coupon.getMaxDiscount();
+                }
+                return rawDiscount;
 
             case AMOUNT_OFF:
                 BigDecimal amountOff = coupon.getDiscountValue();

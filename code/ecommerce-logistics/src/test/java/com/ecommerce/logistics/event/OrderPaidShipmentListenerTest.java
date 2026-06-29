@@ -3,9 +3,8 @@ package com.ecommerce.logistics.event;
 import com.ecommerce.common.event.FailedEventRecord;
 import com.ecommerce.common.event.FailedEventRecordRepository;
 import com.ecommerce.common.event.FailedEventStatus;
+import com.ecommerce.common.event.OrderPaidEvent;
 import com.ecommerce.logistics.service.LogisticsCommandService;
-import com.ecommerce.order.event.OrderPaidEvent;
-import com.ecommerce.payment.event.PaymentSucceededEvent;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -15,6 +14,7 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import java.math.BigDecimal;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.verify;
@@ -44,23 +44,12 @@ class OrderPaidShipmentListenerTest {
     }
 
     @Test
-    void onPaymentSucceeded_delegatesToLogisticsCommandService() {
-        PaymentSucceededEvent event = new PaymentSucceededEvent(this, "PAY001", 100L, 200L,
-                new BigDecimal("108.00"));
-
-        listener.onPaymentSucceeded(event);
-
-        verify(logisticsCommandService).createShipmentForPaidOrder(100L);
-    }
-
-    @Test
-    void onPaymentSucceeded_failurePersistsRecordAndDoesNotThrow() {
-        PaymentSucceededEvent event = new PaymentSucceededEvent(this, "PAY001", 100L, 200L,
-                new BigDecimal("108.00"));
+    void onOrderPaid_failurePersistsRecordAndDoesNotThrow() {
+        OrderPaidEvent event = new OrderPaidEvent(this, 100L, 200L, "PAY001", new BigDecimal("108.00"));
         doThrow(new RuntimeException("downstream failed"))
                 .when(logisticsCommandService).createShipmentForPaidOrder(100L);
 
-        listener.onPaymentSucceeded(event);
+        listener.onOrderPaid(event);
 
         org.mockito.ArgumentCaptor<FailedEventRecord> captor = org.mockito.ArgumentCaptor.forClass(FailedEventRecord.class);
         verify(failedEventRecordRepository).save(captor.capture());
@@ -69,6 +58,14 @@ class OrderPaidShipmentListenerTest {
         assertEquals("100", record.getEventPayload());
         assertEquals(FailedEventStatus.PENDING, record.getStatus());
         assertEquals("downstream failed", record.getLastError());
+    }
+
+    @Test
+    void paymentSucceededEvent_hasNoShipmentCreationEntryPoint() {
+        boolean hasPaymentSucceededEntryPoint = java.util.Arrays.stream(OrderPaidShipmentListener.class.getDeclaredMethods())
+                .anyMatch(method -> method.getName().equals("onPaymentSucceeded"));
+
+        assertFalse(hasPaymentSucceededEntryPoint);
     }
 
     @Test

@@ -80,16 +80,13 @@ class InventoryServiceTest {
     }
 
     @Test
-    @DisplayName("checkAvailability handles quantity equal to available stock")
-    void testCheckAvailability_exactMatch_returnsUnavailable() {
-        // onHandStock=100, reservedStock=0 -> availableStock=100
-        // Verify boundary behavior when requested quantity equals available stock.
+    @DisplayName("checkAvailability returns true when quantity equals available stock")
+    void testCheckAvailability_exactMatch_returnsAvailable() {
         when(stockRepo.findBySkuId(100L)).thenReturn(List.of(stock));
 
         boolean result = inventoryService.checkAvailability(100L, 100);
 
-        // Verify availability result.
-        assertThat(result).isFalse();
+        assertThat(result).isTrue();
     }
 
     @Test

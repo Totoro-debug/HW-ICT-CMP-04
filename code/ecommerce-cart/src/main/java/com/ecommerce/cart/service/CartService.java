@@ -13,6 +13,8 @@ import com.ecommerce.common.exception.OrderValidationException;
 import com.ecommerce.common.integration.PointsRedeemEstimator;
 import com.ecommerce.common.money.MoneyValidationUtil;
 import com.ecommerce.common.money.MonetaryUtil;
+import com.ecommerce.inventory.query.InventoryQueryService;
+import com.ecommerce.inventory.query.StockSummaryDto;
 import com.ecommerce.product.query.SkuDto;
 import com.ecommerce.promotion.dto.PromotionCalculateRequest;
 import com.ecommerce.promotion.dto.PromotionCalculateResponse;
@@ -23,8 +25,10 @@ import org.springframework.stereotype.Service;
 
 import java.math.BigDecimal;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
 import java.util.Optional;
+import java.util.stream.Collectors;
 
 /**
  * Core service for shopping cart operations.
@@ -45,15 +49,18 @@ public class CartService {
 
     private final CartCacheManager cartCacheManager;
     private final CartValidationService cartValidationService;
+    private final InventoryQueryService inventoryQueryService;
     private final PromotionCalculationService promotionCalculationService;
     private final PointsRedeemEstimator pointsRedeemEstimator;
 
     public CartService(CartCacheManager cartCacheManager,
                        CartValidationService cartValidationService,
+                       InventoryQueryService inventoryQueryService,
                        PromotionCalculationService promotionCalculationService,
                        PointsRedeemEstimator pointsRedeemEstimator) {
         this.cartCacheManager = cartCacheManager;
         this.cartValidationService = cartValidationService;
+        this.inventoryQueryService = inventoryQueryService;
         this.promotionCalculationService = promotionCalculationService;
         this.pointsRedeemEstimator = pointsRedeemEstimator;
     }
@@ -67,7 +74,6 @@ public class CartService {
 
         cartValidationService.validateQuantity(request.getQuantity());
         SkuDto sku = cartValidationService.validateSku(request.getSkuId());
-        cartValidationService.validateStock(request.getSkuId(), request.getQuantity());
 
         CartData cart = getOrCreateCart(userId);
         Optional<CartItemData> existingItem = cart.getItems().stream()
@@ -77,10 +83,14 @@ public class CartService {
         CartItemData item;
         if (existingItem.isPresent()) {
             item = existingItem.get();
+            int newQuantity = item.getQuantity() + request.getQuantity();
+            cartValidationService.validateQuantity(newQuantity);
+            cartValidationService.validateStock(request.getSkuId(), newQuantity);
             item.setSkuName(sku.getName());
             item.setPrice(sku.getPrice());
-            item.setQuantity(request.getQuantity());
+            item.setQuantity(newQuantity);
         } else {
+            cartValidationService.validateStock(request.getSkuId(), request.getQuantity());
             cartValidationService.validateCartSize(cart.getItems().size(), 1);
             item = new CartItemData(sku.getSkuId(), sku.getName(), sku.getPrice(), request.getQuantity());
             cart.getItems().add(item);
@@ -191,8 +201,9 @@ public class CartService {
                 ? BigDecimal.ZERO : SHIPPING_FEE;
         BigDecimal packagingFee = PACKAGING_FEE;
 
+        PromotionCalculateResponse promotionResponse = calculatePromotion(userId, request.getCouponIds(), promotionItems);
         BigDecimal discountAmount = normalizeDiscountAmount(
-                calculateDiscountAmount(userId, request.getCouponIds(), promotionItems), itemTotal);
+                promotionResponse != null ? promotionResponse.getTotalDiscount() : BigDecimal.ZERO, itemTotal);
         BigDecimal prePointsAmount = itemTotal.add(shippingFee)
                 .add(packagingFee)
                 .subtract(discountAmount);
@@ -216,6 +227,12 @@ public class CartService {
         response.setDiscountAmount(MonetaryUtil.roundToCent(discountAmount));
         response.setPointsDeductionAmount(MonetaryUtil.roundToCent(pointsDeductionAmount));
         response.setPayableAmount(roundedPayableAmount);
+        response.setFullReductionDiscount(MonetaryUtil.roundToCent(safeAmount(
+                promotionResponse != null ? promotionResponse.getFullReductionDiscount() : null)));
+        response.setMemberDiscount(MonetaryUtil.roundToCent(safeAmount(
+                promotionResponse != null ? promotionResponse.getMemberDiscount() : null)));
+        response.setApplicableCoupons(toApplicableCoupons(
+                promotionResponse != null ? promotionResponse.getApplicableCoupons() : null));
 
         log.debug("Cart estimate: itemTotal={}, shipping={}, packaging={}, discount={}, points={}, payable={}",
                 itemTotal, shippingFee, packagingFee, discountAmount, pointsDeductionAmount, payableAmount);
@@ -263,7 +280,17 @@ public class CartService {
     private CartItemResponse toCartItemResponse(CartItemData item) {
         BigDecimal price = item.getPrice() != null ? item.getPrice() : BigDecimal.ZERO;
         BigDecimal subtotal = MonetaryUtil.roundToCent(price.multiply(BigDecimal.valueOf(item.getQuantity())));
-        return new CartItemResponse(item.getSkuId(), item.getSkuName(), item.getPrice(), item.getQuantity(), subtotal);
+        CartItemResponse response = new CartItemResponse(item.getSkuId(), item.getSkuName(), item.getPrice(), item.getQuantity(), subtotal);
+        try {
+            StockSummaryDto stockSummary = inventoryQueryService.getStockSummary(item.getSkuId());
+            if (stockSummary != null) {
+                response.setAvailableStock(stockSummary.getAvailableStock());
+                response.setReservedStock(stockSummary.getReservedStock());
+            }
+        } catch (Exception e) {
+            log.warn("Failed to load stock summary for cart item skuId={}: {}", item.getSkuId(), e.getMessage());
+        }
+        return response;
     }
 
     private CartResponse buildEmptyCartResponse() {
@@ -278,18 +305,38 @@ public class CartService {
         empty.setDiscountAmount(BigDecimal.ZERO);
         empty.setPointsDeductionAmount(BigDecimal.ZERO);
         empty.setPayableAmount(BigDecimal.ZERO);
+        empty.setFullReductionDiscount(BigDecimal.ZERO);
+        empty.setMemberDiscount(BigDecimal.ZERO);
+        empty.setApplicableCoupons(Collections.emptyList());
         return empty;
     }
 
-    private BigDecimal calculateDiscountAmount(Long userId, List<Long> couponIds,
-                                               List<PromotionCalculateRequest.CalculateItem> promotionItems) {
+    private PromotionCalculateResponse calculatePromotion(Long userId, List<Long> couponIds,
+                                                          List<PromotionCalculateRequest.CalculateItem> promotionItems) {
         PromotionCalculateRequest request = new PromotionCalculateRequest();
         request.setUserId(userId);
         request.setCouponIds(couponIds);
         request.setItems(promotionItems);
-        PromotionCalculateResponse response = promotionCalculationService.calculate(request);
-        BigDecimal discount = response != null ? response.getTotalDiscount() : null;
-        return discount != null ? discount : BigDecimal.ZERO;
+        return promotionCalculationService.calculate(request);
+    }
+
+    private BigDecimal safeAmount(BigDecimal amount) {
+        return amount != null ? amount : BigDecimal.ZERO;
+    }
+
+    private List<CartEstimateResponse.ApplicableCoupon> toApplicableCoupons(
+            List<PromotionCalculateResponse.ApplicableCoupon> coupons) {
+        if (coupons == null || coupons.isEmpty()) {
+            return Collections.emptyList();
+        }
+        return coupons.stream().map(coupon -> {
+            CartEstimateResponse.ApplicableCoupon item = new CartEstimateResponse.ApplicableCoupon();
+            item.setCouponId(coupon.getCouponId());
+            item.setCouponCode(coupon.getCouponCode());
+            item.setName(coupon.getName());
+            item.setDiscountAmount(MonetaryUtil.roundToCent(safeAmount(coupon.getDiscountAmount())));
+            return item;
+        }).collect(Collectors.toList());
     }
 
     private BigDecimal normalizeDiscountAmount(BigDecimal discountAmount, BigDecimal itemTotal) {

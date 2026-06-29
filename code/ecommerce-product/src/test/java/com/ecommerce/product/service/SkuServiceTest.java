@@ -195,19 +195,19 @@ class SkuServiceTest {
     }
 
     @Test
-    @DisplayName("onShelf changes SKU status from OFF_SHELF to ON_SHELF")
-    void testOnShelf_changesStatusFromOffShelfToOnShelf() {
+    @DisplayName("onShelf rejects OFF_SHELF to ON_SHELF transition")
+    void testOnShelf_rejectsStatusOtherThanDraft() {
         ProductSku offShelfSku = new ProductSku();
         offShelfSku.setId(2L);
         offShelfSku.setSkuCode("SKU-002");
         offShelfSku.setStatus(SkuStatus.OFF_SHELF);
 
         when(skuRepository.findById(2L)).thenReturn(Optional.of(offShelfSku));
-        when(skuRepository.save(any(ProductSku.class))).thenReturn(offShelfSku);
 
-        skuService.onShelf(2L);
-
-        assertThat(offShelfSku.getStatus()).isEqualTo(SkuStatus.ON_SHELF);
+        assertThatThrownBy(() -> skuService.onShelf(2L))
+                .isInstanceOf(ValidationException.class)
+                .hasMessageContaining("OFF_SHELF")
+                .hasMessageContaining("ON_SHELF");
     }
 
     @Test
@@ -221,7 +221,8 @@ class SkuServiceTest {
 
         assertThatThrownBy(() -> skuService.onShelf(3L))
                 .isInstanceOf(ValidationException.class)
-                .hasMessageContaining("Cannot put a DELETED SKU on shelf");
+                .hasMessageContaining("DELETED")
+                .hasMessageContaining("ON_SHELF");
         verify(auditLogService, never()).record(anyString(), anyString(), anyString(), anyString(),
                 anyString(), anyString(), anyString(), anyString());
     }
@@ -247,18 +248,66 @@ class SkuServiceTest {
     }
 
     @Test
-    @DisplayName("offShelf throws ValidationException when SKU is DELETED")
-    void testOffShelf_throwsWhenSkuDeleted() {
-        ProductSku deletedSku = new ProductSku();
-        deletedSku.setId(3L);
-        deletedSku.setStatus(SkuStatus.DELETED);
+    @DisplayName("offShelf rejects DRAFT to OFF_SHELF transition")
+    void testOffShelf_rejectsStatusOtherThanOnShelf() {
+        ProductSku draftSku = new ProductSku();
+        draftSku.setId(3L);
+        draftSku.setStatus(SkuStatus.DRAFT);
 
-        when(skuRepository.findById(3L)).thenReturn(Optional.of(deletedSku));
+        when(skuRepository.findById(3L)).thenReturn(Optional.of(draftSku));
 
         assertThatThrownBy(() -> skuService.offShelf(3L))
                 .isInstanceOf(ValidationException.class)
-                .hasMessageContaining("Cannot take a DELETED SKU off shelf");
-        verify(auditLogService, never()).record(anyString(), anyString(), anyString(), anyString(),
-                anyString(), anyString(), anyString(), anyString());
+                .hasMessageContaining("DRAFT")
+                .hasMessageContaining("OFF_SHELF");
+    }
+
+    @Test
+    @DisplayName("deleteSku changes DRAFT status to DELETED")
+    void testDeleteSku_changesDraftToDeleted() {
+        ProductSku draftSku = new ProductSku();
+        draftSku.setId(10L);
+        draftSku.setSkuCode("SKU-010");
+        draftSku.setStatus(SkuStatus.DRAFT);
+
+        when(skuRepository.findById(10L)).thenReturn(Optional.of(draftSku));
+        when(skuRepository.save(any(ProductSku.class))).thenReturn(draftSku);
+
+        skuService.deleteSku(10L);
+
+        assertThat(draftSku.getStatus()).isEqualTo(SkuStatus.DELETED);
+        verify(auditLogService).record("system", "system", "SKU_DELETE", "PRODUCT_SKU",
+                "10", "DRAFT", "DELETED", "SKU marked as deleted");
+        verify(productDetailCacheService).evict(10L);
+    }
+
+    @Test
+    @DisplayName("deleteSku changes OFF_SHELF status to DELETED")
+    void testDeleteSku_changesOffShelfToDeleted() {
+        ProductSku offShelfSku = new ProductSku();
+        offShelfSku.setId(11L);
+        offShelfSku.setSkuCode("SKU-011");
+        offShelfSku.setStatus(SkuStatus.OFF_SHELF);
+
+        when(skuRepository.findById(11L)).thenReturn(Optional.of(offShelfSku));
+        when(skuRepository.save(any(ProductSku.class))).thenReturn(offShelfSku);
+
+        skuService.deleteSku(11L);
+
+        assertThat(offShelfSku.getStatus()).isEqualTo(SkuStatus.DELETED);
+    }
+
+    @Test
+    @DisplayName("deleteSku rejects ON_SHELF to DELETED transition")
+    void testDeleteSku_rejectsOnShelf() {
+        ProductSku onShelfSku = new ProductSku();
+        onShelfSku.setId(12L);
+        onShelfSku.setStatus(SkuStatus.ON_SHELF);
+
+        when(skuRepository.findById(12L)).thenReturn(Optional.of(onShelfSku));
+
+        assertThatThrownBy(() -> skuService.deleteSku(12L))
+                .isInstanceOf(ValidationException.class)
+                .hasMessageContaining("ON_SHELF");
     }
 }

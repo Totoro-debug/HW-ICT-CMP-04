@@ -86,7 +86,7 @@ class FreightCalculatorTest {
 
     @Test
     void testCalculate_nullAmount_chargesShipping() {
-        BigDecimal result = calculator.calculateFreight(null);
+        BigDecimal result = calculator.calculateFreight((BigDecimal) null);
         assertEquals(new BigDecimal("8.00"), result);
     }
 
@@ -146,5 +146,66 @@ class FreightCalculatorTest {
 
         BigDecimal result = calculator.calculateFreight(new BigDecimal("100.00"), null);
         assertEquals(new BigDecimal("8.00"), result);
+    }
+
+    @Test
+    void testCalculate_withContext_matchesProvinceRuleFirst() {
+        FreightTemplate template = templateWithRules();
+        template.setProvinceRules("[{\"province\":\"Beijing\",\"freight\":6.00}]");
+        template.setWeightRules("[{\"maxWeightKg\":5.0,\"freight\":15.00}]");
+        template.setItemCountRules("[{\"maxItemCount\":10,\"freight\":18.00}]");
+        when(freightTemplateRepository.findById(1L)).thenReturn(Optional.of(template));
+
+        BigDecimal result = calculator.calculateFreight(
+                FreightCalculationContext.of(new BigDecimal("100.00"), 1L, "Beijing", new BigDecimal("2.0"), 3));
+
+        assertEquals(new BigDecimal("6.00"), result);
+    }
+
+    @Test
+    void testCalculate_withContext_matchesWeightRule() {
+        FreightTemplate template = templateWithRules();
+        template.setWeightRules("[{\"maxWeightKg\":1.0,\"freight\":8.00},{\"maxWeightKg\":5.0,\"freight\":15.00}]");
+        when(freightTemplateRepository.findById(1L)).thenReturn(Optional.of(template));
+
+        BigDecimal result = calculator.calculateFreight(
+                FreightCalculationContext.of(new BigDecimal("100.00"), 1L, "Shanghai", new BigDecimal("3.0"), 20));
+
+        assertEquals(new BigDecimal("15.00"), result);
+    }
+
+    @Test
+    void testCalculate_withContext_matchesItemCountRule() {
+        FreightTemplate template = templateWithRules();
+        template.setItemCountRules("[{\"maxItemCount\":3,\"freight\":8.00},{\"maxItemCount\":10,\"freight\":13.00}]");
+        when(freightTemplateRepository.findById(1L)).thenReturn(Optional.of(template));
+
+        BigDecimal result = calculator.calculateFreight(
+                FreightCalculationContext.of(new BigDecimal("100.00"), 1L, "Shanghai", null, 6));
+
+        assertEquals(new BigDecimal("13.00"), result);
+    }
+
+    @Test
+    void testCalculate_withInvalidJson_fallsBackToTemplateDefault() {
+        FreightTemplate template = templateWithRules();
+        template.setProvinceRules("not-json");
+        template.setWeightRules("not-json");
+        template.setItemCountRules("not-json");
+        when(freightTemplateRepository.findById(1L)).thenReturn(Optional.of(template));
+
+        BigDecimal result = calculator.calculateFreight(
+                FreightCalculationContext.of(new BigDecimal("100.00"), 1L, "Beijing", new BigDecimal("2.0"), 2));
+
+        assertEquals(new BigDecimal("20.00"), result);
+    }
+
+    private FreightTemplate templateWithRules() {
+        FreightTemplate template = new FreightTemplate();
+        template.setId(1L);
+        template.setName("Context Template");
+        template.setDefaultFreight(new BigDecimal("20.00"));
+        template.setFreeShippingThreshold(new BigDecimal("199.00"));
+        return template;
     }
 }

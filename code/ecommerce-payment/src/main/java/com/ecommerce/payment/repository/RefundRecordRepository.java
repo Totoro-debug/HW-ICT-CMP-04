@@ -5,6 +5,7 @@ import com.ecommerce.payment.entity.RefundStatus;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.stereotype.Repository;
 
+import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Optional;
 
@@ -22,4 +23,7 @@ public interface RefundRecordRepository extends JpaRepository<RefundRecord, Long
     List<RefundRecord> findByUserId(Long userId);
 
     List<RefundRecord> findByStatus(RefundStatus status);
+
+    List<RefundRecord> findByStatusAndCompletedAtBetweenAndSettledAtIsNull(
+            RefundStatus status, LocalDateTime start, LocalDateTime end);
 }

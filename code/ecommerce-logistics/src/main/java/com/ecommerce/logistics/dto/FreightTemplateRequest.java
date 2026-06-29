@@ -25,6 +25,9 @@ public class FreightTemplateRequest {
     /** JSON: weight-based freight rules */
     private String weightRules;
 
+    /** JSON: item-count-based freight rules */
+    private String itemCountRules;
+
     public FreightTemplateRequest() {
     }
 
@@ -66,5 +69,13 @@ public class FreightTemplateRequest {
 
     public void setWeightRules(String weightRules) {
         this.weightRules = weightRules;
+    }
+
+    public String getItemCountRules() {
+        return itemCountRules;
+    }
+
+    public void setItemCountRules(String itemCountRules) {
+        this.itemCountRules = itemCountRules;
     }
 }

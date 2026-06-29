@@ -322,6 +322,18 @@ class ShipmentServiceTest {
     }
 
     @Test
+    void testUpdateStatus_toDelivered_syncsOrderLogisticsStatus() {
+        Shipment shipment = createShipment(1L, ShipmentStatus.IN_TRANSIT);
+        when(shipmentRepository.findById(1L)).thenReturn(Optional.of(shipment));
+        when(trackingRepository.save(any(ShipmentTracking.class))).thenReturn(new ShipmentTracking());
+
+        shipmentService.updateStatus(1L, ShipmentStatus.DELIVERED,
+                "Recipient Address", "Package delivered");
+
+        verify(orderLogisticsStatusUpdater).updateLogisticsStatus(101L, "DELIVERED");
+    }
+
+    @Test
     void testUpdateStatus_toDelivered_setsDeliveredAt() {
         Shipment shipment = createShipment(1L, ShipmentStatus.IN_TRANSIT);
         when(shipmentRepository.findById(1L)).thenReturn(Optional.of(shipment));

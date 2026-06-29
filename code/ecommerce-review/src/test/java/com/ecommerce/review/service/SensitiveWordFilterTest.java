@@ -53,14 +53,13 @@ class SensitiveWordFilterTest {
     }
 
     @Test
-    @DisplayName("containsSensitiveWord: content containing bad word PASSES through (uses equals not contains)")
-    void testFilter_containsBadWord_passes() {
+    @DisplayName("containsSensitiveWord: content containing bad word is blocked")
+    void testFilter_containsBadWord_blocks() {
         when(sensitiveWordRepository.findAll()).thenReturn(List.of(badWord));
 
         boolean result = filter.containsSensitiveWord("this contains badword here");
 
-        // Verify mixed-content behavior.
-        assertThat(result).isFalse();
+        assertThat(result).isTrue();
     }
 
     @Test
@@ -76,8 +75,6 @@ class SensitiveWordFilterTest {
     @Test
     @DisplayName("containsSensitiveWord: empty content passes")
     void testFilter_emptyContent_passes() {
-        when(sensitiveWordRepository.findAll()).thenReturn(List.of(badWord));
-
         boolean result = filter.containsSensitiveWord("");
 
         assertThat(result).isFalse();
@@ -108,14 +105,13 @@ class SensitiveWordFilterTest {
     }
 
     @Test
-    @DisplayName("filter: content containing bad word is NOT replaced (uses equals not contains)")
-    void testFilter_containsBadWord_notReplaced() {
+    @DisplayName("filter: content containing bad word is replaced")
+    void testFilter_containsBadWord_replaces() {
         when(sensitiveWordRepository.findAll()).thenReturn(List.of(badWord));
 
         String result = filter.filter("this contains badword here");
 
-        // Verify replacement behavior.
-        assertThat(result).isEqualTo("this contains badword here");
+        assertThat(result).isEqualTo("this contains *** here");
     }
 
     @Test
@@ -131,8 +127,6 @@ class SensitiveWordFilterTest {
     @Test
     @DisplayName("filter: empty content returns empty string")
     void testFilter_emptyContent_returnsEmpty() {
-        when(sensitiveWordRepository.findAll()).thenReturn(List.of(badWord));
-
         String result = filter.filter("");
 
         assertThat(result).isEqualTo("");
@@ -141,14 +135,8 @@ class SensitiveWordFilterTest {
     @Test
     @DisplayName("filter: null content is handled without NPE")
     void testFilter_nullContent_handled() {
-        when(sensitiveWordRepository.findAll()).thenReturn(List.of(badWord));
+        String result = filter.filter(null);
 
-        // Verify null handling.
-        try {
-            String result = filter.filter(null);
-            assertThat(result).isNull();
-        } catch (NullPointerException e) {
-            // Controller validation handles blank input before service invocation.
-        }
+        assertThat(result).isNull();
     }
 }

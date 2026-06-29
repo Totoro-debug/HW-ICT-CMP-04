@@ -2,32 +2,30 @@ package com.ecommerce.promotion.service;
 
 import com.ecommerce.common.exception.BusinessException;
 import com.ecommerce.common.exception.ResourceNotFoundException;
+import com.ecommerce.product.query.ProductQueryService;
 import com.ecommerce.promotion.entity.CouponStatus;
 import com.ecommerce.promotion.entity.CouponTemplate;
 import com.ecommerce.promotion.entity.CouponType;
 import com.ecommerce.promotion.entity.UserCoupon;
 import com.ecommerce.promotion.repository.CouponTemplateRepository;
-import com.ecommerce.promotion.repository.UserCouponRepository;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
-import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
-import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
+import java.util.List;
 import java.util.Optional;
 
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatCode;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.Mockito.when;
 
-/**
- * Tests for {@link CouponValidator}.
- */
 @ExtendWith(MockitoExtension.class)
 @DisplayName("CouponValidator")
 class CouponValidatorTest {
@@ -36,145 +34,93 @@ class CouponValidatorTest {
     private CouponTemplateRepository couponTemplateRepository;
 
     @Mock
-    private UserCouponRepository userCouponRepository;
+    private ProductQueryService productQueryService;
 
-    @InjectMocks
     private CouponValidator couponValidator;
-
-    // -----------------------------------------------------------------------
-    // Shared test data
-    // -----------------------------------------------------------------------
-
-    private UserCoupon validUserCoupon;
-    private CouponTemplate existingTemplate;
-    private CouponTemplate expiredTemplate;
+    private UserCoupon userCoupon;
+    private CouponTemplate template;
 
     @BeforeEach
     void setUp() {
-        existingTemplate = new CouponTemplate();
-        existingTemplate.setId(1L);
-        existingTemplate.setName("Active Coupon");
-        existingTemplate.setType(CouponType.AMOUNT_OFF);
-        existingTemplate.setDiscountValue(new BigDecimal("10.00"));
-        existingTemplate.setStatus("ACTIVE");
-        existingTemplate.setStartTime(LocalDateTime.now().minusDays(7));
-        existingTemplate.setEndTime(LocalDateTime.now().plusDays(7));
+        couponValidator = new CouponValidator(couponTemplateRepository, productQueryService, new ObjectMapper());
 
-        expiredTemplate = new CouponTemplate();
-        expiredTemplate.setId(2L);
-        expiredTemplate.setName("Expired Coupon");
-        expiredTemplate.setType(CouponType.DISCOUNT);
-        expiredTemplate.setDiscountValue(new BigDecimal("0.8"));
-        expiredTemplate.setStatus("ACTIVE");
-        expiredTemplate.setStartTime(LocalDateTime.now().minusDays(30));
-        expiredTemplate.setEndTime(LocalDateTime.now().minusDays(1));
+        userCoupon = new UserCoupon();
+        userCoupon.setId(10L);
+        userCoupon.setUserId(1L);
+        userCoupon.setCouponTemplateId(1L);
+        userCoupon.setCouponCode("CPN-TEST001");
+        userCoupon.setStatus(CouponStatus.AVAILABLE);
 
-        validUserCoupon = new UserCoupon();
-        validUserCoupon.setId(10L);
-        validUserCoupon.setUserId(1L);
-        validUserCoupon.setCouponTemplateId(1L);
-        validUserCoupon.setCouponCode("CPN-TEST001");
-        validUserCoupon.setStatus(CouponStatus.AVAILABLE);
+        template = new CouponTemplate();
+        template.setId(1L);
+        template.setName("Active Coupon");
+        template.setType(CouponType.AMOUNT_OFF);
+        template.setDiscountValue(new BigDecimal("10.00"));
+        template.setStatus("ACTIVE");
+        template.setStartTime(LocalDateTime.now().minusDays(1));
+        template.setEndTime(LocalDateTime.now().plusDays(1));
     }
 
-    // -----------------------------------------------------------------------
-    // Validate tests
-    // -----------------------------------------------------------------------
+    @Test
+    @DisplayName("validate passes for valid coupon")
+    void validate_passesForValidCoupon() {
+        when(couponTemplateRepository.findById(1L)).thenReturn(Optional.of(template));
 
-    @Nested
-    @DisplayName("validate")
-    class Validate {
+        assertThatCode(() -> couponValidator.validate(userCoupon, 1L, new BigDecimal("100.00"), List.of(101L)))
+                .doesNotThrowAnyException();
+    }
 
-        @Test
-        @DisplayName("testValidate_existingCoupon_returnsTrue")
-        void testValidate_existingCoupon_returnsTrue() {
-            when(couponTemplateRepository.findById(1L)).thenReturn(Optional.of(existingTemplate));
+    @Test
+    @DisplayName("validate checks expiry before used status")
+    void validate_checksExpiryBeforeUsedStatus() {
+        userCoupon.setStatus(CouponStatus.USED);
+        template.setEndTime(LocalDateTime.now().minusMinutes(1));
+        when(couponTemplateRepository.findById(1L)).thenReturn(Optional.of(template));
 
-            assertThatCode(() -> couponValidator.validate(validUserCoupon))
-                    .doesNotThrowAnyException();
-        }
+        assertThatThrownBy(() -> couponValidator.validate(userCoupon, 1L, new BigDecimal("100.00"), List.of(101L)))
+                .isInstanceOf(BusinessException.class)
+                .hasMessageContaining("expired");
+    }
 
-        @Test
-        @DisplayName("testValidate_nonExistentCoupon_returnsFalse: " +
-                "throws ResourceNotFoundException when template does not exist")
-        void testValidate_nonExistentCoupon_returnsFalse() {
-            validUserCoupon.setCouponTemplateId(999L);
-            when(couponTemplateRepository.findById(999L)).thenReturn(Optional.empty());
+    @Test
+    @DisplayName("validate checks threshold before user restriction")
+    void validate_checksThresholdBeforeUserRestriction() {
+        userCoupon.setStatus(CouponStatus.USED);
+        template.setThresholdAmount(new BigDecimal("200.00"));
+        when(couponTemplateRepository.findById(1L)).thenReturn(Optional.of(template));
 
-            assertThatThrownBy(() -> couponValidator.validate(validUserCoupon))
-                    .isInstanceOf(ResourceNotFoundException.class)
-                    .hasMessageContaining("CouponTemplate");
-        }
+        assertThatThrownBy(() -> couponValidator.validate(userCoupon, 999L, new BigDecimal("100.00"), List.of(101L)))
+                .isInstanceOf(BusinessException.class)
+                .hasMessageContaining("threshold");
+    }
 
-        @Test
-        @DisplayName("testValidate_expiredCoupon_throwsCouponExpired")
-        void testValidate_expiredCoupon_throwsCouponExpired() {
-            UserCoupon expiredUserCoupon = new UserCoupon();
-            expiredUserCoupon.setId(20L);
-            expiredUserCoupon.setUserId(1L);
-            expiredUserCoupon.setCouponTemplateId(2L);
-            expiredUserCoupon.setCouponCode("CPN-EXPIRED");
-            expiredUserCoupon.setStatus(CouponStatus.EXPIRED);
+    @Test
+    @DisplayName("validate checks product applicability before user restriction")
+    void validate_checksProductApplicabilityBeforeUserRestriction() {
+        template.setApplicableProductIds("[200,201]");
+        when(couponTemplateRepository.findById(1L)).thenReturn(Optional.of(template));
 
-            when(couponTemplateRepository.findById(2L)).thenReturn(Optional.of(expiredTemplate));
+        assertThatThrownBy(() -> couponValidator.validate(userCoupon, 999L, new BigDecimal("100.00"), List.of(101L)))
+                .isInstanceOf(BusinessException.class)
+                .hasMessageContaining("not applicable");
+    }
 
-            assertThatThrownBy(() -> couponValidator.validate(expiredUserCoupon))
-                    .isInstanceOf(BusinessException.class)
-                    .extracting("code")
-                    .isEqualTo("COUPON_EXPIRED");
-        }
+    @Test
+    @DisplayName("validate supports category applicability")
+    void validate_supportsCategoryApplicability() {
+        template.setApplicableCategoryIds("[88]");
+        when(couponTemplateRepository.findById(1L)).thenReturn(Optional.of(template));
+        when(productQueryService.getCategoryIdsBySkuIds(List.of(101L))).thenReturn(List.of(88L));
 
-        @Test
-        @DisplayName("testValidate_usedCoupon_throwsCouponExpired")
-        void testValidate_usedCoupon_throwsCouponExpired() {
-            UserCoupon usedCoupon = new UserCoupon();
-            usedCoupon.setId(30L);
-            usedCoupon.setUserId(1L);
-            usedCoupon.setCouponTemplateId(1L);
-            usedCoupon.setCouponCode("CPN-USED");
-            usedCoupon.setStatus(CouponStatus.USED);
+        CouponTemplate validated = couponValidator.validate(userCoupon, 1L, new BigDecimal("100.00"), List.of(101L));
+        assertThat(validated).isSameAs(template);
+    }
 
-            when(couponTemplateRepository.findById(1L)).thenReturn(Optional.of(existingTemplate));
-
-            assertThatThrownBy(() -> couponValidator.validate(usedCoupon))
-                    .isInstanceOf(BusinessException.class)
-                    .extracting("code")
-                    .isEqualTo("COUPON_EXPIRED");
-        }
-
-        @Test
-        @DisplayName("testValidate_nullCoupon_throwsResourceNotFound")
-        void testValidate_nullCoupon_throwsResourceNotFound() {
-            assertThatThrownBy(() -> couponValidator.validate(null))
-                    .isInstanceOf(ResourceNotFoundException.class)
-                    .hasMessageContaining("UserCoupon");
-        }
-
-        @Test
-        @DisplayName("testValidate_couponWithFutureStartTime_throwsCouponExpired")
-        void testValidate_couponWithFutureStartTime_throwsCouponExpired() {
-            CouponTemplate futureTemplate = new CouponTemplate();
-            futureTemplate.setId(3L);
-            futureTemplate.setName("Future Coupon");
-            futureTemplate.setType(CouponType.AMOUNT_OFF);
-            futureTemplate.setDiscountValue(new BigDecimal("5.00"));
-            futureTemplate.setStatus("ACTIVE");
-            futureTemplate.setStartTime(LocalDateTime.now().plusDays(7));
-            futureTemplate.setEndTime(LocalDateTime.now().plusDays(14));
-
-            UserCoupon futureUserCoupon = new UserCoupon();
-            futureUserCoupon.setId(40L);
-            futureUserCoupon.setUserId(1L);
-            futureUserCoupon.setCouponTemplateId(3L);
-            futureUserCoupon.setCouponCode("CPN-FUTURE");
-            futureUserCoupon.setStatus(CouponStatus.AVAILABLE);
-
-            when(couponTemplateRepository.findById(3L)).thenReturn(Optional.of(futureTemplate));
-
-            assertThatThrownBy(() -> couponValidator.validate(futureUserCoupon))
-                    .isInstanceOf(BusinessException.class)
-                    .extracting("code")
-                    .isEqualTo("COUPON_EXPIRED");
-        }
+    @Test
+    @DisplayName("validate rejects null coupon")
+    void validate_rejectsNullCoupon() {
+        assertThatThrownBy(() -> couponValidator.validate(null, 1L, new BigDecimal("100.00"), List.of(101L)))
+                .isInstanceOf(ResourceNotFoundException.class)
+                .hasMessageContaining("UserCoupon");
     }
 }

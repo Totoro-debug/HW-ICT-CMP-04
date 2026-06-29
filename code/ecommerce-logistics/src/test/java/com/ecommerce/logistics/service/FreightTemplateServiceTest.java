@@ -52,6 +52,7 @@ class FreightTemplateServiceTest {
         request.setFreeShippingThreshold(new BigDecimal("299.00"));
         request.setProvinceRules("[{\"province\":\"Guangdong\",\"freight\":5.00}]");
         request.setWeightRules("[{\"maxWeightKg\":1.0,\"freight\":10.00}]");
+        request.setItemCountRules("[{\"maxItemCount\":3,\"freight\":8.00}]");
 
         when(freightTemplateRepository.save(any(FreightTemplate.class))).thenAnswer(inv -> {
             FreightTemplate t = inv.getArgument(0);
@@ -68,6 +69,7 @@ class FreightTemplateServiceTest {
         assertEquals(new BigDecimal("299.00"), result.getFreeShippingThreshold());
         assertEquals("[{\"province\":\"Guangdong\",\"freight\":5.00}]", result.getProvinceRules());
         assertEquals("[{\"maxWeightKg\":1.0,\"freight\":10.00}]", result.getWeightRules());
+        assertEquals("[{\"maxItemCount\":3,\"freight\":8.00}]", result.getItemCountRules());
     }
 
     @Test
@@ -127,6 +129,7 @@ class FreightTemplateServiceTest {
         request.setFreeShippingThreshold(new BigDecimal("250.00"));
         request.setProvinceRules("[{\"province\":\"Beijing\"}]");
         request.setWeightRules("[{\"maxWeightKg\":3.0,\"freight\":20.00}]");
+        request.setItemCountRules("[{\"maxItemCount\":5,\"freight\":18.00}]");
 
         FreightTemplate result = freightTemplateService.updateTemplate(1L, request);
 
@@ -135,6 +138,7 @@ class FreightTemplateServiceTest {
         assertEquals(new BigDecimal("250.00"), result.getFreeShippingThreshold());
         assertEquals("[{\"province\":\"Beijing\"}]", result.getProvinceRules());
         assertEquals("[{\"maxWeightKg\":3.0,\"freight\":20.00}]", result.getWeightRules());
+        assertEquals("[{\"maxItemCount\":5,\"freight\":18.00}]", result.getItemCountRules());
     }
 
     @Test

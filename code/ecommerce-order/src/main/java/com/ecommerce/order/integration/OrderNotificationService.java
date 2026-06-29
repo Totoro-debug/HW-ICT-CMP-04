@@ -1,6 +1,7 @@
 package com.ecommerce.order.integration;
 
 import com.ecommerce.common.notification.LocalNotificationService;
+import com.ecommerce.common.notification.NotificationChannel;
 import com.ecommerce.common.notification.NotificationRequest;
 import com.ecommerce.order.entity.Order;
 import com.ecommerce.order.entity.OrderStatus;
@@ -9,24 +10,12 @@ import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 
 import java.time.format.DateTimeFormatter;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 
 /**
  * Service for sending order-related notifications to users.
- *
- * <p>This service wraps the LocalNotificationService from the common module
- * and provides order-specific notification building, including:
- * <ul>
- *   <li>Order confirmation (creation) notification</li>
- *   <li>Payment success notification</li>
- *   <li>Shipping notification</li>
- *   <li>Delivery confirmation notification</li>
- *   <li>Order cancellation notification</li>
- *   <li>Order expiry warning notification</li>
- * </ul>
- *
- * <p>Notifications are sent through the LocalNotificationService which may
- * dispatch via email, SMS, or push notification depending on user preferences.
  */
 @Service
 public class OrderNotificationService {
@@ -39,229 +28,99 @@ public class OrderNotificationService {
         this.notificationService = notificationService;
     }
 
-    /**
-     * Send order creation confirmation notification.
-     */
-    public void notifyOrderCreated(Order order, String userEmail) {
-        try {
-            String message = buildOrderConfirmationMessage(order);
-            NotificationRequest request = NotificationRequest.builder()
-                    .channel(com.ecommerce.common.notification.NotificationChannel.EMAIL)
-                    .recipient(userEmail)
-                    .subject("Order Confirmed: " + order.getOrderNo())
-                    .content(message)
-                    .build();
-            notificationService.send(request);
-            log.debug("Order confirmation notification sent for order {}", order.getOrderNo());
-        } catch (Exception e) {
-            log.warn("Failed to send order confirmation notification: {}", e.getMessage());
-        }
+    public void notifyOrderCreated(Order order, String receiver) {
+        send(buildStatusNotification(order, receiver, "ORDER_CREATED", "order_created",
+                variables(order, "status", order.getStatus(), "expiresAt", formatDateTime(order.getExpiresAt()))));
     }
 
-    /**
-     * Send payment success notification.
-     */
-    public void notifyPaymentSuccess(Order order, String userEmail) {
-        try {
-            String message = buildPaymentSuccessMessage(order);
-            NotificationRequest request = NotificationRequest.builder()
-                    .channel(com.ecommerce.common.notification.NotificationChannel.EMAIL)
-                    .recipient(userEmail)
-                    .subject("Payment Confirmed: " + order.getOrderNo())
-                    .content(message)
-                    .build();
-            notificationService.send(request);
-            log.debug("Payment success notification sent for order {}", order.getOrderNo());
-        } catch (Exception e) {
-            log.warn("Failed to send payment success notification: {}", e.getMessage());
-        }
+    public void notifyPaymentSuccess(Order order, String receiver) {
+        send(buildNotification(order, receiver, NotificationChannel.SMS,
+                "ORDER_PAYMENT", "payment_succeeded",
+                variables(order, "paymentNo", order.getPaymentNo(), "paidAmount", order.getPaidAmount())));
     }
 
-    /**
-     * Send shipping notification with tracking info.
-     */
-    public void notifyOrderShipped(Order order, String trackingNumber, String userEmail) {
-        try {
-            String message = buildShippingMessage(order, trackingNumber);
-            NotificationRequest request = NotificationRequest.builder()
-                    .channel(com.ecommerce.common.notification.NotificationChannel.EMAIL)
-                    .recipient(userEmail)
-                    .subject("Your Order Has Shipped: " + order.getOrderNo())
-                    .content(message)
-                    .build();
-            notificationService.send(request);
-            log.debug("Shipping notification sent for order {}", order.getOrderNo());
-        } catch (Exception e) {
-            log.warn("Failed to send shipping notification: {}", e.getMessage());
-        }
+    public void notifyOrderShipped(Order order, String trackingNumber, String receiver) {
+        send(buildNotification(order, receiver, NotificationChannel.SMS,
+                "ORDER_SHIPPED", "order_shipped",
+                variables(order, "status", OrderStatus.SHIPPED, "trackingNumber", trackingNumber)));
     }
 
-    /**
-     * Send delivery confirmation notification.
-     */
-    public void notifyOrderDelivered(Order order, String userEmail) {
-        try {
-            String message = buildDeliveryMessage(order);
-            NotificationRequest request = NotificationRequest.builder()
-                    .channel(com.ecommerce.common.notification.NotificationChannel.EMAIL)
-                    .recipient(userEmail)
-                    .subject("Your Order Has Been Delivered: " + order.getOrderNo())
-                    .content(message)
-                    .build();
-            notificationService.send(request);
-            log.debug("Delivery notification sent for order {}", order.getOrderNo());
-        } catch (Exception e) {
-            log.warn("Failed to send delivery notification: {}", e.getMessage());
-        }
+    public void notifyOrderDelivered(Order order, String receiver) {
+        send(buildStatusNotification(order, receiver, "ORDER_DELIVERED", "order_delivered",
+                variables(order, "status", OrderStatus.DELIVERED)));
     }
 
-    /**
-     * Send order cancellation notification.
-     */
-    public void notifyOrderCancelled(Order order, String reason, String userEmail) {
-        try {
-            String message = buildCancellationMessage(order, reason);
-            NotificationRequest request = NotificationRequest.builder()
-                    .channel(com.ecommerce.common.notification.NotificationChannel.EMAIL)
-                    .recipient(userEmail)
-                    .subject("Order Cancelled: " + order.getOrderNo())
-                    .content(message)
-                    .build();
-            notificationService.send(request);
-            log.debug("Cancellation notification sent for order {}", order.getOrderNo());
-        } catch (Exception e) {
-            log.warn("Failed to send cancellation notification: {}", e.getMessage());
-        }
+    public void notifyOrderCancelled(Order order, String reason, String receiver) {
+        send(buildStatusNotification(order, receiver, "ORDER_CANCELLED", "order_cancelled",
+                variables(order, "status", OrderStatus.CANCELLED, "reason", reason != null ? reason : "User requested")));
     }
 
-    /**
-     * Send payment expiring soon warning.
-     */
-    public void notifyPaymentExpiring(Order order, String userEmail, long minutesRemaining) {
-        try {
-            String message = buildExpiryWarningMessage(order, minutesRemaining);
-            NotificationRequest request = NotificationRequest.builder()
-                    .channel(com.ecommerce.common.notification.NotificationChannel.EMAIL)
-                    .recipient(userEmail)
-                    .subject("Payment Expiring Soon: " + order.getOrderNo())
-                    .content(message)
-                    .build();
-            notificationService.send(request);
-            log.debug("Payment expiry warning sent for order {} ({} minutes remaining)",
-                    order.getOrderNo(), minutesRemaining);
-        } catch (Exception e) {
-            log.warn("Failed to send payment expiry warning: {}", e.getMessage());
-        }
+    public void notifyPaymentExpiring(Order order, String receiver, long minutesRemaining) {
+        send(buildStatusNotification(order, receiver, "ORDER_PAYMENT_EXPIRING", "payment_expiring",
+                variables(order, "status", order.getStatus(), "minutesRemaining", minutesRemaining,
+                        "expiresAt", formatDateTime(order.getExpiresAt()))));
     }
 
-    /**
-     * Send order status update notification.
-     */
-    public void notifyStatusUpdate(Order order, OrderStatus newStatus, String userEmail) {
-        try {
-            String message = buildStatusUpdateMessage(order, newStatus);
-            NotificationRequest request = NotificationRequest.builder()
-                    .channel(com.ecommerce.common.notification.NotificationChannel.EMAIL)
-                    .recipient(userEmail)
-                    .subject("Order Update: " + order.getOrderNo()
-                            + " is now " + newStatus)
-                    .content(message)
-                    .build();
-            notificationService.send(request);
-            log.debug("Status update notification sent for order {}: {}", order.getOrderNo(), newStatus);
-        } catch (Exception e) {
-            log.warn("Failed to send status update notification: {}", e.getMessage());
-        }
+    public void notifyStatusUpdate(Order order, OrderStatus newStatus, String receiver) {
+        send(buildStatusNotification(order, receiver, "ORDER_STATUS", "order_status",
+                variables(order, "status", newStatus)));
     }
 
-    /**
-     * Send batch notification to multiple recipients.
-     */
-    public void notifyBatch(List<Order> orders, String template, String userEmail) {
+    public void notifyBatch(List<Order> orders, String template, String receiver) {
         for (Order order : orders) {
-            try {
-                NotificationRequest request = NotificationRequest.builder()
-                        .channel(com.ecommerce.common.notification.NotificationChannel.EMAIL)
-                        .recipient(userEmail)
-                        .subject("Batch Update for Order " + order.getOrderNo())
-                        .content(template.replace("{{orderNo}}", order.getOrderNo())
-                                .replace("{{status}}", order.getStatus().name()))
-                        .build();
-                notificationService.send(request);
-            } catch (Exception e) {
-                log.warn("Failed to send batch notification for order {}: {}",
-                        order.getOrderNo(), e.getMessage());
+            send(buildStatusNotification(order, receiver, "ORDER_BATCH", "order_batch",
+                    variables(order, "status", order.getStatus(), "template", template)));
+        }
+    }
+
+    private void send(NotificationRequest request) {
+        try {
+            notificationService.send(request);
+            log.debug("Order notification sent: bizType={}, bizId={}, channel={}",
+                    request.getBizType(), request.getBizId(), request.getChannel());
+        } catch (Exception e) {
+            log.warn("Failed to send order notification: bizType={}, bizId={}, error={}",
+                    request.getBizType(), request.getBizId(), e.getMessage());
+        }
+    }
+
+    private NotificationRequest buildStatusNotification(Order order, String receiver, String bizType,
+                                                        String templateCode, Map<String, Object> variables) {
+        return buildNotification(order, receiver, NotificationChannel.IN_APP, bizType, templateCode, variables);
+    }
+
+    private NotificationRequest buildNotification(Order order, String receiver, NotificationChannel channel,
+                                                  String bizType, String templateCode, Map<String, Object> variables) {
+        NotificationRequest request = new NotificationRequest();
+        request.setBizType(bizType);
+        request.setBizId(String.valueOf(order.getId()));
+        request.setReceiver(receiver);
+        request.setChannel(channel);
+        request.setTemplateCode(templateCode);
+        request.setVariables(variables);
+        request.setIdempotencyKey(bizType + ":" + order.getId() + ":" + templateCode);
+        return request;
+    }
+
+    private Map<String, Object> variables(Order order, Object... extraKeyValues) {
+        Map<String, Object> values = new LinkedHashMap<>();
+        values.put("orderId", order.getId());
+        values.put("orderNo", order.getOrderNo());
+        values.put("userId", order.getUserId());
+        values.put("payableAmount", order.getPayableAmount());
+        values.put("createdAt", formatDateTime(order.getCreatedAt()));
+        for (int i = 0; i + 1 < extraKeyValues.length; i += 2) {
+            if (extraKeyValues[i] != null && extraKeyValues[i + 1] != null) {
+                values.put(String.valueOf(extraKeyValues[i]), extraKeyValues[i + 1]);
             }
         }
+        return values;
     }
 
-    // ======================== Message builders ========================
-
-    private String buildOrderConfirmationMessage(Order order) {
-        DateTimeFormatter dtf = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
-        return "Dear Customer,\n\n"
-                + "Your order has been created successfully.\n\n"
-                + "Order Number: " + order.getOrderNo() + "\n"
-                + "Order Amount: $" + order.getPayableAmount() + "\n"
-                + "Order Time: " + (order.getCreatedAt() != null
-                        ? order.getCreatedAt().format(dtf) : "N/A") + "\n\n"
-                + "Please complete payment within 60 minutes.\n"
-                + "Expires At: " + (order.getExpiresAt() != null
-                        ? order.getExpiresAt().format(dtf) : "N/A") + "\n\n"
-                + "Thank you for shopping with us!";
-    }
-
-    private String buildPaymentSuccessMessage(Order order) {
-        return "Dear Customer,\n\n"
-                + "Your payment has been confirmed.\n\n"
-                + "Order Number: " + order.getOrderNo() + "\n"
-                + "Amount Paid: $" + order.getPaidAmount() + "\n"
-                + "Payment No: " + (order.getPaymentNo() != null ? order.getPaymentNo() : "N/A") + "\n\n"
-                + "We will notify you when your order ships.";
-    }
-
-    private String buildShippingMessage(Order order, String trackingNumber) {
-        return "Dear Customer,\n\n"
-                + "Your order has been shipped!\n\n"
-                + "Order Number: " + order.getOrderNo() + "\n"
-                + "Tracking Number: " + trackingNumber + "\n\n"
-                + "Your order is on its way.";
-    }
-
-    private String buildDeliveryMessage(Order order) {
-        return "Dear Customer,\n\n"
-                + "Your order has been delivered.\n\n"
-                + "Order Number: " + order.getOrderNo() + "\n\n"
-                + "If you have any issues, please contact customer service.\n"
-                + "Thank you for your purchase!";
-    }
-
-    private String buildCancellationMessage(Order order, String reason) {
-        return "Dear Customer,\n\n"
-                + "Your order has been cancelled.\n\n"
-                + "Order Number: " + order.getOrderNo() + "\n"
-                + "Reason: " + (reason != null ? reason : "User requested") + "\n\n"
-                + "If this was a mistake, please place a new order.\n"
-                + "We apologize for any inconvenience.";
-    }
-
-    private String buildExpiryWarningMessage(Order order, long minutesRemaining) {
-        DateTimeFormatter dtf = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
-        return "Dear Customer,\n\n"
-                + "Your order payment is expiring soon.\n\n"
-                + "Order Number: " + order.getOrderNo() + "\n"
-                + "Amount: $" + order.getPayableAmount() + "\n"
-                + "Time Remaining: " + minutesRemaining + " minutes\n"
-                + "Expires At: " + (order.getExpiresAt() != null
-                        ? order.getExpiresAt().format(dtf) : "N/A") + "\n\n"
-                + "Please complete your payment to avoid order cancellation.";
-    }
-
-    private String buildStatusUpdateMessage(Order order, OrderStatus newStatus) {
-        return "Dear Customer,\n\n"
-                + "Your order status has been updated.\n\n"
-                + "Order Number: " + order.getOrderNo() + "\n"
-                + "New Status: " + newStatus + "\n\n"
-                + "Log in to view your order details.";
+    private String formatDateTime(java.time.LocalDateTime value) {
+        if (value == null) {
+            return null;
+        }
+        return value.format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss"));
     }
 }

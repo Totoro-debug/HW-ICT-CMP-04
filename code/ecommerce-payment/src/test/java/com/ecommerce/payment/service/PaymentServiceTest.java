@@ -1,6 +1,8 @@
 package com.ecommerce.payment.service;
 
+import com.ecommerce.common.event.AbstractDomainEvent;
 import com.ecommerce.common.event.DomainEventPublisher;
+import com.ecommerce.common.event.OrderPaidEvent;
 import com.ecommerce.order.query.OrderDto;
 import com.ecommerce.order.query.OrderQueryService;
 import com.ecommerce.payment.dto.PayRequest;
@@ -8,11 +10,13 @@ import com.ecommerce.payment.dto.PayResponse;
 import com.ecommerce.payment.entity.PaymentMethod;
 import com.ecommerce.payment.entity.PaymentRecord;
 import com.ecommerce.payment.entity.PaymentStatus;
+import com.ecommerce.payment.event.PaymentSucceededEvent;
 import com.ecommerce.payment.repository.PaymentRecordRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
@@ -23,6 +27,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -87,8 +92,8 @@ class PaymentServiceTest {
     }
 
     @Test
-    @DisplayName("confirmPayment publishes only a domain event")
-    void testConfirmPayment_publishesEvent() {
+    @DisplayName("confirmPayment publishes payment and order paid events")
+    void testConfirmPayment_publishesPaymentAndOrderPaidEvents() {
         PaymentRecord payment = new PaymentRecord();
         payment.setPaymentNo("PAY001");
         payment.setOrderId(1L);
@@ -101,7 +106,15 @@ class PaymentServiceTest {
 
         paymentService.confirmPayment(payment);
 
-        verify(eventPublisher).publish(any());
+        ArgumentCaptor<AbstractDomainEvent> eventCaptor = ArgumentCaptor.forClass(AbstractDomainEvent.class);
+        verify(eventPublisher, times(2)).publish(eventCaptor.capture());
+        assertEquals(PaymentSucceededEvent.class, eventCaptor.getAllValues().get(0).getClass());
+        assertEquals(OrderPaidEvent.class, eventCaptor.getAllValues().get(1).getClass());
+        OrderPaidEvent orderPaidEvent = (OrderPaidEvent) eventCaptor.getAllValues().get(1);
+        assertEquals(1L, orderPaidEvent.getOrderId());
+        assertEquals(100L, orderPaidEvent.getUserId());
+        assertEquals("PAY001", orderPaidEvent.getPaymentNo());
+        assertEquals(new BigDecimal("99.00"), orderPaidEvent.getPaidAmount());
     }
 
     @Test

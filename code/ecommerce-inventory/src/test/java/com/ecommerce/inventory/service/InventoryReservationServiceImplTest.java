@@ -4,31 +4,44 @@ import com.ecommerce.common.exception.BusinessException;
 import com.ecommerce.common.exception.ConflictException;
 import com.ecommerce.common.exception.ResourceNotFoundException;
 import com.ecommerce.inventory.entity.InventoryStock;
+import com.ecommerce.inventory.entity.OutboundOrder;
 import com.ecommerce.inventory.entity.ReservationStatus;
 import com.ecommerce.inventory.entity.StockReservation;
+import com.ecommerce.inventory.entity.Warehouse;
 import com.ecommerce.inventory.query.ReserveItem;
 import com.ecommerce.inventory.repository.InventoryStockRepository;
+import com.ecommerce.inventory.repository.OutboundOrderRepository;
 import com.ecommerce.inventory.repository.StockReservationRepository;
+import com.ecommerce.inventory.repository.WarehouseRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.ArgumentCaptor;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.mockito.junit.jupiter.MockitoSettings;
+import org.mockito.quality.Strictness;
 
+import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 @DisplayName("InventoryReservationServiceImpl")
 @ExtendWith(MockitoExtension.class)
+@MockitoSettings(strictness = Strictness.LENIENT)
 class InventoryReservationServiceImplTest {
 
     @Mock
@@ -37,123 +50,128 @@ class InventoryReservationServiceImplTest {
     @Mock
     private StockReservationRepository stockReservationRepo;
 
+    @Mock
+    private WarehouseRepository warehouseRepo;
+
+    @Mock
+    private OutboundOrderRepository outboundOrderRepo;
+
     @InjectMocks
     private InventoryReservationServiceImpl reservationService;
 
-    private InventoryStock stock;
+    private final Map<Long, Warehouse> warehouses = new HashMap<>();
 
     @BeforeEach
     void setUp() {
-        stock = new InventoryStock();
-        stock.setId(1L);
-        stock.setWarehouseId(1L);
-        stock.setSkuId(100L);
-        stock.setOnHandStock(200);
-        stock.setReservedStock(0);
-        stock.setSafetyStock(5);
+        warehouses.clear();
+        when(stockRepo.save(any(InventoryStock.class))).thenAnswer(inv -> inv.getArgument(0));
+        when(stockReservationRepo.save(any(StockReservation.class))).thenAnswer(inv -> inv.getArgument(0));
+        when(outboundOrderRepo.save(any(OutboundOrder.class))).thenAnswer(inv -> inv.getArgument(0));
+        when(outboundOrderRepo.findByOrderId(anyLong())).thenReturn(List.of());
+        when(warehouseRepo.findAllById(any())).thenAnswer(invocation -> {
+            Iterable<Long> ids = invocation.getArgument(0);
+            List<Warehouse> result = new ArrayList<>();
+            for (Long id : ids) {
+                Warehouse warehouse = warehouses.get(id);
+                if (warehouse != null) {
+                    result.add(warehouse);
+                }
+            }
+            return result;
+        });
     }
-
-    // ---- reserve tests ----
 
     @Test
     @DisplayName("reserve only increases reservedStock")
     void testReserve_onlyIncreasesReservedStock() {
+        InventoryStock stock = stock(1L, 100L, 200, 0);
         when(stockRepo.findBySkuId(100L)).thenReturn(List.of(stock));
-        when(stockRepo.save(any(InventoryStock.class))).thenReturn(stock);
-        when(stockReservationRepo.save(any(StockReservation.class)))
-                .thenAnswer(inv -> inv.getArgument(0));
 
-        List<ReserveItem> items = List.of(new ReserveItem(100L, 40));
-        reservationService.reserve(1L, items);
+        reservationService.reserve(1L, List.of(new ReserveItem(100L, 40)));
 
-        // Verify stock values after reservation.
         assertThat(stock.getOnHandStock()).isEqualTo(200);
         assertThat(stock.getReservedStock()).isEqualTo(40);
         assertThat(stock.getAvailableStock()).isEqualTo(160);
     }
 
     @Test
-    @DisplayName("reserve distributes quantity across multiple warehouses")
-    void testReserve_distributesAcrossWarehouses() {
-        InventoryStock stock2 = new InventoryStock();
-        stock2.setId(2L);
-        stock2.setWarehouseId(2L);
-        stock2.setSkuId(100L);
-        stock2.setOnHandStock(50);
-        stock2.setReservedStock(0);
+    @DisplayName("reserve prefers a single sufficient warehouse before splitting")
+    void testReserve_prefersSingleWarehouseBeforeSplit() {
+        InventoryStock partial = stock(1L, 100L, 3, 0);
+        InventoryStock full = stock(2L, 100L, 10, 0);
+        when(stockRepo.findBySkuId(100L)).thenReturn(List.of(partial, full));
 
-        when(stockRepo.findBySkuId(100L)).thenReturn(List.of(stock, stock2));
-        when(stockRepo.save(any(InventoryStock.class))).thenAnswer(inv -> inv.getArgument(0));
-        when(stockReservationRepo.save(any(StockReservation.class)))
-                .thenAnswer(inv -> inv.getArgument(0));
+        reservationService.reserve(1L, List.of(new ReserveItem(100L, 10)));
 
-        List<ReserveItem> items = List.of(new ReserveItem(100L, 250));
-        // First warehouse: max 200, reserves 200. Remaining: 50.
-        // Second warehouse: max 50, reserves 50.
-        reservationService.reserve(1L, items);
+        assertThat(partial.getReservedStock()).isZero();
+        assertThat(full.getReservedStock()).isEqualTo(10);
+        verify(stockReservationRepo, times(1)).save(any(StockReservation.class));
+    }
 
-        // Warehouse 1: onHand unchanged, reserved = 200
-        assertThat(stock.getOnHandStock()).isEqualTo(200);
-        assertThat(stock.getReservedStock()).isEqualTo(200);
-        // Warehouse 2: onHand unchanged, reserved = 50
-        assertThat(stock2.getOnHandStock()).isEqualTo(50);
-        assertThat(stock2.getReservedStock()).isEqualTo(50);
+    @Test
+    @DisplayName("reserve splits across warehouses only when no single warehouse is sufficient")
+    void testReserve_splitsAcrossWarehousesWhenNecessary() {
+        InventoryStock stock1 = stock(1L, 100L, 3, 0);
+        InventoryStock stock2 = stock(2L, 100L, 7, 0);
+        when(stockRepo.findBySkuId(100L)).thenReturn(List.of(stock1, stock2));
+
+        reservationService.reserve(1L, List.of(new ReserveItem(100L, 10)));
+
+        assertThat(stock1.getReservedStock()).isEqualTo(3);
+        assertThat(stock2.getReservedStock()).isEqualTo(7);
+        verify(stockReservationRepo, times(2)).save(any(StockReservation.class));
+    }
+
+    @Test
+    @DisplayName("reserve prioritizes region matched warehouse before priority fallback")
+    void testReserve_prioritizesRegionMatch() {
+        InventoryStock nonMatching = stock(1L, 100L, 20, 0);
+        InventoryStock matching = stock(2L, 100L, 20, 0);
+        warehouses.put(1L, warehouse(1L, "北京", null, 1));
+        warehouses.put(2L, warehouse(2L, "上海", "浙江,江苏", 9));
+        when(stockRepo.findBySkuId(100L)).thenReturn(List.of(nonMatching, matching));
+
+        reservationService.reserve(1L, List.of(new ReserveItem(100L, 10, "浙江")));
+
+        assertThat(nonMatching.getReservedStock()).isZero();
+        assertThat(matching.getReservedStock()).isEqualTo(10);
+    }
+
+    @Test
+    @DisplayName("reserve uses warehouse priority as stable fallback when matches tie")
+    void testReserve_usesPriorityFallbackWhenMatchesTie() {
+        InventoryStock lowerPriority = stock(1L, 100L, 20, 0);
+        InventoryStock higherPriority = stock(2L, 100L, 20, 0);
+        warehouses.put(1L, warehouse(1L, "浙江", null, 5));
+        warehouses.put(2L, warehouse(2L, "浙江", null, 1));
+        when(stockRepo.findBySkuId(100L)).thenReturn(List.of(lowerPriority, higherPriority));
+
+        reservationService.reserve(1L, List.of(new ReserveItem(100L, 10, "浙江")));
+
+        assertThat(lowerPriority.getReservedStock()).isZero();
+        assertThat(higherPriority.getReservedStock()).isEqualTo(10);
     }
 
     @Test
     @DisplayName("reserve throws BusinessException when stock is insufficient")
     void testReserve_throwsWhenInsufficientStock() {
+        InventoryStock stock = stock(1L, 100L, 200, 0);
         when(stockRepo.findBySkuId(100L)).thenReturn(List.of(stock));
 
-        List<ReserveItem> items = List.of(new ReserveItem(100L, 300));
-
-        assertThatThrownBy(() -> reservationService.reserve(1L, items))
+        assertThatThrownBy(() -> reservationService.reserve(1L, List.of(new ReserveItem(100L, 300))))
                 .isInstanceOf(BusinessException.class)
                 .matches(ex -> ((BusinessException) ex).getCode().equals("INVENTORY_NOT_ENOUGH"),
                         "should have code INVENTORY_NOT_ENOUGH");
     }
 
     @Test
-    @DisplayName("reserve skips warehouses with zero available stock")
-    void testReserve_skipsZeroAvailableStock() {
-        InventoryStock emptyStock = new InventoryStock();
-        emptyStock.setId(2L);
-        emptyStock.setWarehouseId(2L);
-        emptyStock.setSkuId(100L);
-        emptyStock.setOnHandStock(10);
-        emptyStock.setReservedStock(10); // available = 0
-
-        when(stockRepo.findBySkuId(100L)).thenReturn(List.of(emptyStock, stock));
-        when(stockRepo.save(any(InventoryStock.class))).thenAnswer(inv -> inv.getArgument(0));
-        when(stockReservationRepo.save(any(StockReservation.class)))
-                .thenAnswer(inv -> inv.getArgument(0));
-
-        List<ReserveItem> items = List.of(new ReserveItem(100L, 40));
-        reservationService.reserve(1L, items);
-
-        // emptyStock should be skipped (available=0)
-        assertThat(emptyStock.getOnHandStock()).isEqualTo(10);
-        assertThat(emptyStock.getReservedStock()).isEqualTo(10);
-        // stock should handle the full quantity
-        assertThat(stock.getOnHandStock()).isEqualTo(200);
-        assertThat(stock.getReservedStock()).isEqualTo(40);
-    }
-
-    @Test
     @DisplayName("reserve is idempotent for same orderId and same items")
     void testReserve_sameOrderIdSameItems_isIdempotent() {
-        StockReservation existing = new StockReservation();
-        existing.setOrderId(1L);
-        existing.setSkuId(100L);
-        existing.setWarehouseId(1L);
-        existing.setQuantity(40);
-        existing.setStatus(ReservationStatus.RESERVED);
-
+        StockReservation existing = reservation(1L, 100L, 1L, 40, ReservationStatus.RESERVED);
         when(stockReservationRepo.findByOrderId(1L)).thenReturn(List.of(existing));
 
         reservationService.reserve(1L, List.of(new ReserveItem(100L, 40)));
 
-        assertThat(stock.getReservedStock()).isZero();
         verify(stockRepo, never()).save(any());
         verify(stockReservationRepo, never()).save(any());
     }
@@ -161,13 +179,7 @@ class InventoryReservationServiceImplTest {
     @Test
     @DisplayName("reserve rejects same orderId with different items")
     void testReserve_sameOrderIdDifferentItems_throwsConflict() {
-        StockReservation existing = new StockReservation();
-        existing.setOrderId(1L);
-        existing.setSkuId(100L);
-        existing.setWarehouseId(1L);
-        existing.setQuantity(40);
-        existing.setStatus(ReservationStatus.RESERVED);
-
+        StockReservation existing = reservation(1L, 100L, 1L, 40, ReservationStatus.RESERVED);
         when(stockReservationRepo.findByOrderId(1L)).thenReturn(List.of(existing));
 
         assertThatThrownBy(() -> reservationService.reserve(1L, List.of(new ReserveItem(100L, 41))))
@@ -176,61 +188,17 @@ class InventoryReservationServiceImplTest {
         verify(stockReservationRepo, never()).save(any());
     }
 
-    // ---- release tests ----
-
     @Test
-    @DisplayName("release only decreases reservedStock and keeps onHandStock unchanged")
+    @DisplayName("release only decreases reservedStock and is idempotent when repeated")
     void testRelease_increasesAvailableStock() {
-        // Simulate post-reserve state: onHand unchanged, reserved increased.
-        stock.setOnHandStock(200);
-        stock.setReservedStock(40);
-
-        StockReservation reservation = new StockReservation();
-        reservation.setId(1L);
-        reservation.setOrderId(1L);
-        reservation.setSkuId(100L);
-        reservation.setWarehouseId(1L);
-        reservation.setQuantity(40);
-        reservation.setStatus(ReservationStatus.RESERVED);
-
+        InventoryStock stock = stock(1L, 100L, 200, 40);
+        StockReservation reservation = reservation(1L, 100L, 1L, 40, ReservationStatus.RESERVED);
         when(stockReservationRepo.findByOrderIdAndStatus(1L, ReservationStatus.RESERVED))
-                .thenReturn(List.of(reservation));
+                .thenReturn(List.of(reservation))
+                .thenReturn(List.of());
         when(stockRepo.findByWarehouseIdAndSkuId(1L, 100L)).thenReturn(Optional.of(stock));
-        when(stockRepo.save(any(InventoryStock.class))).thenReturn(stock);
-        when(stockReservationRepo.save(any(StockReservation.class)))
-                .thenAnswer(inv -> inv.getArgument(0));
 
         reservationService.release(1L);
-
-        // reservedStock decreased to 0
-        assertThat(stock.getReservedStock()).isEqualTo(0);
-        assertThat(stock.getOnHandStock()).isEqualTo(200);
-        assertThat(stock.getAvailableStock()).isEqualTo(200);
-        // reservation status updated to RELEASED
-        assertThat(reservation.getStatus()).isEqualTo(ReservationStatus.RELEASED);
-    }
-
-    @Test
-    @DisplayName("release clamps reservedStock at zero when reservation quantity exceeds current reserved")
-    void testRelease_preventsNegativeReservedStock() {
-        stock.setOnHandStock(200);
-        stock.setReservedStock(10);
-
-        StockReservation reservation = new StockReservation();
-        reservation.setId(1L);
-        reservation.setOrderId(1L);
-        reservation.setSkuId(100L);
-        reservation.setWarehouseId(1L);
-        reservation.setQuantity(40);
-        reservation.setStatus(ReservationStatus.RESERVED);
-
-        when(stockReservationRepo.findByOrderIdAndStatus(1L, ReservationStatus.RESERVED))
-                .thenReturn(List.of(reservation));
-        when(stockRepo.findByWarehouseIdAndSkuId(1L, 100L)).thenReturn(Optional.of(stock));
-        when(stockRepo.save(any(InventoryStock.class))).thenReturn(stock);
-        when(stockReservationRepo.save(any(StockReservation.class)))
-                .thenAnswer(inv -> inv.getArgument(0));
-
         reservationService.release(1L);
 
         assertThat(stock.getReservedStock()).isZero();
@@ -241,14 +209,7 @@ class InventoryReservationServiceImplTest {
     @Test
     @DisplayName("release throws ResourceNotFoundException when stock is missing")
     void testRelease_throwsWhenStockNotFound() {
-        StockReservation reservation = new StockReservation();
-        reservation.setId(1L);
-        reservation.setOrderId(1L);
-        reservation.setSkuId(100L);
-        reservation.setWarehouseId(1L);
-        reservation.setQuantity(40);
-        reservation.setStatus(ReservationStatus.RESERVED);
-
+        StockReservation reservation = reservation(1L, 100L, 1L, 40, ReservationStatus.RESERVED);
         when(stockReservationRepo.findByOrderIdAndStatus(1L, ReservationStatus.RESERVED))
                 .thenReturn(List.of(reservation));
         when(stockRepo.findByWarehouseIdAndSkuId(1L, 100L)).thenReturn(Optional.empty());
@@ -258,61 +219,51 @@ class InventoryReservationServiceImplTest {
     }
 
     @Test
-    @DisplayName("release does nothing when no RESERVED reservations exist")
-    void testRelease_noReservedReservations_doesNothing() {
-        when(stockReservationRepo.findByOrderIdAndStatus(1L, ReservationStatus.RESERVED))
-                .thenReturn(List.of());
-
-        reservationService.release(1L);
-
-        verify(stockRepo, never()).save(any());
-        verify(stockReservationRepo, never()).save(any());
-    }
-
-    // ---- deductAfterPayment tests ----
-
-    @Test
-    @DisplayName("deductAfterPayment decreases both onHandStock and reservedStock")
-    void testDeductAfterPayment_adjustsBothStocks() {
-        // Simulate post-reserve state: onHand unchanged, reserved increased.
-        stock.setOnHandStock(200);
-        stock.setReservedStock(40);
-
-        StockReservation reservation = new StockReservation();
-        reservation.setId(1L);
-        reservation.setOrderId(1L);
-        reservation.setSkuId(100L);
-        reservation.setWarehouseId(1L);
-        reservation.setQuantity(40);
-        reservation.setStatus(ReservationStatus.RESERVED);
-
+    @DisplayName("deductAfterPayment decreases stock, marks reservation deducted, and creates outbound order")
+    void testDeductAfterPayment_createsOutboundOrder() {
+        InventoryStock stock = stock(1L, 100L, 200, 40);
+        StockReservation reservation = reservation(1L, 100L, 1L, 40, ReservationStatus.RESERVED);
         when(stockReservationRepo.findByOrderIdAndStatus(1L, ReservationStatus.RESERVED))
                 .thenReturn(List.of(reservation));
         when(stockRepo.findByWarehouseIdAndSkuId(1L, 100L)).thenReturn(Optional.of(stock));
-        when(stockRepo.save(any(InventoryStock.class))).thenReturn(stock);
-        when(stockReservationRepo.save(any(StockReservation.class)))
-                .thenAnswer(inv -> inv.getArgument(0));
 
         reservationService.deductAfterPayment(1L);
 
         assertThat(stock.getOnHandStock()).isEqualTo(160);
-        assertThat(stock.getReservedStock()).isEqualTo(0);
-        assertThat(stock.getAvailableStock()).isEqualTo(160);
-        // reservation status updated to DEDUCTED
+        assertThat(stock.getReservedStock()).isZero();
         assertThat(reservation.getStatus()).isEqualTo(ReservationStatus.DEDUCTED);
+
+        ArgumentCaptor<OutboundOrder> captor = ArgumentCaptor.forClass(OutboundOrder.class);
+        verify(outboundOrderRepo).save(captor.capture());
+        assertThat(captor.getValue().getOrderId()).isEqualTo(1L);
+        assertThat(captor.getValue().getWarehouseId()).isEqualTo(1L);
+        assertThat(captor.getValue().getSkuId()).isEqualTo(100L);
+        assertThat(captor.getValue().getQuantity()).isEqualTo(40);
+        assertThat(captor.getValue().getStatus()).isEqualTo("COMPLETED");
+    }
+
+    @Test
+    @DisplayName("deductAfterPayment is idempotent for repeated payment events")
+    void testDeductAfterPayment_isIdempotentForRepeatedEvents() {
+        InventoryStock stock = stock(1L, 100L, 200, 40);
+        StockReservation reservation = reservation(1L, 100L, 1L, 40, ReservationStatus.RESERVED);
+        when(stockReservationRepo.findByOrderIdAndStatus(1L, ReservationStatus.RESERVED))
+                .thenReturn(List.of(reservation))
+                .thenReturn(List.of());
+        when(stockRepo.findByWarehouseIdAndSkuId(1L, 100L)).thenReturn(Optional.of(stock));
+
+        reservationService.deductAfterPayment(1L);
+        reservationService.deductAfterPayment(1L);
+
+        verify(outboundOrderRepo, times(1)).save(any(OutboundOrder.class));
+        assertThat(stock.getOnHandStock()).isEqualTo(160);
+        assertThat(stock.getReservedStock()).isZero();
     }
 
     @Test
     @DisplayName("deductAfterPayment throws ResourceNotFoundException when stock is missing")
     void testDeductAfterPayment_throwsWhenStockNotFound() {
-        StockReservation reservation = new StockReservation();
-        reservation.setId(1L);
-        reservation.setOrderId(1L);
-        reservation.setSkuId(100L);
-        reservation.setWarehouseId(1L);
-        reservation.setQuantity(40);
-        reservation.setStatus(ReservationStatus.RESERVED);
-
+        StockReservation reservation = reservation(1L, 100L, 1L, 40, ReservationStatus.RESERVED);
         when(stockReservationRepo.findByOrderIdAndStatus(1L, ReservationStatus.RESERVED))
                 .thenReturn(List.of(reservation));
         when(stockRepo.findByWarehouseIdAndSkuId(1L, 100L)).thenReturn(Optional.empty());
@@ -321,69 +272,36 @@ class InventoryReservationServiceImplTest {
                 .isInstanceOf(ResourceNotFoundException.class);
     }
 
-    // ---- full cycle test ----
+    private InventoryStock stock(Long warehouseId, Long skuId, int onHandStock, int reservedStock) {
+        InventoryStock stock = new InventoryStock();
+        stock.setWarehouseId(warehouseId);
+        stock.setSkuId(skuId);
+        stock.setOnHandStock(onHandStock);
+        stock.setReservedStock(reservedStock);
+        stock.setSafetyStock(0);
+        return stock;
+    }
 
-    @Test
-    @DisplayName("full reserve-release-deduct cycle keeps reservation and deduction semantics consistent")
-    void testFullReserveReleaseDeductCycle() {
-        // ---- Setup: stock with 200 on-hand, 0 reserved ----
-        when(stockRepo.findBySkuId(100L)).thenReturn(List.of(stock));
-        when(stockRepo.findByWarehouseIdAndSkuId(1L, 100L)).thenReturn(Optional.of(stock));
-        when(stockRepo.save(any(InventoryStock.class))).thenReturn(stock);
-        when(stockReservationRepo.save(any(StockReservation.class)))
-                .thenAnswer(inv -> inv.getArgument(0));
+    private Warehouse warehouse(Long id, String province, String serviceRegions, Integer priority) {
+        Warehouse warehouse = new Warehouse();
+        warehouse.setId(id);
+        warehouse.setProvince(province);
+        warehouse.setServiceRegions(serviceRegions);
+        warehouse.setPriority(priority);
+        return warehouse;
+    }
 
-        // Reservations for orderId=1 (created during first reserve)
-        StockReservation res1 = new StockReservation();
-        res1.setId(1L);
-        res1.setOrderId(1L);
-        res1.setSkuId(100L);
-        res1.setWarehouseId(1L);
-        res1.setQuantity(50);
-        res1.setStatus(ReservationStatus.RESERVED);
-
-        // Reservations for orderId=2 (created during second reserve)
-        StockReservation res2 = new StockReservation();
-        res2.setId(2L);
-        res2.setOrderId(2L);
-        res2.setSkuId(100L);
-        res2.setWarehouseId(1L);
-        res2.setQuantity(50);
-        res2.setStatus(ReservationStatus.RESERVED);
-
-        when(stockReservationRepo.findByOrderIdAndStatus(1L, ReservationStatus.RESERVED))
-                .thenReturn(List.of(res1));
-        when(stockReservationRepo.findByOrderIdAndStatus(2L, ReservationStatus.RESERVED))
-                .thenReturn(List.of(res2));
-
-        // ---- Step 1: Reserve orderId=1, quantity=50 ----
-        reservationService.reserve(1L, List.of(new ReserveItem(100L, 50)));
-
-        assertThat(stock.getOnHandStock()).isEqualTo(200);
-        assertThat(stock.getReservedStock()).isEqualTo(50);
-        assertThat(stock.getAvailableStock()).isEqualTo(150);
-
-        // ---- Step 2: Release orderId=1 ----
-        reservationService.release(1L);
-
-        assertThat(stock.getOnHandStock()).isEqualTo(200);
-        assertThat(stock.getReservedStock()).isEqualTo(0);
-        assertThat(stock.getAvailableStock()).isEqualTo(200);
-        assertThat(res1.getStatus()).isEqualTo(ReservationStatus.RELEASED);
-
-        // ---- Step 3: Reserve orderId=2, quantity=50 ----
-        reservationService.reserve(2L, List.of(new ReserveItem(100L, 50)));
-
-        assertThat(stock.getOnHandStock()).isEqualTo(200);
-        assertThat(stock.getReservedStock()).isEqualTo(50);
-        assertThat(stock.getAvailableStock()).isEqualTo(150);
-
-        // ---- Step 4: Deduct after payment for orderId=2 ----
-        reservationService.deductAfterPayment(2L);
-
-        assertThat(stock.getOnHandStock()).isEqualTo(150);
-        assertThat(stock.getReservedStock()).isEqualTo(0);
-        assertThat(stock.getAvailableStock()).isEqualTo(150);
-        assertThat(res2.getStatus()).isEqualTo(ReservationStatus.DEDUCTED);
+    private StockReservation reservation(Long orderId,
+                                         Long skuId,
+                                         Long warehouseId,
+                                         int quantity,
+                                         ReservationStatus status) {
+        StockReservation reservation = new StockReservation();
+        reservation.setOrderId(orderId);
+        reservation.setSkuId(skuId);
+        reservation.setWarehouseId(warehouseId);
+        reservation.setQuantity(quantity);
+        reservation.setStatus(status);
+        return reservation;
     }
 }

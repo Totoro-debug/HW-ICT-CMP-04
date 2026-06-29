@@ -64,8 +64,6 @@ class UserAuthServiceTest {
     @InjectMocks
     private UserAuthService userAuthService;
 
-    // --- Helpers ---
-
     private User activeUser() {
         User user = new User();
         user.setId(1L);
@@ -84,8 +82,6 @@ class UserAuthServiceTest {
         request.setPassword(password);
         return request;
     }
-
-    // --- Login tests ---
 
     @Test
     @DisplayName("returns JWT token on successful login with valid credentials")
@@ -107,8 +103,8 @@ class UserAuthServiceTest {
     }
 
     @Test
-    @DisplayName("rejects login when user account is FROZEN")
-    void testLogin_userNotActive_throwsException() {
+    @DisplayName("rejects login when user account is FROZEN with USER_FROZEN code")
+    void testLogin_frozenUser_throwsForbiddenAuthorizationException() {
         User frozenUser = activeUser();
         frozenUser.setStatus(UserStatus.FROZEN);
         LoginRequest request = loginRequest("active@example.com", "correctPassword");
@@ -116,13 +112,15 @@ class UserAuthServiceTest {
         when(userRepository.findByEmail("active@example.com")).thenReturn(Optional.of(frozenUser));
 
         assertThatThrownBy(() -> userAuthService.login(request))
-                .isInstanceOf(BusinessException.class)
-                .hasMessageContaining("Account is frozen");
+                .isInstanceOf(AuthorizationException.class)
+                .hasMessageContaining("Account is frozen")
+                .extracting(ex -> ((AuthorizationException) ex).getCode())
+                .isEqualTo("USER_FROZEN");
     }
 
     @Test
-    @DisplayName("rejects login when user account status is not ACTIVE (non-FROZEN)")
-    void testLogin_pendingActivationStatus_throwsException() {
+    @DisplayName("rejects login when user account is pending activation with USER_NOT_ACTIVE code")
+    void testLogin_pendingActivationStatus_throwsForbiddenAuthorizationException() {
         User pendingUser = activeUser();
         pendingUser.setStatus(UserStatus.PENDING_ACTIVATION);
         LoginRequest request = loginRequest("active@example.com", "correctPassword");
@@ -130,8 +128,10 @@ class UserAuthServiceTest {
         when(userRepository.findByEmail("active@example.com")).thenReturn(Optional.of(pendingUser));
 
         assertThatThrownBy(() -> userAuthService.login(request))
-                .isInstanceOf(BusinessException.class)
-                .hasMessageContaining("Account is not active");
+                .isInstanceOf(AuthorizationException.class)
+                .hasMessageContaining("Account is not active")
+                .extracting(ex -> ((AuthorizationException) ex).getCode())
+                .isEqualTo("USER_NOT_ACTIVE");
     }
 
     @Test
@@ -159,8 +159,6 @@ class UserAuthServiceTest {
                 .isInstanceOf(ResourceNotFoundException.class)
                 .hasMessageContaining("User not found");
     }
-
-    // --- Activate tests ---
 
     @Test
     @DisplayName("activates user account with a valid token and returns UserResponse")
@@ -229,8 +227,6 @@ class UserAuthServiceTest {
                 .isInstanceOf(BusinessException.class)
                 .hasMessageContaining("expired");
     }
-
-    // --- Freeze / unfreeze tests ---
 
     @Test
     @DisplayName("changes user status to FROZEN when freezeUser is called")

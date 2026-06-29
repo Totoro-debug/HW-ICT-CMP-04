@@ -16,8 +16,11 @@ import java.time.LocalDateTime;
 })
 public class StockReservation extends BaseEntity {
 
-    @Column(name = "order_id", nullable = false)
+    @Column(name = "order_id")
     private Long orderId;
+
+    @Column(name = "reservation_ref", length = 128)
+    private String reservationRef;
 
     @Column(name = "sku_id", nullable = false)
     private Long skuId;
@@ -44,6 +47,14 @@ public class StockReservation extends BaseEntity {
 
     public void setOrderId(Long orderId) {
         this.orderId = orderId;
+    }
+
+    public String getReservationRef() {
+        return reservationRef;
+    }
+
+    public void setReservationRef(String reservationRef) {
+        this.reservationRef = reservationRef;
     }
 
     public Long getSkuId() {

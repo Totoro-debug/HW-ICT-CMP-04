@@ -29,11 +29,16 @@ public class SensitiveWordFilter {
      * @return true if the content contains a sensitive word, false otherwise
      */
     public boolean containsSensitiveWord(String content) {
+        if (content == null || content.isEmpty()) {
+            return false;
+        }
+
         List<SensitiveWord> words = sensitiveWordRepository.findAll();
 
         for (SensitiveWord sw : words) {
-            if (sw.getWord().equals(content)) {
-                log.warn("Sensitive word detected in content: {}", sw.getWord());
+            String word = sw.getWord();
+            if (word != null && !word.isEmpty() && content.contains(word)) {
+                log.warn("Sensitive word detected in content: {}", word);
                 return true;
             }
         }
@@ -48,12 +53,17 @@ public class SensitiveWordFilter {
      * @return the filtered content
      */
     public String filter(String content) {
+        if (content == null || content.isEmpty()) {
+            return content;
+        }
+
         List<SensitiveWord> words = sensitiveWordRepository.findAll();
         String result = content;
 
         for (SensitiveWord sw : words) {
-            if (sw.getWord().equals(result)) {
-                result = result.replace(sw.getWord(), "***");
+            String word = sw.getWord();
+            if (word != null && !word.isEmpty() && result.contains(word)) {
+                result = result.replace(word, "***");
             }
         }
 

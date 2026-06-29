@@ -78,19 +78,29 @@ public class OrderTotalCalculator {
     public BigDecimal calculate(BigDecimal itemTotal, BigDecimal shippingFee,
                                 BigDecimal packagingFee, BigDecimal discountAmount,
                                 BigDecimal pointsDeductionAmount) {
-        BigDecimal payableAmount = MonetaryUtil.add(itemTotal, packagingFee);
-        payableAmount = MonetaryUtil.subtract(payableAmount, discountAmount);
-        payableAmount = MonetaryUtil.subtract(payableAmount, pointsDeductionAmount);
+        BigDecimal safeItemTotal = itemTotal != null ? itemTotal : BigDecimal.ZERO;
+        BigDecimal safeShippingFee = shippingFee != null ? shippingFee : BigDecimal.ZERO;
+        BigDecimal safePackagingFee = packagingFee != null ? packagingFee : BigDecimal.ZERO;
+        BigDecimal safeDiscountAmount = discountAmount != null ? discountAmount : BigDecimal.ZERO;
+        BigDecimal safePointsDeductionAmount = pointsDeductionAmount != null
+                ? pointsDeductionAmount : BigDecimal.ZERO;
+
+        BigDecimal payableAmount = MonetaryUtil.add(safeItemTotal, safeShippingFee);
+        payableAmount = MonetaryUtil.add(payableAmount, safePackagingFee);
+        payableAmount = MonetaryUtil.subtract(payableAmount, safeDiscountAmount);
+        payableAmount = MonetaryUtil.subtract(payableAmount, safePointsDeductionAmount);
 
         // Ensure payable amount is at least the minimum
         if (payableAmount.compareTo(MIN_PAYABLE_AMOUNT) < 0) {
             payableAmount = MIN_PAYABLE_AMOUNT;
         }
 
+        payableAmount = MonetaryUtil.roundToCent(payableAmount);
+
         log.info("Calculated payable: itemTotal={}, shippingFee={}, packagingFee={}, "
                         + "discount={}, pointsDeduction={}, finalPayable={}",
-                itemTotal, shippingFee, packagingFee, discountAmount,
-                pointsDeductionAmount, payableAmount);
+                safeItemTotal, safeShippingFee, safePackagingFee, safeDiscountAmount,
+                safePointsDeductionAmount, payableAmount);
 
         return payableAmount;
     }

@@ -50,6 +50,11 @@ public class PaymentRecord extends BaseEntity {
 
     private LocalDateTime paidAt;
 
+    private LocalDateTime settledAt;
+
+    @Column(length = 64)
+    private String settlementBatchNo;
+
     public PaymentRecord() {
     }
 
@@ -73,4 +78,8 @@ public class PaymentRecord extends BaseEntity {
     public void setCallbackData(String callbackData) { this.callbackData = callbackData; }
     public LocalDateTime getPaidAt() { return paidAt; }
     public void setPaidAt(LocalDateTime paidAt) { this.paidAt = paidAt; }
+    public LocalDateTime getSettledAt() { return settledAt; }
+    public void setSettledAt(LocalDateTime settledAt) { this.settledAt = settledAt; }
+    public String getSettlementBatchNo() { return settlementBatchNo; }
+    public void setSettlementBatchNo(String settlementBatchNo) { this.settlementBatchNo = settlementBatchNo; }
 }

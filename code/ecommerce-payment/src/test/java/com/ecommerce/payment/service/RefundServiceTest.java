@@ -25,6 +25,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -83,19 +84,17 @@ class RefundServiceTest {
     }
 
     @Test
-    @DisplayName("warehouse acceptance can complete refund in separate stage")
-    void testWarehouseAccept_completesRefundWhenExecutionSucceeds() {
-        RefundRecord accepted = refundRecord(2L, "RF002", RefundStatus.WAREHOUSE_ACCEPTED, new BigDecimal("97.00"));
-        RefundRecord completed = refundRecord(2L, "RF002", RefundStatus.COMPLETED, new BigDecimal("97.00"));
+    @DisplayName("warehouse acceptance returns accepted status and triggers finance stage internally")
+    void testWarehouseAccept_returnsAcceptedAndTriggersFinanceStage() {
+        RefundRecord accepted = refundRecord(2L, "RF002", RefundStatus.WAREHOUSE_ACCEPTED, new BigDecimal("98.00"));
 
         when(refundStageService.acceptWarehouse(2L, 999L)).thenReturn(accepted);
-        when(refundStageService.completeRefund(2L)).thenReturn(completed);
 
         RefundResponse response = refundService.warehouseAccept(2L, 999L);
 
-        assertEquals(RefundStatus.COMPLETED, response.getStatus());
+        assertEquals(RefundStatus.WAREHOUSE_ACCEPTED, response.getStatus());
         verify(refundStageService).acceptWarehouse(2L, 999L);
-        verify(refundStageService).completeRefund(2L);
+        verify(refundStageService).executeFinanceRefund(2L);
     }
 
     @Test
@@ -104,8 +103,8 @@ class RefundServiceTest {
         RefundRecord accepted = refundRecord(3L, "RF003", RefundStatus.WAREHOUSE_ACCEPTED, new BigDecimal("88.00"));
 
         when(refundStageService.acceptWarehouse(3L, 1000L)).thenReturn(accepted);
-        when(refundStageService.completeRefund(3L))
-                .thenThrow(new ConflictException("refund gateway temporarily unavailable"));
+        doThrow(new ConflictException("refund gateway temporarily unavailable"))
+                .when(refundStageService).executeFinanceRefund(3L);
 
         RefundResponse response = refundService.warehouseAccept(3L, 1000L);
 

@@ -79,13 +79,13 @@ public class ReviewService {
                     throw new ConflictException("You have already reviewed this order item");
                 });
 
-        // Filter sensitive words
-        if (sensitiveWordFilter.containsSensitiveWord(request.getContent())) {
-            throw new BusinessException("SENSITIVE_CONTENT",
-                    "Your review contains prohibited content");
-        }
-
+        // Filter sensitive words and keep the review in the normal audit flow.
+        boolean containsSensitiveWord = sensitiveWordFilter.containsSensitiveWord(request.getContent());
         String filteredContent = sensitiveWordFilter.filter(request.getContent());
+        if (containsSensitiveWord) {
+            log.info("Sensitive content filtered for review: userId={}, productId={}",
+                    userId, request.getProductId());
+        }
 
         // Build and save review entity
         Review review = new Review();

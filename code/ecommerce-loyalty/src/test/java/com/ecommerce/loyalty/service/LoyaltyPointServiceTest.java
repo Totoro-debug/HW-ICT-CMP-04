@@ -23,6 +23,7 @@ import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -38,11 +39,14 @@ class LoyaltyPointServiceTest {
     @Mock
     private PointsTransactionRepository transactionRepository;
 
+    @Mock
+    private PointsExpireService pointsExpireService;
+
     private LoyaltyPointService service;
 
     @BeforeEach
     void setUp() {
-        service = new LoyaltyPointService(accountRepository, transactionRepository, new MemberBenefitService());
+        service = new LoyaltyPointService(accountRepository, transactionRepository, new MemberBenefitService(), pointsExpireService);
     }
 
     // ======================== calcOrderPoints ========================
@@ -60,8 +64,8 @@ class LoyaltyPointServiceTest {
 
         int result = service.calcOrderPoints(amount, 1L, activityMultiplier);
 
-        // 100 yuan * 100 points/yuan * 1.1 (SILVER multiplier) * 2.0 activity multiplier
-        int expected = 22000;
+        // 100 yuan * 1.1 (SILVER multiplier) * 2.0 activity multiplier
+        int expected = 220;
 
         assertEquals(expected, result,
                 "activityMultiplier=2.0 should double the base order points");
@@ -167,6 +171,43 @@ class LoyaltyPointServiceTest {
         // estimate = min(5000, 10000, 5000) = 5000
         int estimate = service.estimateRedeemPoints(BigDecimal.valueOf(100), 1L);
         assertEquals(5000, estimate, "Estimate should be 5000 (limited by 50% cap and available points)");
+        verify(pointsExpireService).expireForUser(1L);
+    }
+
+    @Test
+    void testEstimateRedeem_expiresUserPointsBeforeEstimate() {
+        LoyaltyAccount account = createAccount(1L, MemberLevel.NORMAL, 1000, 1000);
+        when(accountRepository.findByUserId(1L)).thenReturn(Optional.of(account));
+        doAnswer(invocation -> {
+            account.setAvailablePoints(0);
+            account.setExpiredPoints(1000);
+            account.setTotalPoints(0);
+            return null;
+        }).when(pointsExpireService).expireForUser(1L);
+
+        int estimate = service.estimateRedeemPoints(BigDecimal.valueOf(100), 1L);
+
+        assertEquals(0, estimate, "Expired points should not be available for redemption estimate");
+        verify(pointsExpireService).expireForUser(1L);
+    }
+
+    @Test
+    void testRedeemPoints_expiresUserPointsBeforeDeduction() {
+        LoyaltyAccount account = createAccount(1L, MemberLevel.NORMAL, 1000, 1000);
+        when(accountRepository.findByUserId(1L)).thenReturn(Optional.of(account));
+        doAnswer(invocation -> {
+            account.setAvailablePoints(0);
+            account.setExpiredPoints(1000);
+            account.setTotalPoints(0);
+            return null;
+        }).when(pointsExpireService).expireForUser(1L);
+
+        int redeemed = service.redeemPoints(1L, 1000, BigDecimal.valueOf(100), "ORDER_REDEEM", "REQ-EXPIRED");
+
+        assertEquals(0, redeemed, "Expired points should not be deducted");
+        assertEquals(0, account.getAvailablePoints());
+        assertEquals(1000, account.getExpiredPoints());
+        verify(pointsExpireService).expireForUser(1L);
     }
 
     // ======================== getAvailablePoints / getAccountByUserId ========================
@@ -215,13 +256,13 @@ class LoyaltyPointServiceTest {
     }
 
     @Test
-    void testCalcOrderPoints_usesPreciseBigDecimalMultiplier() {
+    void testCalcOrderPoints_goldMultiplierReturnsDesignValue() {
         LoyaltyAccount account = createAccount(1L, MemberLevel.GOLD, 0, 0);
         when(accountRepository.findByUserId(1L)).thenReturn(Optional.of(account));
 
-        int result = service.calcOrderPoints(new BigDecimal("0.03"), 1L, new BigDecimal("1.1"));
+        int result = service.calcOrderPoints(new BigDecimal("100.00"), 1L, BigDecimal.ONE);
 
-        assertEquals(3, result);
+        assertEquals(120, result);
     }
 
     @Test

@@ -28,6 +28,9 @@ public interface PointsTransactionRepository extends JpaRepository<PointsTransac
 
     List<PointsTransaction> findByTypeAndExpiresAtLessThanEqual(PointsTransactionType type, LocalDateTime expiresAt);
 
+    List<PointsTransaction> findByUserIdAndTypeAndExpiresAtLessThanEqual(
+            Long userId, PointsTransactionType type, LocalDateTime expiresAt);
+
     boolean existsByTypeAndBizTypeAndBizId(PointsTransactionType type, String bizType, String bizId);
 
     boolean existsByUserIdAndTypeAndBizTypeAndBizId(Long userId, PointsTransactionType type, String bizType, String bizId);

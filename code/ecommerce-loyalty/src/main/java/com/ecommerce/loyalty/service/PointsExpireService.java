@@ -43,7 +43,22 @@ public class PointsExpireService {
         LocalDateTime now = SystemClockService.now();
         List<PointsTransaction> expiredEarns = transactionRepository
                 .findByTypeAndExpiresAtLessThanEqual(PointsTransactionType.EARN, now);
+        ExpireResult result = expireEarnTransactions(expiredEarns);
+        log.info("Expired loyalty points: processedEarns={}, expiredPoints={}",
+                result.processedEarns(), result.expiredPoints());
+    }
 
+    @Transactional
+    public void expireForUser(Long userId) {
+        LocalDateTime now = SystemClockService.now();
+        List<PointsTransaction> expiredEarns = transactionRepository
+                .findByUserIdAndTypeAndExpiresAtLessThanEqual(userId, PointsTransactionType.EARN, now);
+        ExpireResult result = expireEarnTransactions(expiredEarns);
+        log.info("Expired loyalty points for userId={}: processedEarns={}, expiredPoints={}",
+                userId, result.processedEarns(), result.expiredPoints());
+    }
+
+    private ExpireResult expireEarnTransactions(List<PointsTransaction> expiredEarns) {
         int processed = 0;
         int totalExpired = 0;
         for (PointsTransaction earnTx : expiredEarns) {
@@ -82,8 +97,7 @@ public class PointsExpireService {
             transactionRepository.save(expireTx);
             processed++;
         }
-
-        log.info("Expired loyalty points: processedEarns={}, expiredPoints={}", processed, totalExpired);
+        return new ExpireResult(processed, totalExpired);
     }
 
     private void markProcessedWithoutBalanceChange(PointsTransaction earnTx, String expireBizId) {
@@ -97,5 +111,8 @@ public class PointsExpireService {
         expireTx.setDescription("Expired points skipped because loyalty account was not found");
         expireTx.setExpiresAt(null);
         transactionRepository.save(expireTx);
+    }
+
+    private record ExpireResult(int processedEarns, int expiredPoints) {
     }
 }

@@ -70,9 +70,9 @@ public class UserAuthService {
 
         if (user.getStatus() != UserStatus.ACTIVE) {
             if (user.getStatus() == UserStatus.FROZEN) {
-                throw new BusinessException("USER_FROZEN", "Account is frozen: " + user.getEmail());
+                throw new AuthorizationException("USER_FROZEN", "Account is frozen: " + user.getEmail());
             }
-            throw new BusinessException("USER_NOT_ACTIVE", "Account is not active: " + user.getEmail());
+            throw new AuthorizationException("USER_NOT_ACTIVE", "Account is not active: " + user.getEmail());
         }
 
         if (!passwordEncoder.matches(request.getPassword(), user.getPasswordHash())) {
@@ -83,7 +83,6 @@ public class UserAuthService {
         userRoleCacheManager.putRoles(user.getId(), roles);
         String token = jwtTokenProvider.generateToken(user.getId(), roles);
 
-        // Record login session
         LoginSession session = new LoginSession();
         session.setUserId(user.getId());
         session.setToken(token);

@@ -5,10 +5,14 @@ import com.ecommerce.common.notification.NotificationChannel;
 import com.ecommerce.common.notification.NotificationRequest;
 import com.ecommerce.user.dto.RegisterRequest;
 import com.ecommerce.user.dto.UserResponse;
+import com.ecommerce.user.entity.EmailActivationToken;
 import com.ecommerce.user.entity.User;
+import com.ecommerce.user.entity.UserProfile;
 import com.ecommerce.user.entity.UserRole;
 import com.ecommerce.user.entity.UserStatus;
 import com.ecommerce.user.event.UserRegistrationNotificationEvent;
+import com.ecommerce.user.repository.EmailActivationTokenRepository;
+import com.ecommerce.user.repository.UserProfileRepository;
 import com.ecommerce.user.repository.UserRepository;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -34,6 +38,12 @@ class UserRegisterServiceTest {
     private UserRepository userRepository;
 
     @Mock
+    private UserProfileRepository userProfileRepository;
+
+    @Mock
+    private EmailActivationTokenRepository emailActivationTokenRepository;
+
+    @Mock
     private BCryptPasswordEncoder passwordEncoder;
 
     @Mock
@@ -51,21 +61,26 @@ class UserRegisterServiceTest {
         return request;
     }
 
-    @Test
-    @DisplayName("registers a new user and returns UserResponse with ACTIVE status")
-    void testRegister_newUser_returnsUserResponse() {
-        RegisterRequest request = validRequest();
+    private void stubSuccessfulRegistration(RegisterRequest request) {
         when(userRepository.existsByEmail(request.getEmail())).thenReturn(false);
         when(userRepository.existsByPhone(request.getPhone())).thenReturn(false);
         when(passwordEncoder.encode(request.getPassword())).thenReturn("$2a$10$hashed");
-
-        ArgumentCaptor<User> userCaptor = ArgumentCaptor.forClass(User.class);
         when(userRepository.save(any(User.class))).thenAnswer(invocation -> {
             User u = invocation.getArgument(0);
             u.setId(1L);
             return u;
         });
+        when(userProfileRepository.save(any(UserProfile.class))).thenAnswer(invocation -> invocation.getArgument(0));
+        when(emailActivationTokenRepository.save(any(EmailActivationToken.class))).thenAnswer(invocation -> invocation.getArgument(0));
+    }
 
+    @Test
+    @DisplayName("registers a new user and returns UserResponse with PENDING_ACTIVATION status")
+    void testRegister_newUser_returnsUserResponse() {
+        RegisterRequest request = validRequest();
+        stubSuccessfulRegistration(request);
+
+        ArgumentCaptor<User> userCaptor = ArgumentCaptor.forClass(User.class);
         UserResponse response = userRegisterService.register(request);
 
         verify(userRepository).save(userCaptor.capture());
@@ -75,12 +90,12 @@ class UserRegisterServiceTest {
         assertThat(response.getEmail()).isEqualTo("newuser@example.com");
         assertThat(response.getPhone()).isEqualTo("13800138000");
         assertThat(response.getNickname()).isEqualTo("NewUser");
-        assertThat(response.getStatus()).isEqualTo(UserStatus.ACTIVE);
+        assertThat(response.getStatus()).isEqualTo(UserStatus.PENDING_ACTIVATION);
         assertThat(response.getRole()).isEqualTo(UserRole.USER);
 
         assertThat(savedUser.getEmail()).isEqualTo("newuser@example.com");
         assertThat(savedUser.getPasswordHash()).isEqualTo("$2a$10$hashed");
-        assertThat(savedUser.getStatus()).isEqualTo(UserStatus.ACTIVE);
+        assertThat(savedUser.getStatus()).isEqualTo(UserStatus.PENDING_ACTIVATION);
         assertThat(savedUser.getRole()).isEqualTo(UserRole.USER);
     }
 
@@ -102,14 +117,15 @@ class UserRegisterServiceTest {
         when(userRepository.existsByEmail(request.getEmail())).thenReturn(false);
         when(userRepository.existsByPhone(request.getPhone())).thenReturn(false);
         when(passwordEncoder.encode(request.getPassword())).thenReturn("$2a$10$encryptedPassword");
-
-        ArgumentCaptor<User> userCaptor = ArgumentCaptor.forClass(User.class);
         when(userRepository.save(any(User.class))).thenAnswer(invocation -> {
             User u = invocation.getArgument(0);
             u.setId(1L);
             return u;
         });
+        when(userProfileRepository.save(any(UserProfile.class))).thenAnswer(invocation -> invocation.getArgument(0));
+        when(emailActivationTokenRepository.save(any(EmailActivationToken.class))).thenAnswer(invocation -> invocation.getArgument(0));
 
+        ArgumentCaptor<User> userCaptor = ArgumentCaptor.forClass(User.class);
         userRegisterService.register(request);
 
         verify(passwordEncoder).encode("securePass123");
@@ -120,22 +136,28 @@ class UserRegisterServiceTest {
     }
 
     @Test
-    @DisplayName("publishes registration notification event after registration")
+    @DisplayName("creates user profile and activation token, then publishes activation notification event")
     void testRegister_registrationNotificationEventPublished() {
         RegisterRequest request = validRequest();
-        when(userRepository.existsByEmail(request.getEmail())).thenReturn(false);
-        when(userRepository.existsByPhone(request.getPhone())).thenReturn(false);
-        when(passwordEncoder.encode(request.getPassword())).thenReturn("$2a$10$hashed");
+        stubSuccessfulRegistration(request);
 
-        when(userRepository.save(any(User.class))).thenAnswer(invocation -> {
-            User u = invocation.getArgument(0);
-            u.setId(1L);
-            u.setEmail(request.getEmail());
-            u.setNickname(request.getNickname());
-            return u;
-        });
+        ArgumentCaptor<UserProfile> profileCaptor = ArgumentCaptor.forClass(UserProfile.class);
+        ArgumentCaptor<EmailActivationToken> tokenCaptor = ArgumentCaptor.forClass(EmailActivationToken.class);
 
         userRegisterService.register(request);
+
+        verify(userProfileRepository).save(profileCaptor.capture());
+        verify(emailActivationTokenRepository).save(tokenCaptor.capture());
+
+        UserProfile savedProfile = profileCaptor.getValue();
+        assertThat(savedProfile.getUserId()).isEqualTo(1L);
+        assertThat(savedProfile.getNickname()).isEqualTo("NewUser");
+
+        EmailActivationToken savedToken = tokenCaptor.getValue();
+        assertThat(savedToken.getUserId()).isEqualTo(1L);
+        assertThat(savedToken.isUsed()).isFalse();
+        assertThat(savedToken.getToken()).isNotBlank();
+        assertThat(savedToken.getExpiresAt()).isNotNull();
 
         ArgumentCaptor<UserRegistrationNotificationEvent> eventCaptor =
                 ArgumentCaptor.forClass(UserRegistrationNotificationEvent.class);
@@ -146,35 +168,33 @@ class UserRegisterServiceTest {
         assertThat(event.getEmail()).isEqualTo("newuser@example.com");
 
         NotificationRequest notification = event.getNotificationRequest();
-        assertThat(notification.getBizType()).isEqualTo("USER_REGISTERED");
+        assertThat(notification.getBizType()).isEqualTo("EMAIL_ACTIVATION");
         assertThat(notification.getBizId()).isEqualTo("1");
         assertThat(notification.getReceiver()).isEqualTo("newuser@example.com");
         assertThat(notification.getChannel()).isEqualTo(NotificationChannel.EMAIL);
-        assertThat(notification.getTemplateCode()).isEqualTo("USER_REGISTERED");
-        assertThat(notification.getIdempotencyKey()).isEqualTo("USER_REGISTERED:1");
-        assertThat(notification.getVariables()).containsEntry("nickname", "NewUser");
+        assertThat(notification.getTemplateCode()).isEqualTo("EMAIL_ACTIVATION");
+        assertThat(notification.getIdempotencyKey()).isEqualTo("EMAIL_ACTIVATION:1");
+        assertThat(notification.getVariables())
+                .containsEntry("nickname", "NewUser")
+                .containsKey("activationToken")
+                .containsKey("activationLink");
+        assertThat(notification.getVariables().get("activationToken")).isEqualTo(savedToken.getToken());
+        assertThat(String.valueOf(notification.getVariables().get("activationLink")))
+                .contains(savedToken.getToken());
     }
 
     @Test
-    @DisplayName("sets user status to ACTIVE (not PENDING_ACTIVATION) on registration")
+    @DisplayName("sets user status to PENDING_ACTIVATION on registration")
     void testRegister_userStatusAfterRegistration() {
         RegisterRequest request = validRequest();
-        when(userRepository.existsByEmail(request.getEmail())).thenReturn(false);
-        when(userRepository.existsByPhone(request.getPhone())).thenReturn(false);
-        when(passwordEncoder.encode(request.getPassword())).thenReturn("$2a$10$hashed");
+        stubSuccessfulRegistration(request);
 
         ArgumentCaptor<User> userCaptor = ArgumentCaptor.forClass(User.class);
-        when(userRepository.save(any(User.class))).thenAnswer(invocation -> {
-            User u = invocation.getArgument(0);
-            u.setId(1L);
-            return u;
-        });
-
         userRegisterService.register(request);
 
         verify(userRepository).save(userCaptor.capture());
         User savedUser = userCaptor.getValue();
-        assertThat(savedUser.getStatus()).isEqualTo(UserStatus.ACTIVE);
-        assertThat(savedUser.getStatus()).isNotEqualTo(UserStatus.PENDING_ACTIVATION);
+        assertThat(savedUser.getStatus()).isEqualTo(UserStatus.PENDING_ACTIVATION);
+        assertThat(savedUser.getStatus()).isNotEqualTo(UserStatus.ACTIVE);
     }
 }

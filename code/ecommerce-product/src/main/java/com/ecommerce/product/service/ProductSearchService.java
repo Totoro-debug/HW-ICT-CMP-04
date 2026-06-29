@@ -3,12 +3,17 @@ package com.ecommerce.product.service;
 import com.ecommerce.common.dto.PageResponse;
 import com.ecommerce.product.dto.ProductListResponse;
 import com.ecommerce.product.dto.ProductSearchRequest;
+import com.ecommerce.product.entity.Category;
 import com.ecommerce.product.entity.ProductSku;
 import com.ecommerce.product.entity.ProductSpu;
+import com.ecommerce.product.entity.ProductSpuTag;
 import com.ecommerce.product.entity.SkuStatus;
+import com.ecommerce.product.repository.CategoryRepository;
 import com.ecommerce.product.repository.ProductSkuRepository;
 import com.ecommerce.product.repository.ProductSpuRepository;
+import com.ecommerce.product.repository.ProductTagRepository;
 import jakarta.persistence.criteria.Predicate;
+import jakarta.persistence.criteria.Subquery;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.data.domain.Page;
@@ -19,6 +24,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.util.ArrayList;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -37,11 +43,17 @@ public class ProductSearchService {
 
     private final ProductSkuRepository skuRepository;
     private final ProductSpuRepository spuRepository;
+    private final CategoryRepository categoryRepository;
+    private final ProductTagRepository productTagRepository;
 
     public ProductSearchService(ProductSkuRepository skuRepository,
-                                ProductSpuRepository spuRepository) {
+                                ProductSpuRepository spuRepository,
+                                CategoryRepository categoryRepository,
+                                ProductTagRepository productTagRepository) {
         this.skuRepository = skuRepository;
         this.spuRepository = spuRepository;
+        this.categoryRepository = categoryRepository;
+        this.productTagRepository = productTagRepository;
     }
 
     /**
@@ -51,11 +63,20 @@ public class ProductSearchService {
      */
     @Transactional(readOnly = true)
     public PageResponse<ProductListResponse> search(ProductSearchRequest request) {
-        log.debug("Product search: keyword={}, categoryId={}, onlyOnShelf={}",
-                request.getKeyword(), request.getCategoryId(), request.isOnlyOnShelf());
+        log.debug("Product search: keyword={}, categoryId={}, brandId={}, tags={}, onlyOnShelf={}",
+                request.getKeyword(), request.getCategoryId(), request.getBrandId(), request.getTags(), request.isOnlyOnShelf());
 
-        // Build status filter. By default public listing/search only returns ON_SHELF products.
-        Specification<ProductSku> spec = buildSpecification(request);
+        Set<Long> categoryIds = resolveCategoryIds(request.getCategoryId());
+        if (request.getCategoryId() != null && categoryIds.isEmpty()) {
+            return PageResponse.of(request.getPage(), request.getSize(), 0, List.of());
+        }
+
+        Set<Long> tagIds = resolveTagIds(request.getTags());
+        if (hasRequestedTags(request) && tagIds.isEmpty()) {
+            return PageResponse.of(request.getPage(), request.getSize(), 0, List.of());
+        }
+
+        Specification<ProductSku> spec = buildSpecification(request, categoryIds, tagIds);
 
         PageRequest pageRequest = PageRequest.of(
                 request.getPage(),
@@ -64,7 +85,6 @@ public class ProductSearchService {
 
         Page<ProductSku> page = skuRepository.findAll(spec, pageRequest);
 
-        // Load SPU data for category and brand filtering
         List<Long> spuIds = page.getContent().stream()
                 .map(ProductSku::getSpuId)
                 .distinct()
@@ -72,35 +92,38 @@ public class ProductSearchService {
         Map<Long, ProductSpu> spuMap = spuRepository.findAllById(spuIds).stream()
                 .collect(Collectors.toMap(ProductSpu::getId, spu -> spu));
 
-        // Filter and convert to response DTOs
         List<ProductListResponse> items = page.getContent().stream()
-                .filter(sku -> matchesCategory(sku, spuMap, request.getCategoryId()))
-                .filter(sku -> matchesBrand(sku, spuMap, request.getBrandId()))
                 .map(sku -> toListResponse(sku, spuMap.get(sku.getSpuId())))
                 .collect(Collectors.toList());
 
         return PageResponse.of(request.getPage(), request.getSize(), page.getTotalElements(), items);
     }
 
-    /**
-     * Builds a JPA Specification for the search criteria that can be expressed on the SKU table.
-     * Category and brand filters are applied in-memory because they require SPU data.
-     */
-    private Specification<ProductSku> buildSpecification(ProductSearchRequest request) {
+    private Specification<ProductSku> buildSpecification(ProductSearchRequest request,
+                                                         Set<Long> categoryIds,
+                                                         Set<Long> tagIds) {
         return (root, query, cb) -> {
             List<Predicate> predicates = new ArrayList<>();
 
-            // When onlyOnShelf is false (DEFAULT), include OFF_SHELF and DRAFT products
             if (request.isOnlyOnShelf()) {
                 predicates.add(cb.equal(root.get("status"), SkuStatus.ON_SHELF));
             } else {
-                // Shows all non-DELETED products
                 predicates.add(cb.notEqual(root.get("status"), SkuStatus.DELETED));
             }
 
             if (request.getKeyword() != null && !request.getKeyword().isBlank()) {
-                predicates.add(cb.like(cb.lower(root.get("name")),
-                        "%" + request.getKeyword().toLowerCase() + "%"));
+                String keyword = "%" + request.getKeyword().trim().toLowerCase() + "%";
+                Predicate skuNameLike = cb.like(cb.lower(root.get("name")), keyword);
+
+                Subquery<Long> spuKeywordSubquery = query.subquery(Long.class);
+                var spuRoot = spuKeywordSubquery.from(ProductSpu.class);
+                Predicate sameSpu = cb.equal(spuRoot.get("id"), root.get("spuId"));
+                Predicate spuNameLike = cb.like(cb.lower(spuRoot.get("name")), keyword);
+                Predicate spuDescriptionLike = cb.like(cb.lower(spuRoot.get("description")), keyword);
+                spuKeywordSubquery.select(spuRoot.get("id"))
+                        .where(cb.and(sameSpu, cb.or(spuNameLike, spuDescriptionLike)));
+
+                predicates.add(cb.or(skuNameLike, cb.exists(spuKeywordSubquery)));
             }
 
             if (request.getMinPrice() != null) {
@@ -111,30 +134,88 @@ public class ProductSearchService {
                 predicates.add(cb.lessThanOrEqualTo(root.get("price"), request.getMaxPrice()));
             }
 
+            if (request.getBrandId() != null) {
+                Subquery<Long> brandSubquery = query.subquery(Long.class);
+                var spuRoot = brandSubquery.from(ProductSpu.class);
+                brandSubquery.select(spuRoot.get("id"))
+                        .where(
+                                cb.equal(spuRoot.get("id"), root.get("spuId")),
+                                cb.equal(spuRoot.get("brandId"), request.getBrandId())
+                        );
+                predicates.add(cb.exists(brandSubquery));
+            }
+
+            if (categoryIds != null && !categoryIds.isEmpty()) {
+                Subquery<Long> categorySubquery = query.subquery(Long.class);
+                var spuRoot = categorySubquery.from(ProductSpu.class);
+                categorySubquery.select(spuRoot.get("id"))
+                        .where(
+                                cb.equal(spuRoot.get("id"), root.get("spuId")),
+                                spuRoot.get("categoryId").in(categoryIds)
+                        );
+                predicates.add(cb.exists(categorySubquery));
+            }
+
+            if (tagIds != null && !tagIds.isEmpty()) {
+                Subquery<Long> tagSubquery = query.subquery(Long.class);
+                var spuTagRoot = tagSubquery.from(ProductSpuTag.class);
+                tagSubquery.select(spuTagRoot.get("spuId"))
+                        .where(
+                                cb.equal(spuTagRoot.get("spuId"), root.get("spuId")),
+                                spuTagRoot.get("tagId").in(tagIds)
+                        );
+                predicates.add(cb.exists(tagSubquery));
+            }
+
             return cb.and(predicates.toArray(new Predicate[0]));
         };
     }
 
-    /**
-     * Checks whether the SKU's SPU belongs to the given category or any of its descendants.
-     */
-    private boolean matchesCategory(ProductSku sku, Map<Long, ProductSpu> spuMap, Long categoryId) {
+    private Set<Long> resolveCategoryIds(Long categoryId) {
         if (categoryId == null) {
-            return true;
+            return null;
         }
-        ProductSpu spu = spuMap.get(sku.getSpuId());
-        return spu != null && categoryId.equals(spu.getCategoryId());
+        return categoryRepository.findById(categoryId)
+                .map(category -> {
+                    Set<Long> categoryIds = new LinkedHashSet<>();
+                    collectCategoryIds(category.getId(), categoryIds);
+                    return categoryIds;
+                })
+                .orElseGet(Set::of);
     }
 
-    /**
-     * Checks whether the SKU's SPU belongs to the given brand.
-     */
-    private boolean matchesBrand(ProductSku sku, Map<Long, ProductSpu> spuMap, Long brandId) {
-        if (brandId == null) {
-            return true;
+    private void collectCategoryIds(Long categoryId, Set<Long> categoryIds) {
+        if (!categoryIds.add(categoryId)) {
+            return;
         }
-        ProductSpu spu = spuMap.get(sku.getSpuId());
-        return spu != null && brandId.equals(spu.getBrandId());
+        for (Category child : categoryRepository.findByParentId(categoryId)) {
+            collectCategoryIds(child.getId(), categoryIds);
+        }
+    }
+
+    private Set<Long> resolveTagIds(List<String> tags) {
+        if (!hasRequestedTags(tags)) {
+            return null;
+        }
+        List<String> normalizedTags = tags.stream()
+                .filter(tag -> tag != null && !tag.isBlank())
+                .map(String::trim)
+                .map(String::toLowerCase)
+                .distinct()
+                .collect(Collectors.toList());
+        if (normalizedTags.isEmpty()) {
+            return null;
+        }
+        return productTagRepository.findIdsByNames(normalizedTags).stream()
+                .collect(Collectors.toCollection(LinkedHashSet::new));
+    }
+
+    private boolean hasRequestedTags(ProductSearchRequest request) {
+        return hasRequestedTags(request.getTags());
+    }
+
+    private boolean hasRequestedTags(List<String> tags) {
+        return tags != null && tags.stream().anyMatch(tag -> tag != null && !tag.isBlank());
     }
 
     private ProductListResponse toListResponse(ProductSku sku, ProductSpu spu) {

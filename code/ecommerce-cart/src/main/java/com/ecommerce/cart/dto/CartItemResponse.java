@@ -12,6 +12,8 @@ public class CartItemResponse {
     private BigDecimal price;
     private Integer quantity;
     private BigDecimal subtotal;
+    private Integer availableStock;
+    private Integer reservedStock;
 
     public CartItemResponse() {
     }
@@ -62,5 +64,21 @@ public class CartItemResponse {
 
     public void setSubtotal(BigDecimal subtotal) {
         this.subtotal = subtotal;
+    }
+
+    public Integer getAvailableStock() {
+        return availableStock;
+    }
+
+    public void setAvailableStock(Integer availableStock) {
+        this.availableStock = availableStock;
+    }
+
+    public Integer getReservedStock() {
+        return reservedStock;
+    }
+
+    public void setReservedStock(Integer reservedStock) {
+        this.reservedStock = reservedStock;
     }
 }

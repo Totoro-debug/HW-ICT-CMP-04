@@ -107,14 +107,8 @@ public class SkuService {
     @Transactional
     public void onShelf(Long skuId) {
         ProductSku sku = findSku(skuId);
-        if (sku.getStatus() == SkuStatus.DELETED) {
-            throw new ValidationException("status", "Cannot put a DELETED SKU on shelf");
-        }
-        SkuStatus beforeStatus = sku.getStatus();
-        sku.setStatus(SkuStatus.ON_SHELF);
-        skuRepository.save(sku);
-        recordAudit("SKU_ON_SHELF", sku, beforeStatus, SkuStatus.ON_SHELF, "SKU put on shelf");
-        productDetailCacheService.evict(skuId);
+        transitionStatus(sku, SkuStatus.DRAFT, SkuStatus.ON_SHELF,
+                "SKU_ON_SHELF", "SKU put on shelf");
         log.info("SKU on shelf: skuId={}, skuCode={}", skuId, sku.getSkuCode());
     }
 
@@ -124,15 +118,40 @@ public class SkuService {
     @Transactional
     public void offShelf(Long skuId) {
         ProductSku sku = findSku(skuId);
-        if (sku.getStatus() == SkuStatus.DELETED) {
-            throw new ValidationException("status", "Cannot take a DELETED SKU off shelf");
-        }
-        SkuStatus beforeStatus = sku.getStatus();
-        sku.setStatus(SkuStatus.OFF_SHELF);
-        skuRepository.save(sku);
-        recordAudit("SKU_OFF_SHELF", sku, beforeStatus, SkuStatus.OFF_SHELF, "SKU taken off shelf");
-        productDetailCacheService.evict(skuId);
+        transitionStatus(sku, SkuStatus.ON_SHELF, SkuStatus.OFF_SHELF,
+                "SKU_OFF_SHELF", "SKU taken off shelf");
         log.info("SKU off shelf: skuId={}, skuCode={}", skuId, sku.getSkuCode());
+    }
+
+    /**
+     * Soft deletes a SKU by moving it to DELETED.
+     */
+    @Transactional
+    public void deleteSku(Long skuId) {
+        ProductSku sku = findSku(skuId);
+        SkuStatus currentStatus = sku.getStatus();
+        if (currentStatus == SkuStatus.DRAFT || currentStatus == SkuStatus.OFF_SHELF) {
+            transitionStatus(sku, currentStatus, SkuStatus.DELETED,
+                    "SKU_DELETE", "SKU marked as deleted");
+            log.info("SKU deleted: skuId={}, skuCode={}", skuId, sku.getSkuCode());
+            return;
+        }
+        throw new ValidationException("status", "Cannot delete SKU from status: " + currentStatus);
+    }
+
+    private void transitionStatus(ProductSku sku,
+                                  SkuStatus expectedStatus,
+                                  SkuStatus targetStatus,
+                                  String operationType,
+                                  String remark) {
+        if (sku.getStatus() != expectedStatus) {
+            throw new ValidationException("status",
+                    "Cannot change SKU status from " + sku.getStatus() + " to " + targetStatus);
+        }
+        sku.setStatus(targetStatus);
+        skuRepository.save(sku);
+        recordAudit(operationType, sku, expectedStatus, targetStatus, remark);
+        productDetailCacheService.evict(sku.getId());
     }
 
     private void validatePrice(String field, BigDecimal amount) {

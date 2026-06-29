@@ -1,6 +1,7 @@
 package com.ecommerce.order.service;
 
 import com.ecommerce.common.event.DomainEventPublisher;
+import com.ecommerce.common.integration.FreightCalculationService;
 import com.ecommerce.common.exception.BusinessException;
 import com.ecommerce.common.exception.OrderValidationException;
 import com.ecommerce.common.exception.ResourceNotFoundException;
@@ -37,6 +38,7 @@ import com.ecommerce.user.query.UserDto;
 import com.ecommerce.user.query.UserQueryService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
@@ -92,6 +94,7 @@ public class OrderService {
     private final OrderRiskChecker riskChecker;
     private final OrderSplitStrategy splitStrategy;
     private final DomainEventPublisher eventPublisher;
+    private FreightCalculationService freightCalculationService;
     private final com.ecommerce.promotion.service.PromotionCalculationService promotionCalculationService;
     private final com.ecommerce.promotion.service.PromotionUsageCommandService promotionUsageCommandService;
 
@@ -129,6 +132,11 @@ public class OrderService {
         this.eventPublisher = eventPublisher;
         this.promotionCalculationService = promotionCalculationService;
         this.promotionUsageCommandService = promotionUsageCommandService;
+    }
+
+    @Autowired(required = false)
+    public void setFreightCalculationService(FreightCalculationService freightCalculationService) {
+        this.freightCalculationService = freightCalculationService;
     }
 
     /**
@@ -190,23 +198,28 @@ public class OrderService {
         // ===== Step 4: Validate calculated amounts =====
         orderValidator.validateAmount(itemTotal);
 
-        // ===== Step 5: Risk check before persistence and inventory reservation =====
-        List<Long> skuIds = orderItems.stream()
-                .map(OrderItem::getSkuId)
-                .collect(Collectors.toList());
-        RiskCheckResult riskResult = riskChecker.check(userId, itemTotal, skuIds);
-        if (riskResult != null && !riskResult.isPassed()) {
-            throw new BusinessException("ORDER_RISK_REJECTED", riskResult.getReason());
-        }
+        List<ReserveItem> reserveItems = buildReserveItems(orderItems, userId, request.getAddressId());
+        String reservationRef = buildReservationRef(userId, request.getExternalOrderNo());
+        inventoryReservationService.reserve(reservationRef, reserveItems);
 
-        // ===== Step 6: Calculate shipping and packaging fees =====
-        BigDecimal shippingFee = totalCalculator.calculateShippingFee(itemTotal);
+        try {
+            // ===== Step 5: Risk check after inventory reservation =====
+            List<Long> skuIds = orderItems.stream()
+                    .map(OrderItem::getSkuId)
+                    .collect(Collectors.toList());
+            RiskCheckResult riskResult = riskChecker.check(userId, itemTotal, skuIds);
+            if (riskResult != null && !riskResult.isPassed()) {
+                throw new BusinessException("ORDER_RISK_REJECTED", riskResult.getReason());
+            }
+
+            // ===== Step 6: Calculate shipping and packaging fees =====
+        BigDecimal shippingFee = calculateShippingFee(userId, request, orderItems, itemTotal);
         BigDecimal packagingFee = totalCalculator.calculatePackagingFee(orderItems.size());
 
-        // ===== Step 6: Calculate promotions and discounts =====
+            // ===== Step 6: Calculate promotions and discounts =====
         BigDecimal discountAmount = calculateDiscounts(userId, request, orderItems, itemTotal);
 
-        // ===== Step 7: Calculate loyalty points deduction =====
+            // ===== Step 7: Calculate loyalty points deduction =====
         BigDecimal pointsDeductionAmount = BigDecimal.ZERO;
         int redeemedPoints = 0;
         if (request.getRedeemPoints() > 0) {
@@ -224,14 +237,14 @@ public class OrderService {
             }
         }
 
-        // ===== Step 8: Calculate final payable amount =====
+            // ===== Step 8: Calculate final payable amount =====
         BigDecimal payableAmount = totalCalculator.calculate(
                 itemTotal, shippingFee, packagingFee, discountAmount, pointsDeductionAmount);
 
         // Validate final payable amount
         orderValidator.validateAmount(payableAmount);
 
-        // ===== Step 9: Create and save the order =====
+            // ===== Step 9: Create and save the order =====
         Order order = new Order();
         order.setOrderNo(generateOrderNo());
         order.setUserId(userId);
@@ -296,11 +309,7 @@ public class OrderService {
         recordEvent(orderId, null, OrderStatus.CREATED, "CREATE",
                 userId.toString(), "Order created");
 
-        // ===== Step 10: Reserve inventory =====
-        List<ReserveItem> reserveItems = orderItems.stream()
-                .map(item -> new ReserveItem(item.getSkuId(), item.getQuantity()))
-                .collect(Collectors.toList());
-        inventoryReservationService.reserve(orderId, reserveItems);
+        inventoryReservationService.bindReservation(reservationRef, orderId);
 
         // ===== Step 11: Publish OrderCreatedEvent =====
         eventPublisher.publish(new OrderCreatedEvent(this, orderId, userId, payableAmount));
@@ -310,6 +319,15 @@ public class OrderService {
 
         // ===== Step 12: Build and return response =====
         return buildCreateResponse(order);
+        } catch (RuntimeException ex) {
+            try {
+                inventoryReservationService.release(reservationRef);
+            } catch (Exception releaseEx) {
+                log.error("Failed to release reservation {} after order creation failure: {}",
+                        reservationRef, releaseEx.getMessage(), releaseEx);
+            }
+            throw ex;
+        }
     }
 
     /**
@@ -418,6 +436,26 @@ public class OrderService {
         return "SO" + datePart + seqPart;
     }
 
+    private BigDecimal calculateShippingFee(Long userId, CreateOrderRequest request,
+                                            List<OrderItem> orderItems, BigDecimal itemTotal) {
+        if (freightCalculationService == null) {
+            return totalCalculator.calculateShippingFee(itemTotal);
+        }
+        String province = null;
+        if (request.getAddressId() != null) {
+            AddressDto address = userQueryService.getDefaultAddress(userId);
+            if (address != null) {
+                province = address.getProvince();
+            }
+        }
+        int itemCount = orderItems.stream()
+                .map(OrderItem::getQuantity)
+                .filter(quantity -> quantity != null)
+                .mapToInt(Integer::intValue)
+                .sum();
+        return freightCalculationService.calculateFreight(itemTotal, province, null, itemCount);
+    }
+
     /**
      * Calculate applicable discounts via the promotion module.
      */
@@ -448,6 +486,24 @@ public class OrderService {
                 ? calcResponse.getTotalDiscount() : BigDecimal.ZERO;
         MoneyValidationUtil.validateDiscountAmount(discountAmount, itemTotal);
         return MonetaryUtil.roundToCent(discountAmount);
+    }
+
+    private List<ReserveItem> buildReserveItems(List<OrderItem> orderItems, Long userId, Long addressId) {
+        String province = null;
+        if (addressId != null) {
+            AddressDto address = userQueryService.getDefaultAddress(userId);
+            if (address != null) {
+                province = address.getProvince();
+            }
+        }
+        String finalProvince = province;
+        return orderItems.stream()
+                .map(item -> new ReserveItem(item.getSkuId(), item.getQuantity(), finalProvince))
+                .collect(Collectors.toList());
+    }
+
+    private String buildReservationRef(Long userId, String externalOrderNo) {
+        return "ORDER:" + userId + ":" + externalOrderNo;
     }
 
     private String toAddressSnapshot(AddressDto address) {

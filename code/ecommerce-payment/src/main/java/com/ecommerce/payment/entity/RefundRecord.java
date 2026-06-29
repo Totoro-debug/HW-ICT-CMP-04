@@ -56,6 +56,11 @@ public class RefundRecord extends BaseEntity {
 
     private LocalDateTime completedAt;
 
+    private LocalDateTime settledAt;
+
+    @Column(length = 64)
+    private String settlementBatchNo;
+
     public RefundRecord() {
     }
 
@@ -83,4 +88,8 @@ public class RefundRecord extends BaseEntity {
     public void setReviewNote(String reviewNote) { this.reviewNote = reviewNote; }
     public LocalDateTime getCompletedAt() { return completedAt; }
     public void setCompletedAt(LocalDateTime completedAt) { this.completedAt = completedAt; }
+    public LocalDateTime getSettledAt() { return settledAt; }
+    public void setSettledAt(LocalDateTime settledAt) { this.settledAt = settledAt; }
+    public String getSettlementBatchNo() { return settlementBatchNo; }
+    public void setSettlementBatchNo(String settlementBatchNo) { this.settlementBatchNo = settlementBatchNo; }
 }

@@ -17,6 +17,9 @@ public class UserProfile extends BaseEntity {
     @Column(name = "user_id", nullable = false, unique = true)
     private Long userId;
 
+    @Column(nullable = false, length = 64)
+    private String nickname;
+
     @Column(length = 512)
     private String avatar;
 
@@ -35,6 +38,14 @@ public class UserProfile extends BaseEntity {
 
     public void setUserId(Long userId) {
         this.userId = userId;
+    }
+
+    public String getNickname() {
+        return nickname;
+    }
+
+    public void setNickname(String nickname) {
+        this.nickname = nickname;
     }
 
     public String getAvatar() {

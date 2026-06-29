@@ -64,10 +64,7 @@ public class BatchOrderService {
                         orderRequest.getExternalOrderNo(), e.getMessage()));
                 failureCount++;
 
-                if (!request.isContinueOnError()) {
-                    log.info("Batch stopped after first failure because continueOnError=false");
-                    break;
-                }
+                log.info("Batch order failure recorded and processing continues regardless of continueOnError flag");
             }
         }
 

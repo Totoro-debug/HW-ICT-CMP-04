@@ -36,7 +36,7 @@ class GlobalExceptionHandlerTest {
     }
 
     @Test
-    @DisplayName("handles formerly forbidden business error codes with HTTP 400")
+    @DisplayName("handles generic business forbidden-like codes with HTTP 400")
     void testBusinessException_forbiddenCodes_return400() {
         assertBusinessExceptionStatus("USER_NOT_ACTIVE", HttpStatus.BAD_REQUEST);
         assertBusinessExceptionStatus("USER_FROZEN", HttpStatus.BAD_REQUEST);
@@ -102,6 +102,30 @@ class GlobalExceptionHandlerTest {
     }
 
     @Test
+    @DisplayName("handles AuthorizationException with USER_FROZEN and returns HTTP 403")
+    void testAuthorizationException_userFrozen_returns403() {
+        AuthorizationException ex = new AuthorizationException("USER_FROZEN", "Account is frozen");
+
+        ResponseEntity<ApiError> response = handler.handleAuthorization(ex);
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.FORBIDDEN);
+        assertThat(response.getBody()).isNotNull();
+        assertThat(response.getBody().getCode()).isEqualTo("USER_FROZEN");
+    }
+
+    @Test
+    @DisplayName("handles AuthorizationException with USER_NOT_ACTIVE and returns HTTP 403")
+    void testAuthorizationException_userNotActive_returns403() {
+        AuthorizationException ex = new AuthorizationException("USER_NOT_ACTIVE", "Account is not active");
+
+        ResponseEntity<ApiError> response = handler.handleAuthorization(ex);
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.FORBIDDEN);
+        assertThat(response.getBody()).isNotNull();
+        assertThat(response.getBody().getCode()).isEqualTo("USER_NOT_ACTIVE");
+    }
+
+    @Test
     @DisplayName("handles RateLimitException with HTTP 429")
     void testRateLimitException_returns429() {
         RateLimitException ex = new RateLimitException("Too many requests for key: user123");
@@ -118,7 +142,6 @@ class GlobalExceptionHandlerTest {
     void testOrderValidationException_extendsBusinessException() {
         OrderValidationException ex = new OrderValidationException("Amount must be positive");
 
-        // Verify it is a BusinessException
         assertThat(ex).isInstanceOf(BusinessException.class);
 
         ResponseEntity<ApiError> response = handler.handleOrderValidation(ex);
@@ -150,7 +173,6 @@ class GlobalExceptionHandlerTest {
         ResponseEntity<ApiError> response = handler.handleGeneric(ex);
 
         String traceId = response.getBody().getTraceId();
-        // Pattern: 8 hex chars + dash + timestamp digits
         assertThat(traceId).matches("[0-9a-f]{8}-\\d{13}");
     }
 

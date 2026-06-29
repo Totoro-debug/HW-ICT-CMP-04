@@ -1,6 +1,7 @@
 package com.ecommerce.payment.service;
 
 import com.ecommerce.common.event.DomainEventPublisher;
+import com.ecommerce.common.event.OrderPaidEvent;
 import com.ecommerce.common.exception.ResourceNotFoundException;
 import com.ecommerce.order.query.OrderDto;
 import com.ecommerce.order.query.OrderQueryService;
@@ -94,12 +95,17 @@ public class PaymentService {
                 payment.getPaymentNo(), payment.getOrderId());
 
         OrderDto order = orderQueryService.getOrder(payment.getOrderId());
-        PaymentSucceededEvent event = new PaymentSucceededEvent(
+        PaymentSucceededEvent paymentSucceededEvent = new PaymentSucceededEvent(
                 this, payment.getPaymentNo(), payment.getOrderId(),
                 order.getUserId(), payment.getPaidAmount());
-        eventPublisher.publish(event);
+        eventPublisher.publish(paymentSucceededEvent);
 
-        log.info("Payment confirmed event published: paymentNo={}", payment.getPaymentNo());
+        OrderPaidEvent orderPaidEvent = new OrderPaidEvent(
+                this, payment.getOrderId(), order.getUserId(),
+                payment.getPaymentNo(), payment.getPaidAmount());
+        eventPublisher.publish(orderPaidEvent);
+
+        log.info("Payment confirmed events published: paymentNo={}", payment.getPaymentNo());
     }
 
     // ---- Utility ----

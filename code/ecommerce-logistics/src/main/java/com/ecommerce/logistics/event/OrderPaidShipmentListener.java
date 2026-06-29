@@ -4,9 +4,8 @@ import com.ecommerce.common.event.FailedEventRecord;
 import com.ecommerce.common.event.FailedEventRecordRepository;
 import com.ecommerce.common.event.FailedEventReplayHandler;
 import com.ecommerce.common.event.FailedEventStatus;
+import com.ecommerce.common.event.OrderPaidEvent;
 import com.ecommerce.logistics.service.LogisticsCommandService;
-import com.ecommerce.order.event.OrderPaidEvent;
-import com.ecommerce.payment.event.PaymentSucceededEvent;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.scheduling.annotation.Async;
@@ -38,12 +37,6 @@ public class OrderPaidShipmentListener implements FailedEventReplayHandler {
     @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
     public void onOrderPaid(OrderPaidEvent event) {
         createShipmentForPaidOrder(event.getOrderId(), "OrderPaidEvent");
-    }
-
-    @Async
-    @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
-    public void onPaymentSucceeded(PaymentSucceededEvent event) {
-        createShipmentForPaidOrder(event.getOrderId(), "PaymentSucceededEvent");
     }
 
     private void createShipmentForPaidOrder(Long orderId, String eventType) {

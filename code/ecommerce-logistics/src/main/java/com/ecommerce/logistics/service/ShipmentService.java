@@ -290,18 +290,18 @@ public class ShipmentService {
 
         recordTracking(shipmentId, newStatus.name(), location, description, "CARRIER");
 
+        try {
+            orderLogisticsStatusUpdater.updateLogisticsStatus(
+                    shipment.getOrderId(), newStatus.name());
+        } catch (Exception e) {
+            log.warn("Failed to update order logistics status: {}", e.getMessage());
+        }
+
         if (newStatus == ShipmentStatus.DELIVERED) {
             eventPublisher.publishEvent(new ShipmentDeliveredEvent(this,
                     shipment.getId(), shipment.getOrderId(), shipment.getUserId(), shipment.getDeliveredAt()));
             log.info("ShipmentDeliveredEvent published for shipmentId={}, orderId={}",
                     shipment.getId(), shipment.getOrderId());
-        } else {
-            try {
-                orderLogisticsStatusUpdater.updateLogisticsStatus(
-                        shipment.getOrderId(), newStatus.name());
-            } catch (Exception e) {
-                log.warn("Failed to update order logistics status: {}", e.getMessage());
-            }
         }
 
         log.info("Shipment {} status updated to {}", shipmentId, newStatus);

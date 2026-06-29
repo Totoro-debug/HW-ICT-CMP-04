@@ -85,6 +85,28 @@ class PointsExpireServiceTest {
         verify(transactionRepository, never()).save(any(PointsTransaction.class));
     }
 
+    @Test
+    void testExpireForUser_onlyLoadsUserExpiredEarns() {
+        PointsTransaction earn = earnTransaction(12L, 2L, 300);
+        LoyaltyAccount account = account(2L, 800);
+
+        when(transactionRepository.findByUserIdAndTypeAndExpiresAtLessThanEqual(
+                eq(2L), eq(PointsTransactionType.EARN), any(LocalDateTime.class)))
+                .thenReturn(List.of(earn));
+        when(transactionRepository.existsByTypeAndBizTypeAndBizId(PointsTransactionType.EXPIRE, "POINTS_EXPIRE", "12"))
+                .thenReturn(false);
+        when(accountRepository.findByUserId(2L)).thenReturn(Optional.of(account));
+
+        pointsExpireService.expireForUser(2L);
+
+        assertEquals(500, account.getAvailablePoints());
+        assertEquals(300, account.getExpiredPoints());
+        ArgumentCaptor<PointsTransaction> txCaptor = ArgumentCaptor.forClass(PointsTransaction.class);
+        verify(transactionRepository).save(txCaptor.capture());
+        assertEquals(-300, txCaptor.getValue().getAmount());
+        assertEquals("12", txCaptor.getValue().getBizId());
+    }
+
     private PointsTransaction earnTransaction(Long id, Long userId, int amount) {
         PointsTransaction tx = new PointsTransaction();
         tx.setId(id);

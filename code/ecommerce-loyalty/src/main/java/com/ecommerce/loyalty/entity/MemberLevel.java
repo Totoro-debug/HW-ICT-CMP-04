@@ -10,7 +10,7 @@ public enum MemberLevel {
 
     NORMAL("1.0"),
     SILVER("1.1"),
-    GOLD("1.1"),
+    GOLD("1.2"),
     PLATINUM("1.5");
 
     private final BigDecimal multiplier;

@@ -13,6 +13,7 @@ import com.ecommerce.payment.repository.PaymentRecordRepository;
 import com.ecommerce.payment.repository.RefundRecordRepository;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
@@ -63,13 +64,14 @@ public class RefundStageService {
         return saved;
     }
 
+    @Async
     @Transactional(propagation = Propagation.REQUIRES_NEW)
-    public RefundRecord completeRefund(Long refundId) {
+    public void executeFinanceRefund(Long refundId) {
         RefundRecord refund = refundRecordRepository.findById(refundId)
                 .orElseThrow(() -> new ResourceNotFoundException("RefundRecord", refundId));
 
         if (refund.getStatus() == RefundStatus.COMPLETED) {
-            return refund;
+            return;
         }
         if (refund.getStatus() != RefundStatus.WAREHOUSE_ACCEPTED) {
             throw new ConflictException("Refund is not ready for completion: " + refund.getStatus());
@@ -96,6 +98,5 @@ public class RefundStageService {
         eventPublisher.publish(event);
 
         log.info("Refund completed: refundNo={}, amount={}", savedRefund.getRefundNo(), savedRefund.getRefundAmount());
-        return savedRefund;
     }
 }

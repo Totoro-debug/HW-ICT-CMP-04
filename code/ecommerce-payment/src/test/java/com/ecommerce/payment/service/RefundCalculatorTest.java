@@ -29,15 +29,15 @@ class RefundCalculatorTest {
     void testCalculate_standardRefund_appliesFee() {
         BigDecimal result = calculator.calculate(new BigDecimal("100.005"));
 
-        assertEquals(new BigDecimal("97.00"), result);
+        assertEquals(new BigDecimal("98.00"), result);
     }
 
     @Test
-    @DisplayName("large amount refund reflects both fee and fixed deduction")
-    void testCalculate_largeAmount_reflectsBothFeeAndDeduction() {
+    @DisplayName("large amount refund only applies configured fee rate")
+    void testCalculate_largeAmount_appliesOnlyFeeRate() {
         BigDecimal result = calculator.calculate(new BigDecimal("1000.00"));
 
-        assertEquals(new BigDecimal("979.00"), result);
+        assertEquals(new BigDecimal("980.00"), result);
     }
 
     @Test
@@ -45,12 +45,6 @@ class RefundCalculatorTest {
     void testCalculate_nonPositivePaidAmount_rejected() {
         assertThrows(OrderValidationException.class, () -> calculator.calculate(BigDecimal.ZERO));
         assertThrows(OrderValidationException.class, () -> calculator.calculate(new BigDecimal("-1.00")));
-    }
-
-    @Test
-    @DisplayName("refund amount must be greater than 0")
-    void testCalculate_nonPositiveRefund_rejected() {
-        assertThrows(OrderValidationException.class, () -> calculator.calculate(new BigDecimal("1.00")));
     }
 
     @Test

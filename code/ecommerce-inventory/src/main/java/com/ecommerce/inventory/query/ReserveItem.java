@@ -8,13 +8,19 @@ public class ReserveItem {
 
     private Long skuId;
     private int quantity;
+    private String province;
 
     public ReserveItem() {
     }
 
     public ReserveItem(Long skuId, int quantity) {
+        this(skuId, quantity, null);
+    }
+
+    public ReserveItem(Long skuId, int quantity, String province) {
         this.skuId = skuId;
         this.quantity = quantity;
+        this.province = province;
     }
 
     public Long getSkuId() {
@@ -31,5 +37,13 @@ public class ReserveItem {
 
     public void setQuantity(int quantity) {
         this.quantity = quantity;
+    }
+
+    public String getProvince() {
+        return province;
+    }
+
+    public void setProvince(String province) {
+        this.province = province;
     }
 }

@@ -3,15 +3,18 @@ package com.ecommerce.product.service;
 import com.ecommerce.common.exception.BusinessException;
 import com.ecommerce.common.exception.ResourceNotFoundException;
 import com.ecommerce.product.entity.ProductSku;
+import com.ecommerce.product.entity.ProductSpu;
 import com.ecommerce.product.entity.SkuStatus;
 import com.ecommerce.product.query.ProductQueryService;
 import com.ecommerce.product.query.ProductSnapshotDto;
 import com.ecommerce.product.query.SkuDto;
 import com.ecommerce.product.repository.ProductSkuRepository;
+import com.ecommerce.product.repository.ProductSpuRepository;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -19,6 +22,8 @@ import java.util.Collection;
 import java.util.Collections;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
+import java.util.Optional;
 import java.util.stream.Collectors;
 
 /**
@@ -34,11 +39,20 @@ public class ProductQueryServiceImpl implements ProductQueryService {
     private static final Logger log = LoggerFactory.getLogger(ProductQueryServiceImpl.class);
 
     private final ProductSkuRepository skuRepository;
+    private final ProductSpuRepository spuRepository;
     private final ObjectMapper objectMapper;
 
-    public ProductQueryServiceImpl(ProductSkuRepository skuRepository, ObjectMapper objectMapper) {
+    @Autowired
+    public ProductQueryServiceImpl(ProductSkuRepository skuRepository,
+                                   ProductSpuRepository spuRepository,
+                                   ObjectMapper objectMapper) {
         this.skuRepository = skuRepository;
+        this.spuRepository = spuRepository;
         this.objectMapper = objectMapper;
+    }
+
+    public ProductQueryServiceImpl(ProductSkuRepository skuRepository, ObjectMapper objectMapper) {
+        this(skuRepository, null, objectMapper);
     }
 
     @Override
@@ -73,6 +87,23 @@ public class ProductQueryServiceImpl implements ProductQueryService {
         }
         return skuRepository.findByIdIn(skuIds).stream()
                 .map(this::toSkuDto)
+                .collect(Collectors.toList());
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public List<Long> getCategoryIdsBySkuIds(Collection<Long> skuIds) {
+        if (skuIds == null || skuIds.isEmpty() || spuRepository == null) {
+            return Collections.emptyList();
+        }
+        return skuRepository.findByIdIn(skuIds).stream()
+                .map(ProductSku::getSpuId)
+                .map(spuRepository::findById)
+                .filter(Optional::isPresent)
+                .map(Optional::get)
+                .map(ProductSpu::getCategoryId)
+                .filter(Objects::nonNull)
+                .distinct()
                 .collect(Collectors.toList());
     }
 

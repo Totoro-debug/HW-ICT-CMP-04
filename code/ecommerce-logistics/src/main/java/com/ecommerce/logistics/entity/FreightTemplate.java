@@ -50,6 +50,13 @@ public class FreightTemplate extends BaseEntity {
     @Column(name = "weight_rules", columnDefinition = "TEXT")
     private String weightRules;
 
+    /**
+     * JSON array of item-count-based rules.
+     * Format: [{"maxItemCount":3,"freight":8.00},{"maxItemCount":10,"freight":15.00},...]
+     */
+    @Column(name = "item_count_rules", columnDefinition = "TEXT")
+    private String itemCountRules;
+
     public FreightTemplate() {
     }
 
@@ -91,5 +98,13 @@ public class FreightTemplate extends BaseEntity {
 
     public void setWeightRules(String weightRules) {
         this.weightRules = weightRules;
+    }
+
+    public String getItemCountRules() {
+        return itemCountRules;
+    }
+
+    public void setItemCountRules(String itemCountRules) {
+        this.itemCountRules = itemCountRules;
     }
 }

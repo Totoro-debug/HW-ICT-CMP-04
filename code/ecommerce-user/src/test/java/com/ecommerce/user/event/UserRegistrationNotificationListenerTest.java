@@ -24,7 +24,7 @@ import static org.mockito.Mockito.when;
 class UserRegistrationNotificationListenerTest {
 
     @Test
-    @DisplayName("sends registration notification after event")
+    @DisplayName("sends activation notification after event")
     void testOnUserRegistrationNotification_sendsNotification() {
         LocalNotificationService notificationService = mock(LocalNotificationService.class);
         FailedEventRecordRepository failedEventRecordRepository = mock(FailedEventRecordRepository.class);
@@ -59,7 +59,8 @@ class UserRegistrationNotificationListenerTest {
         verify(failedEventRecordRepository).save(captor.capture());
         FailedEventRecord record = captor.getValue();
         assertThat(record.getEventType()).isEqualTo("UserRegistrationNotificationEvent");
-        assertThat(record.getEventPayload()).contains("\"userId\":1", "\"email\":\"newuser@example.com\"");
+        assertThat(record.getEventPayload())
+                .contains("\"userId\":1", "\"email\":\"newuser@example.com\"", "\"templateCode\":\"EMAIL_ACTIVATION\"");
         assertThat(record.getErrorMessage()).isEqualTo("mail unavailable");
         assertThat(record.getLastError()).isEqualTo("mail unavailable");
         assertThat(record.getOccurredAt()).isNotNull();
@@ -69,14 +70,19 @@ class UserRegistrationNotificationListenerTest {
     }
 
     private NotificationRequest notificationRequest() {
-        return NotificationRequest.builder()
-                .bizType("USER_REGISTERED")
-                .bizId("1")
-                .receiver("newuser@example.com")
-                .channel(NotificationChannel.EMAIL)
-                .templateCode("USER_REGISTERED")
-                .variables(Map.of("userId", 1L, "email", "newuser@example.com", "nickname", "NewUser"))
-                .idempotencyKey("USER_REGISTERED:1")
-                .build();
+        NotificationRequest request = new NotificationRequest();
+        request.setBizType("EMAIL_ACTIVATION");
+        request.setBizId("1");
+        request.setReceiver("newuser@example.com");
+        request.setChannel(NotificationChannel.EMAIL);
+        request.setTemplateCode("EMAIL_ACTIVATION");
+        request.setVariables(Map.of(
+                "userId", 1L,
+                "email", "newuser@example.com",
+                "nickname", "NewUser",
+                "activationToken", "token-123",
+                "activationLink", "/api/v1/users/activate?token=token-123"));
+        request.setIdempotencyKey("EMAIL_ACTIVATION:1");
+        return request;
     }
 }

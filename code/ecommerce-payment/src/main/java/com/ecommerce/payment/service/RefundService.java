@@ -139,20 +139,19 @@ public class RefundService {
     }
 
     /**
-     * Warehouse accepts returned goods and then triggers refund execution in a separate transaction.
+     * Warehouse accepts returned goods; financial refund is an internal follow-up stage.
      */
     public RefundResponse warehouseAccept(Long refundId, Long acceptorId) {
         log.info("Warehouse accepting refund: refundId={}, acceptorId={}", refundId, acceptorId);
 
         RefundRecord acceptedRefund = refundStageService.acceptWarehouse(refundId, acceptorId);
         try {
-            RefundRecord completedRefund = refundStageService.completeRefund(refundId);
-            return toRefundResponse(completedRefund);
+            refundStageService.executeFinanceRefund(refundId);
         } catch (Exception ex) {
-            log.error("Refund execution failed after warehouse acceptance, keeping acceptance committed: refundId={}, error={}",
+            log.error("Financial refund failed after warehouse acceptance, keeping acceptance committed: refundId={}, error={}",
                     refundId, ex.getMessage(), ex);
-            return toRefundResponse(acceptedRefund);
         }
+        return toRefundResponse(acceptedRefund);
     }
 
     /**

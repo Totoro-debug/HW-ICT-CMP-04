@@ -7,8 +7,8 @@ import com.ecommerce.common.test.RuntimeConfigRegistry;
 import com.ecommerce.promotion.dto.PromotionCalculateRequest;
 import com.ecommerce.promotion.dto.PromotionCalculateResponse;
 import com.ecommerce.promotion.entity.CouponTemplate;
+import com.ecommerce.promotion.entity.SeckillActivity;
 import com.ecommerce.promotion.entity.UserCoupon;
-import com.ecommerce.promotion.repository.CouponTemplateRepository;
 import com.ecommerce.promotion.repository.UserCouponRepository;
 import org.springframework.stereotype.Service;
 
@@ -27,18 +27,18 @@ public class PromotionCalculationServiceImpl implements PromotionCalculationServ
     private final CouponService couponService;
     private final CouponValidator couponValidator;
     private final UserCouponRepository userCouponRepository;
-    private final CouponTemplateRepository couponTemplateRepository;
+    private final SeckillService seckillService;
 
     public PromotionCalculationServiceImpl(FullReductionService fullReductionService,
                                            CouponService couponService,
                                            CouponValidator couponValidator,
                                            UserCouponRepository userCouponRepository,
-                                           CouponTemplateRepository couponTemplateRepository) {
+                                           SeckillService seckillService) {
         this.fullReductionService = fullReductionService;
         this.couponService = couponService;
         this.couponValidator = couponValidator;
         this.userCouponRepository = userCouponRepository;
-        this.couponTemplateRepository = couponTemplateRepository;
+        this.seckillService = seckillService;
     }
 
     @Override
@@ -67,16 +67,17 @@ public class PromotionCalculationServiceImpl implements PromotionCalculationServ
     @Override
     public PromotionCalculateResponse calculate(PromotionCalculateRequest request) {
         BigDecimal itemTotal = computeItemTotal(request.getItems());
+        BigDecimal fullReductionEligibleTotal = computeFullReductionEligibleTotal(request.getItems());
 
         StackingContext context = new StackingContext(itemTotal);
 
-        context.applyMemberDiscount(calculateMemberDiscount(request.getUserId(), context.currentAmount()));
-        context.applyFullReduction(fullReductionService.calculateBestReduction(context.currentAmount())
+        context.applyFullReduction(fullReductionService.calculateBestReduction(fullReductionEligibleTotal)
                 .orElse(BigDecimal.ZERO));
-        context.applyTierPrice(calculateTierPriceDiscount(request, context.currentAmount()));
         CouponApplicationResult couponResult = calculateCouponDiscount(request.getUserId(),
-                request.getCouponIds(), context.currentAmount());
+                request.getCouponIds(), request.getItems(), context.currentAmount());
         context.applyCoupon(couponResult.discount());
+        context.applyMemberDiscount(calculateMemberDiscount(request.getUserId(), context.currentAmount()));
+        context.applyTierPrice(calculateTierPriceDiscount(request, context.currentAmount()));
 
         PromotionCalculateResponse response = new PromotionCalculateResponse();
         BigDecimal finalAmount = MonetaryUtil.roundToCent(context.currentAmount());
@@ -103,11 +104,32 @@ public class PromotionCalculationServiceImpl implements PromotionCalculationServ
         return total;
     }
 
+    private BigDecimal computeFullReductionEligibleTotal(List<PromotionCalculateRequest.CalculateItem> items) {
+        BigDecimal total = BigDecimal.ZERO;
+        for (PromotionCalculateRequest.CalculateItem item : items) {
+            if (item == null || isActiveSeckillPriceItem(item)) {
+                continue;
+            }
+            BigDecimal lineTotal = MonetaryUtil.multiply(item.getPrice(), BigDecimal.valueOf(item.getQuantity()));
+            total = MonetaryUtil.add(total, lineTotal);
+        }
+        return total;
+    }
+
+    private boolean isActiveSeckillPriceItem(PromotionCalculateRequest.CalculateItem item) {
+        try {
+            SeckillActivity activity = seckillService.validateSeckill(item.getSkuId());
+            return activity.getSeckillPrice() != null
+                    && item.getPrice() != null
+                    && MonetaryUtil.roundToCent(activity.getSeckillPrice())
+                    .compareTo(MonetaryUtil.roundToCent(item.getPrice())) == 0;
+        } catch (RuntimeException ex) {
+            return false;
+        }
+    }
+
     /**
      * Calculate member-level discount.
-     * In a real implementation, this would look up the user's member level
-     * and apply the corresponding discount rate.
-     * For now, returns a fixed 5% for demonstration.
      */
     private BigDecimal calculateMemberDiscount(Long userId, BigDecimal amount) {
         if (userId == null || amount == null
@@ -120,22 +142,23 @@ public class PromotionCalculationServiceImpl implements PromotionCalculationServ
         return MonetaryUtil.subtract(amount, afterDiscount);
     }
 
-    /**
-     * Internal tier-price mount point. There is currently no persisted rule source
-     * and the frozen API exposes no tier-price fields, so this step is a no-op
-     * extension point while keeping the calculation pipeline explicit.
-     */
     private BigDecimal calculateTierPriceDiscount(PromotionCalculateRequest request,
                                                   BigDecimal currentAmount) {
         return BigDecimal.ZERO;
     }
 
-    private CouponApplicationResult calculateCouponDiscount(Long userId, List<Long> couponIds,
+    private CouponApplicationResult calculateCouponDiscount(Long userId,
+                                                            List<Long> couponIds,
+                                                            List<PromotionCalculateRequest.CalculateItem> items,
                                                             BigDecimal currentAmount) {
         if (userId == null || couponIds == null || couponIds.isEmpty()
                 || currentAmount == null || currentAmount.compareTo(BigDecimal.ZERO) <= 0) {
             return CouponApplicationResult.empty();
         }
+
+        List<Long> skuIds = items == null ? List.of() : items.stream()
+                .map(PromotionCalculateRequest.CalculateItem::getSkuId)
+                .toList();
 
         BigDecimal bestDiscount = BigDecimal.ZERO;
         PromotionCalculateResponse.ApplicableCoupon bestCoupon = null;
@@ -146,19 +169,9 @@ public class PromotionCalculationServiceImpl implements PromotionCalculationServ
                 continue;
             }
             UserCoupon userCoupon = userCouponOpt.get();
-            if (!userId.equals(userCoupon.getUserId())) {
-                continue;
-            }
 
-            couponValidator.validate(userCoupon);
+            CouponTemplate template = couponValidator.validate(userCoupon, userId, currentAmount, skuIds);
 
-            Optional<CouponTemplate> templateOpt =
-                    couponTemplateRepository.findById(userCoupon.getCouponTemplateId());
-            if (!templateOpt.isPresent()) {
-                continue;
-            }
-
-            CouponTemplate template = templateOpt.get();
             BigDecimal discount = couponService.calculateDiscount(currentAmount, template);
             BigDecimal maxDiscount = currentAmount.subtract(MoneyValidationUtil.MIN_PAYABLE_AMOUNT);
             if (maxDiscount.compareTo(BigDecimal.ZERO) <= 0) {
@@ -191,9 +204,7 @@ public class PromotionCalculationServiceImpl implements PromotionCalculationServ
     }
 
     /**
-     * Centralized stacking model: member discount -> full reduction -> tier price
-     * extension point -> best single coupon. Each step is capped by the remaining
-     * amount so discounts cannot drive payable amount below zero.
+     * Centralized stacking model: full reduction -> coupon -> member discount -> tier price.
      */
     private static class StackingContext {
         private static final BigDecimal MIN_PAYABLE = MoneyValidationUtil.MIN_PAYABLE_AMOUNT;

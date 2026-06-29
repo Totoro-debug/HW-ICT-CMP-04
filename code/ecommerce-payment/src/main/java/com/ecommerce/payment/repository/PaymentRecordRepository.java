@@ -22,5 +22,8 @@ public interface PaymentRecordRepository extends JpaRepository<PaymentRecord, Lo
 
     List<PaymentRecord> findByStatusAndPaidAtBetween(PaymentStatus status, LocalDateTime start, LocalDateTime end);
 
+    List<PaymentRecord> findByStatusAndPaidAtBetweenAndSettledAtIsNull(
+            PaymentStatus status, LocalDateTime start, LocalDateTime end);
+
     List<PaymentRecord> findByPaidAtBetween(LocalDateTime start, LocalDateTime end);
 }

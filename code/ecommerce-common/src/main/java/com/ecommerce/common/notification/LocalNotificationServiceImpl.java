@@ -27,7 +27,6 @@ public class LocalNotificationServiceImpl implements LocalNotificationService {
 
     private static final Logger log = LoggerFactory.getLogger(LocalNotificationServiceImpl.class);
 
-    // Test observation: records every notification sent (not idempotency-skipped)
     private static final List<NotificationRecord> sentRecords =
             Collections.synchronizedList(new ArrayList<>());
 
@@ -63,7 +62,43 @@ public class LocalNotificationServiceImpl implements LocalNotificationService {
             return;
         }
 
-        // Record for test observation
+        log.info("Sending notification: bizType={}, bizId={}, channel={}, template={}",
+                request.getBizType(), request.getBizId(), request.getChannel(), request.getTemplateCode());
+
+        try {
+            if (FaultInjectionRegistry.isActive("notification-send-failure")) {
+                throw new RuntimeException("Fault injected: notification-send-failure");
+            }
+
+            String renderedContent = renderTemplate(request.getTemplateCode(), request.getVariablesOrDefault());
+            dispatch(request, renderedContent);
+
+            recordSuccess(request);
+            log.info("Notification sent successfully: bizType={}, bizId={}, channel={}",
+                    request.getBizType(), request.getBizId(), request.getChannel());
+        } catch (Exception e) {
+            log.error("Failed to send notification: bizType={}, bizId={}, channel={}, error={}",
+                    request.getBizType(), request.getBizId(), request.getChannel(), e.getMessage(), e);
+            recordFailureSafely(request, e);
+        }
+    }
+
+    private void dispatch(NotificationRequest request, String renderedContent) {
+        NotificationChannel channel = request.getChannel();
+        if (channel == null) {
+            throw new IllegalArgumentException("Notification channel must not be null");
+        }
+        switch (channel) {
+            case EMAIL -> mockMailSender.sendEmail(request.getReceiver(),
+                    "[" + request.getBizType() + "] Notification",
+                    renderedContent);
+            case SMS -> mockSmsSender.sendSms(request.getReceiver(), renderedContent);
+            case IN_APP -> log.info("In-app notification sent to {}: {}", request.getReceiver(), renderedContent);
+            default -> throw new IllegalArgumentException("Unknown notification channel: " + channel);
+        }
+    }
+
+    private void recordSuccess(NotificationRequest request) {
         sentRecords.add(new NotificationRecord(
                 request.getBizType(),
                 request.getBizId(),
@@ -73,37 +108,7 @@ public class LocalNotificationServiceImpl implements LocalNotificationService {
                 request.getIdempotencyKey(),
                 Instant.now()));
 
-        log.info("Sending notification: bizType={}, bizId={}, channel={}, template={}",
-                request.getBizType(), request.getBizId(), request.getChannel(), request.getTemplateCode());
-
         try {
-            // Fault injection: simulate notification send failure inside the normal failure handling scope.
-            if (FaultInjectionRegistry.isActive("notification-send-failure")) {
-                throw new RuntimeException("Fault injected: notification-send-failure");
-            }
-
-            String renderedContent = renderTemplate(request.getTemplateCode(), request.getVariablesOrDefault());
-
-            switch (request.getChannel()) {
-                case EMAIL:
-                    mockMailSender.sendEmail(request.getReceiver(),
-                            "[" + request.getBizType() + "] Notification",
-                            renderedContent);
-                    break;
-                case SMS:
-                    mockSmsSender.sendSms(request.getReceiver(), renderedContent);
-                    break;
-                case IN_APP:
-                    log.info("In-app notification sent to {}: {}", request.getReceiver(), renderedContent);
-                    break;
-                default:
-                    log.warn("Unknown notification channel: {}", request.getChannel());
-            }
-
-            log.info("Notification sent successfully: bizType={}, bizId={}, channel={}",
-                    request.getBizType(), request.getBizId(), request.getChannel());
-
-            // Record via NotificationRecordService after successful send
             NotificationRecordService.record(
                     request.getBizType(),
                     request.getBizId(),
@@ -111,14 +116,24 @@ public class LocalNotificationServiceImpl implements LocalNotificationService {
                     request.getChannel(),
                     request.getTemplateCode(),
                     request.getIdempotencyKey());
+        } catch (Exception recordException) {
+            log.warn("Failed to record notification success: bizType={}, bizId={}, error={}",
+                    request.getBizType(), request.getBizId(), recordException.getMessage(), recordException);
+        }
+    }
 
-        } catch (Exception e) {
-            log.error("Failed to send notification: bizType={}, bizId={}, channel={}, error={}",
-                    request.getBizType(), request.getBizId(), request.getChannel(), e.getMessage(), e);
-            if (failureRecordService != null) {
-                failureRecordService.recordFailure(request, e);
-            }
-            throw new NotificationSendException("Failed to send notification", e);
+    private void recordFailureSafely(NotificationRequest request, Exception exception) {
+        if (failureRecordService == null) {
+            return;
+        }
+        try {
+            failureRecordService.recordFailure(request, exception);
+        } catch (Exception recordException) {
+            log.warn("Failed to persist notification failure record: bizType={}, bizId={}, error={}",
+                    request != null ? request.getBizType() : null,
+                    request != null ? request.getBizId() : null,
+                    recordException.getMessage(),
+                    recordException);
         }
     }
 

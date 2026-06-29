@@ -2,6 +2,7 @@ package com.ecommerce.order.service;
 
 import com.ecommerce.common.event.DomainEventPublisher;
 import com.ecommerce.common.test.SystemClockService;
+import com.ecommerce.inventory.query.InventoryReservationService;
 import com.ecommerce.order.entity.Order;
 import com.ecommerce.order.entity.OrderStatus;
 import com.ecommerce.order.event.OrderCancelledEvent;
@@ -26,13 +27,16 @@ public class OrderTimeoutService {
     private final OrderRepository orderRepository;
     private final DomainEventPublisher eventPublisher;
     private final OrderService orderService;
+    private final InventoryReservationService inventoryReservationService;
 
     public OrderTimeoutService(OrderRepository orderRepository,
                                 DomainEventPublisher eventPublisher,
-                                OrderService orderService) {
+                                OrderService orderService,
+                                InventoryReservationService inventoryReservationService) {
         this.orderRepository = orderRepository;
         this.eventPublisher = eventPublisher;
         this.orderService = orderService;
+        this.inventoryReservationService = inventoryReservationService;
     }
 
     /**
@@ -73,6 +77,7 @@ public class OrderTimeoutService {
         order.setCancelReason("Order expired — no payment received within 60 minutes");
         order.setCancelledAt(SystemClockService.now());
         orderRepository.save(order);
+        inventoryReservationService.release(order.getId());
 
         // Record event
         orderService.recordEvent(order.getId(), fromStatus, OrderStatus.CANCELLED,

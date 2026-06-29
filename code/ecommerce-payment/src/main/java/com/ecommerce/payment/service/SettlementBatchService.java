@@ -7,11 +7,15 @@ import com.ecommerce.payment.dto.SettlementBatchResponse;
 import com.ecommerce.payment.entity.InvoiceRecord;
 import com.ecommerce.payment.entity.InvoiceStatus;
 import com.ecommerce.payment.entity.PaymentRecord;
+import com.ecommerce.payment.entity.PaymentStatus;
+import com.ecommerce.payment.entity.RefundRecord;
+import com.ecommerce.payment.entity.RefundStatus;
 import com.ecommerce.payment.entity.SettlementBatch;
 import com.ecommerce.payment.entity.SettlementOrderItem;
 import com.ecommerce.payment.entity.SettlementStatus;
 import com.ecommerce.payment.repository.InvoiceRecordRepository;
 import com.ecommerce.payment.repository.PaymentRecordRepository;
+import com.ecommerce.payment.repository.RefundRecordRepository;
 import com.ecommerce.payment.repository.SettlementBatchRepository;
 import com.ecommerce.payment.repository.SettlementOrderItemRepository;
 import org.slf4j.Logger;
@@ -38,17 +42,20 @@ public class SettlementBatchService {
     private final SettlementBatchRepository settlementBatchRepository;
     private final SettlementOrderItemRepository settlementOrderItemRepository;
     private final PaymentRecordRepository paymentRecordRepository;
+    private final RefundRecordRepository refundRecordRepository;
     private final InvoiceRecordRepository invoiceRecordRepository;
     private final AuditLogService auditLogService;
 
     public SettlementBatchService(SettlementBatchRepository settlementBatchRepository,
                                   SettlementOrderItemRepository settlementOrderItemRepository,
                                   PaymentRecordRepository paymentRecordRepository,
+                                  RefundRecordRepository refundRecordRepository,
                                   InvoiceRecordRepository invoiceRecordRepository,
                                   AuditLogService auditLogService) {
         this.settlementBatchRepository = settlementBatchRepository;
         this.settlementOrderItemRepository = settlementOrderItemRepository;
         this.paymentRecordRepository = paymentRecordRepository;
+        this.refundRecordRepository = refundRecordRepository;
         this.invoiceRecordRepository = invoiceRecordRepository;
         this.auditLogService = auditLogService;
     }
@@ -67,18 +74,12 @@ public class SettlementBatchService {
         LocalDateTime startOfDay = batchDate.atStartOfDay();
         LocalDateTime endOfDay = batchDate.atTime(LocalTime.MAX);
 
-        List<PaymentRecord> payments = paymentRecordRepository.findByPaidAtBetween(
-                startOfDay, endOfDay);
-
-        if (payments.isEmpty()) {
-            log.info("No payments found for date: {}", batchDate);
-
-            SettlementBatch batch = createBatchEntity(batchDate, BigDecimal.ZERO,
-                    BigDecimal.ZERO, BigDecimal.ZERO, 0);
-            batch = settlementBatchRepository.save(batch);
-            recordBatchAudit(batch, "No payments found");
-            return toBatchResponse(batch);
-        }
+        List<PaymentRecord> payments = paymentRecordRepository
+                .findByStatusAndPaidAtBetweenAndSettledAtIsNull(
+                        PaymentStatus.SUCCESS, startOfDay, endOfDay);
+        List<RefundRecord> refunds = refundRecordRepository
+                .findByStatusAndCompletedAtBetweenAndSettledAtIsNull(
+                        RefundStatus.COMPLETED, startOfDay, endOfDay);
 
         BigDecimal totalPaymentAmount = payments.stream()
                 .map(PaymentRecord::getPaidAmount)
@@ -97,13 +98,18 @@ public class SettlementBatchService {
                 .filter(a -> a != null)
                 .reduce(BigDecimal.ZERO, MonetaryUtil::add);
 
+        BigDecimal totalRefundAmount = refunds.stream()
+                .map(RefundRecord::getRefundAmount)
+                .filter(a -> a != null)
+                .reduce(BigDecimal.ZERO, MonetaryUtil::add);
+
         int orderCount = (int) payments.stream()
                 .map(PaymentRecord::getOrderId)
                 .distinct()
                 .count();
 
         SettlementBatch batch = createBatchEntity(batchDate, totalPaymentAmount,
-                BigDecimal.ZERO, totalInvoiceAmount, orderCount);
+                totalRefundAmount, totalInvoiceAmount, orderCount);
         batch = settlementBatchRepository.save(batch);
 
         for (PaymentRecord payment : payments) {
@@ -122,6 +128,15 @@ public class SettlementBatchService {
                     });
 
             settlementOrderItemRepository.save(item);
+            payment.setSettlementBatchNo(batch.getBatchNo());
+            payment.setSettledAt(LocalDateTime.now());
+            paymentRecordRepository.save(payment);
+        }
+
+        for (RefundRecord refund : refunds) {
+            refund.setSettlementBatchNo(batch.getBatchNo());
+            refund.setSettledAt(LocalDateTime.now());
+            refundRecordRepository.save(refund);
         }
 
         recordBatchAudit(batch, "Settlement batch generated for " + batchDate);

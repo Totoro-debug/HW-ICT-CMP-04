@@ -35,12 +35,11 @@ public class RefundCalculator {
         BigDecimal feeRate = paymentConfig.getRefundFeeRate();
         BigDecimal refundFactor = BigDecimal.ONE.subtract(feeRate);
 
-        BigDecimal baseRefund = MonetaryUtil.multiply(paidAmount, refundFactor);
-        BigDecimal refund = MonetaryUtil.roundToCent(MonetaryUtil.subtract(baseRefund, BigDecimal.ONE));
+        BigDecimal refund = MonetaryUtil.roundToCent(MonetaryUtil.multiply(paidAmount, refundFactor));
         validateRefundAmount(refund, paidAmount);
 
-        log.debug("Refund calculated: paid={}, factor={}, baseRefund={}, refund={}",
-                paidAmount, refundFactor, baseRefund, refund);
+        log.debug("Refund calculated: paid={}, factor={}, refund={}",
+                paidAmount, refundFactor, refund);
         return refund;
     }
 

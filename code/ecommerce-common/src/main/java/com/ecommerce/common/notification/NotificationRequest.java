@@ -17,10 +17,6 @@ public class NotificationRequest {
     private Map<String, Object> variables;
     private String idempotencyKey;
 
-    // Legacy fields used by some module builders
-    private String subject;
-    private String content;
-
     public NotificationRequest() {
     }
 
@@ -80,64 +76,7 @@ public class NotificationRequest {
         this.idempotencyKey = idempotencyKey;
     }
 
-    public String getSubject() {
-        return subject;
-    }
-
-    public void setSubject(String subject) {
-        this.subject = subject;
-    }
-
-    public String getContent() {
-        return content;
-    }
-
-    public void setContent(String content) {
-        this.content = content;
-    }
-
     public Map<String, Object> getVariablesOrDefault() {
         return variables != null ? variables : new HashMap<>();
-    }
-
-    public static Builder builder() {
-        return new Builder();
-    }
-
-    public static class Builder {
-        private String bizType;
-        private String bizId;
-        private String receiver;
-        private NotificationChannel channel;
-        private String templateCode;
-        private Map<String, Object> variables;
-        private String idempotencyKey;
-        private String subject;
-        private String content;
-
-        public Builder bizType(String bizType) { this.bizType = bizType; return this; }
-        public Builder bizId(String bizId) { this.bizId = bizId; return this; }
-        public Builder receiver(String receiver) { this.receiver = receiver; return this; }
-        public Builder recipient(String recipient) { this.receiver = recipient; return this; }
-        public Builder channel(NotificationChannel channel) { this.channel = channel; return this; }
-        public Builder templateCode(String templateCode) { this.templateCode = templateCode; return this; }
-        public Builder variables(Map<String, Object> variables) { this.variables = variables; return this; }
-        public Builder idempotencyKey(String idempotencyKey) { this.idempotencyKey = idempotencyKey; return this; }
-        public Builder subject(String subject) { this.subject = subject; return this; }
-        public Builder content(String content) { this.content = content; return this; }
-
-        public NotificationRequest build() {
-            NotificationRequest req = new NotificationRequest();
-            req.setBizType(this.bizType);
-            req.setBizId(this.bizId);
-            req.setReceiver(this.receiver);
-            req.setChannel(this.channel);
-            req.setTemplateCode(this.templateCode);
-            req.setVariables(this.variables);
-            req.setIdempotencyKey(this.idempotencyKey);
-            req.setSubject(this.subject);
-            req.setContent(this.content);
-            return req;
-        }
     }
 }

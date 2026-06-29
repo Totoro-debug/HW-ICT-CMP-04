@@ -33,7 +33,7 @@ public class InvoiceService {
 
     private static final Logger log = LoggerFactory.getLogger(InvoiceService.class);
 
-    private static final BigDecimal TAX_RATE = new BigDecimal("0.13");
+    private static final BigDecimal TAX_RATE = new BigDecimal("0.06");
 
     private final InvoiceRecordRepository invoiceRecordRepository;
     private final PaymentRecordRepository paymentRecordRepository;

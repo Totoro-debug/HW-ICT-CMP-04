@@ -1,6 +1,7 @@
 package com.ecommerce.user.controller;
 
 import com.ecommerce.user.cache.UserRoleCacheManager;
+import com.ecommerce.user.config.SecurityConfig;
 import com.ecommerce.user.dto.LoginRequest;
 import com.ecommerce.user.dto.LoginResponse;
 import com.ecommerce.user.dto.RegisterRequest;
@@ -9,7 +10,6 @@ import com.ecommerce.user.entity.User;
 import com.ecommerce.user.entity.UserRole;
 import com.ecommerce.user.entity.UserStatus;
 import com.ecommerce.user.repository.UserRepository;
-import com.ecommerce.user.config.SecurityConfig;
 import com.ecommerce.user.service.JwtTokenProvider;
 import com.ecommerce.user.service.UserAuthService;
 import com.ecommerce.user.service.UserRegisterService;
@@ -72,8 +72,6 @@ class UserControllerTest {
         SecurityContextHolder.clearContext();
     }
 
-    // --- POST /api/v1/users/register ---
-
     @Test
     @DisplayName("returns 201 Created on successful user registration")
     void testRegister_returns201() throws Exception {
@@ -87,7 +85,7 @@ class UserControllerTest {
         response.setUserId(1L);
         response.setEmail("new@example.com");
         response.setNickname("NewUser");
-        response.setStatus(UserStatus.ACTIVE);
+        response.setStatus(UserStatus.PENDING_ACTIVATION);
         response.setRole(UserRole.USER);
 
         when(userRegisterService.register(any(RegisterRequest.class))).thenReturn(response);
@@ -98,10 +96,8 @@ class UserControllerTest {
                 .andExpect(status().isCreated())
                 .andExpect(jsonPath("$.userId").value(1))
                 .andExpect(jsonPath("$.email").value("new@example.com"))
-                .andExpect(jsonPath("$.status").value("ACTIVE"));
+                .andExpect(jsonPath("$.status").value("PENDING_ACTIVATION"));
     }
-
-    // --- POST /api/v1/users/login ---
 
     @Test
     @DisplayName("returns 200 OK with JWT token on successful login")
@@ -122,8 +118,6 @@ class UserControllerTest {
                 .andExpect(jsonPath("$.userId").value(1))
                 .andExpect(jsonPath("$.roles[0]").value("USER"));
     }
-
-    // --- GET /api/v1/users/me ---
 
     @Test
     @DisplayName("returns 403 Forbidden when ADMIN requests user-only current user info")

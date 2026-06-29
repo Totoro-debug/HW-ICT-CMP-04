@@ -68,7 +68,7 @@ public class InventoryService implements InventoryQueryService {
     public boolean checkAvailability(Long skuId, int quantity) {
         int totalAvailable = getStockSnapshot(skuId).availableStock();
 
-        boolean available = totalAvailable > quantity;
+        boolean available = totalAvailable >= quantity;
 
         log.debug("checkAvailability skuId={}, quantity={}, totalAvailable={}, available={}",
                 skuId, quantity, totalAvailable, available);

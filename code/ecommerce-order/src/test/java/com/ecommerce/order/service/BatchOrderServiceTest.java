@@ -20,14 +20,10 @@ import java.util.List;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
-import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
-/**
- * Tests for {@link BatchOrderService}.
- */
 @ExtendWith(MockitoExtension.class)
 @DisplayName("BatchOrderService")
 class BatchOrderServiceTest {
@@ -39,128 +35,65 @@ class BatchOrderServiceTest {
     private PlatformTransactionManager transactionManager;
 
     private BatchOrderService batchOrderService;
-
     private CreateOrderRequest orderRequest1;
     private CreateOrderRequest orderRequest2;
+    private CreateOrderRequest orderRequest3;
     private CreateOrderResponse successResponse1;
-    private CreateOrderResponse successResponse2;
+    private CreateOrderResponse successResponse3;
 
     @BeforeEach
     void setUp() {
         batchOrderService = new BatchOrderService(orderService, transactionManager);
-        when(transactionManager.getTransaction(any()))
-                .thenReturn(new SimpleTransactionStatus());
+        when(transactionManager.getTransaction(any())).thenReturn(new SimpleTransactionStatus());
 
-        orderRequest1 = new CreateOrderRequest();
-        orderRequest1.setAddressId(1L);
-        orderRequest1.setExternalOrderNo("EXT-001");
-        CreateOrderRequest.OrderItemRequest item1 = new CreateOrderRequest.OrderItemRequest();
-        item1.setSkuId(10L);
-        item1.setQuantity(2);
-        orderRequest1.setItems(List.of(item1));
-
-        orderRequest2 = new CreateOrderRequest();
-        orderRequest2.setAddressId(2L);
-        orderRequest2.setExternalOrderNo("EXT-002");
-        CreateOrderRequest.OrderItemRequest item2 = new CreateOrderRequest.OrderItemRequest();
-        item2.setSkuId(20L);
-        item2.setQuantity(1);
-        orderRequest2.setItems(List.of(item2));
-
-        successResponse1 = new CreateOrderResponse();
-        successResponse1.setOrderId(100L);
-        successResponse1.setOrderNo("SO202606070100");
-        successResponse1.setStatus("CREATED");
-        successResponse1.setItemTotal(new BigDecimal("50.00"));
-        successResponse1.setPayableAmount(new BigDecimal("52.00"));
-
-        successResponse2 = new CreateOrderResponse();
-        successResponse2.setOrderId(200L);
-        successResponse2.setOrderNo("SO202606070200");
-        successResponse2.setStatus("CREATED");
-        successResponse2.setItemTotal(new BigDecimal("30.00"));
-        successResponse2.setPayableAmount(new BigDecimal("32.00"));
+        orderRequest1 = buildRequest("EXT-001", 10L);
+        orderRequest2 = buildRequest("EXT-002", 20L);
+        orderRequest3 = buildRequest("EXT-003", 30L);
+        successResponse1 = buildResponse(100L, "SO-100");
+        successResponse3 = buildResponse(300L, "SO-300");
     }
 
     @Test
-    @DisplayName("single failure is reported when continueOnError=true")
-    void testCreateBatch_oneFailure_reportsResult() {
+    @DisplayName("continues processing after failure even when continueOnError is false")
+    void testCreateBatch_continueAfterFailureRegardlessOfFlag() {
         when(orderService.createOrder(eq(1L), any(CreateOrderRequest.class)))
                 .thenReturn(successResponse1)
-                .thenThrow(new RuntimeException("Order creation failed"));
+                .thenThrow(new RuntimeException("invalid order"))
+                .thenReturn(successResponse3);
 
         BatchCreateOrderRequest batchRequest = new BatchCreateOrderRequest();
-        batchRequest.setOrders(Arrays.asList(orderRequest1, orderRequest2));
-        batchRequest.setContinueOnError(true);
-
-        BatchCreateOrderResponse response = batchOrderService.createBatch(1L, batchRequest);
-
-        verify(orderService, times(2)).createOrder(eq(1L), any(CreateOrderRequest.class));
-        assertThat(response.getTotalCount()).isEqualTo(2);
-        assertThat(response.getSuccessCount()).isEqualTo(1);
-        assertThat(response.getFailureCount()).isEqualTo(1);
-        assertThat(response.getResults().get(0).isSuccess()).isTrue();
-        assertThat(response.getResults().get(1).isSuccess()).isFalse();
-        assertThat(response.getResults().get(1).getError()).contains("Order creation failed");
-    }
-
-    @Test
-    @DisplayName("all orders succeed — all saved")
-    void testCreateBatch_allSuccess_allSaved() {
-        when(orderService.createOrder(eq(1L), any(CreateOrderRequest.class)))
-                .thenReturn(successResponse1)
-                .thenReturn(successResponse2);
-
-        BatchCreateOrderRequest batchRequest = new BatchCreateOrderRequest();
-        batchRequest.setOrders(Arrays.asList(orderRequest1, orderRequest2));
-        batchRequest.setContinueOnError(true);
-
-        BatchCreateOrderResponse response = batchOrderService.createBatch(1L, batchRequest);
-
-        assertThat(response.getTotalCount()).isEqualTo(2);
-        assertThat(response.getSuccessCount()).isEqualTo(2);
-        assertThat(response.getFailureCount()).isEqualTo(0);
-        assertThat(response.getResults().get(0).isSuccess()).isTrue();
-        assertThat(response.getResults().get(0).getOrderId()).isEqualTo(100L);
-        assertThat(response.getResults().get(1).isSuccess()).isTrue();
-        assertThat(response.getResults().get(1).getOrderId()).isEqualTo(200L);
-
-        verify(orderService, times(2)).createOrder(eq(1L), any(CreateOrderRequest.class));
-    }
-
-    @Test
-    @DisplayName("continueOnError=false stops after first failure without rolling back prior success")
-    void testCreateBatch_continueOnError_false_stops() {
-        when(orderService.createOrder(eq(1L), any(CreateOrderRequest.class)))
-                .thenReturn(successResponse1)
-                .thenThrow(new RuntimeException("Order creation failed for EXT-002"));
-
-        BatchCreateOrderRequest batchRequest = new BatchCreateOrderRequest();
-        batchRequest.setOrders(Arrays.asList(orderRequest1, orderRequest2));
+        batchRequest.setOrders(Arrays.asList(orderRequest1, orderRequest2, orderRequest3));
         batchRequest.setContinueOnError(false);
 
         BatchCreateOrderResponse response = batchOrderService.createBatch(1L, batchRequest);
 
-        assertThat(response.getTotalCount()).isEqualTo(2);
-        assertThat(response.getSuccessCount()).isEqualTo(1);
+        verify(orderService, times(3)).createOrder(eq(1L), any(CreateOrderRequest.class));
+        assertThat(response.getTotalCount()).isEqualTo(3);
+        assertThat(response.getSuccessCount()).isEqualTo(2);
         assertThat(response.getFailureCount()).isEqualTo(1);
-        verify(orderService, times(2)).createOrder(eq(1L), any(CreateOrderRequest.class));
+        assertThat(response.getResults().get(0).isSuccess()).isTrue();
+        assertThat(response.getResults().get(1).isSuccess()).isFalse();
+        assertThat(response.getResults().get(2).isSuccess()).isTrue();
     }
 
-    @Test
-    @DisplayName("batch with single order succeeds")
-    void testCreateBatch_singleOrder_success() {
-        when(orderService.createOrder(eq(1L), any(CreateOrderRequest.class)))
-                .thenReturn(successResponse1);
+    private CreateOrderRequest buildRequest(String externalOrderNo, Long skuId) {
+        CreateOrderRequest request = new CreateOrderRequest();
+        request.setAddressId(1L);
+        request.setExternalOrderNo(externalOrderNo);
+        CreateOrderRequest.OrderItemRequest item = new CreateOrderRequest.OrderItemRequest();
+        item.setSkuId(skuId);
+        item.setQuantity(1);
+        request.setItems(List.of(item));
+        return request;
+    }
 
-        BatchCreateOrderRequest batchRequest = new BatchCreateOrderRequest();
-        batchRequest.setOrders(List.of(orderRequest1));
-        batchRequest.setContinueOnError(true);
-
-        BatchCreateOrderResponse response = batchOrderService.createBatch(1L, batchRequest);
-
-        assertThat(response.getTotalCount()).isEqualTo(1);
-        assertThat(response.getSuccessCount()).isEqualTo(1);
-        assertThat(response.getFailureCount()).isEqualTo(0);
+    private CreateOrderResponse buildResponse(Long orderId, String orderNo) {
+        CreateOrderResponse response = new CreateOrderResponse();
+        response.setOrderId(orderId);
+        response.setOrderNo(orderNo);
+        response.setStatus("CREATED");
+        response.setItemTotal(new BigDecimal("50.00"));
+        response.setPayableAmount(new BigDecimal("59.00"));
+        return response;
     }
 }

@@ -1,6 +1,7 @@
 package com.ecommerce.product.query;
 
 import java.util.Collection;
+import java.util.Collections;
 import java.util.List;
 
 /**
@@ -30,6 +31,13 @@ public interface ProductQueryService {
      * Batch-query multiple SKUs by their ids.
      */
     List<SkuDto> listSkuByIds(Collection<Long> skuIds);
+
+    /**
+     * Returns category ids for the specified SKU ids.
+     */
+    default List<Long> getCategoryIdsBySkuIds(Collection<Long> skuIds) {
+        return Collections.emptyList();
+    }
 
     /**
      * Returns a snapshot of the product at the current point in time,

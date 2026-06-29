@@ -12,6 +12,8 @@ import com.ecommerce.common.exception.BusinessException;
 import com.ecommerce.common.exception.OrderValidationException;
 import com.ecommerce.common.exception.ResourceNotFoundException;
 import com.ecommerce.common.integration.PointsRedeemEstimator;
+import com.ecommerce.inventory.query.InventoryQueryService;
+import com.ecommerce.inventory.query.StockSummaryDto;
 import com.ecommerce.product.query.SkuDto;
 import com.ecommerce.promotion.dto.PromotionCalculateResponse;
 import com.ecommerce.promotion.service.PromotionCalculationService;
@@ -47,6 +49,9 @@ class CartServiceTest {
     private CartValidationService cartValidationService;
 
     @Mock
+    private InventoryQueryService inventoryQueryService;
+
+    @Mock
     private PromotionCalculationService promotionCalculationService;
 
     @Mock
@@ -62,7 +67,7 @@ class CartServiceTest {
     @BeforeEach
     void setUp() {
         cartService = new CartService(cartCacheManager, cartValidationService,
-                promotionCalculationService, pointsRedeemEstimator);
+                inventoryQueryService, promotionCalculationService, pointsRedeemEstimator);
         skuDto = new SkuDto();
         skuDto.setSkuId(SKU_ID);
         skuDto.setName("Test SKU");
@@ -80,6 +85,7 @@ class CartServiceTest {
         doNothing().when(cartValidationService).validateStock(SKU_ID, 3);
         when(cartCacheManager.getCart(USER_ID)).thenReturn(null);
         doNothing().when(cartValidationService).validateCartSize(0, 1);
+        when(inventoryQueryService.getStockSummary(SKU_ID)).thenReturn(new StockSummaryDto(20, 2));
 
         CartItemResponse response = cartService.addItem(USER_ID, request);
 
@@ -91,38 +97,48 @@ class CartServiceTest {
     }
 
     @Test
-    @DisplayName("adding same SKU replaces quantity in cached cart")
-    void testAddItem_existingSku_replacesQuantity() {
+    @DisplayName("adding same SKU accumulates quantity and validates final stock")
+    void testAddItem_existingSku_accumulatesQuantity() {
         CartData cart = new CartData(USER_ID);
         cart.getItems().add(new com.ecommerce.cart.cache.CartItemData(SKU_ID, "Old SKU", new BigDecimal("20.00"), 3));
         AddCartItemRequest request = new AddCartItemRequest(SKU_ID, 2);
 
         doNothing().when(cartValidationService).validateQuantity(2);
+        doNothing().when(cartValidationService).validateQuantity(5);
         when(cartValidationService.validateSku(SKU_ID)).thenReturn(skuDto);
-        doNothing().when(cartValidationService).validateStock(SKU_ID, 2);
+        doNothing().when(cartValidationService).validateStock(SKU_ID, 5);
         when(cartCacheManager.getCart(USER_ID)).thenReturn(cart);
+        when(inventoryQueryService.getStockSummary(SKU_ID)).thenReturn(new StockSummaryDto(20, 2));
 
         CartItemResponse response = cartService.addItem(USER_ID, request);
 
-        assertThat(response.getQuantity()).isEqualTo(2);
+        assertThat(response.getQuantity()).isEqualTo(5);
         assertThat(response.getPrice()).isEqualByComparingTo(new BigDecimal("25.00"));
         assertThat(cart.getItems()).hasSize(1);
+        verify(cartValidationService).validateQuantity(5);
+        verify(cartValidationService).validateStock(SKU_ID, 5);
         verify(cartCacheManager).saveCart(cart);
     }
 
     @Test
-    @DisplayName("getCart returns cached items with computed totals")
-    void testGetCart_returnsCachedItemsWithTotals() {
+    @DisplayName("getCart returns cached items with stock summary")
+    void testGetCart_returnsCachedItemsWithTotalsAndStockSummary() {
         CartData cart = new CartData(USER_ID);
         cart.getItems().add(new com.ecommerce.cart.cache.CartItemData(100L, "Item A", new BigDecimal("10.00"), 2));
         cart.getItems().add(new com.ecommerce.cart.cache.CartItemData(200L, "Item B", new BigDecimal("15.00"), 1));
         when(cartCacheManager.getCart(USER_ID)).thenReturn(cart);
+        when(inventoryQueryService.getStockSummary(100L)).thenReturn(new StockSummaryDto(8, 1));
+        when(inventoryQueryService.getStockSummary(200L)).thenReturn(new StockSummaryDto(5, 2));
 
         CartResponse response = cartService.getCart(USER_ID);
 
         assertThat(response.getItems()).hasSize(2);
         assertThat(response.getTotalItems()).isEqualTo(3);
         assertThat(response.getTotalAmount()).isEqualByComparingTo(new BigDecimal("35.00"));
+        assertThat(response.getItems().get(0).getAvailableStock()).isEqualTo(8);
+        assertThat(response.getItems().get(0).getReservedStock()).isEqualTo(1);
+        assertThat(response.getItems().get(1).getAvailableStock()).isEqualTo(5);
+        assertThat(response.getItems().get(1).getReservedStock()).isEqualTo(2);
     }
 
     @Test
@@ -136,6 +152,7 @@ class CartServiceTest {
         when(cartValidationService.validateSku(SKU_ID)).thenReturn(skuDto);
         doNothing().when(cartValidationService).validateStock(SKU_ID, 5);
         when(cartCacheManager.getCart(USER_ID)).thenReturn(cart);
+        when(inventoryQueryService.getStockSummary(SKU_ID)).thenReturn(new StockSummaryDto(20, 2));
 
         CartItemResponse response = cartService.updateItem(USER_ID, SKU_ID, request);
 
@@ -176,7 +193,7 @@ class CartServiceTest {
     }
 
     @Test
-    @DisplayName("estimate revalidates cart, applies promotion discounts and points")
+    @DisplayName("estimate revalidates cart and exposes promotion breakdown")
     void testEstimate_appliesPromotionAndPoints() {
         CartData cart = new CartData(USER_ID);
         cart.getItems().add(new com.ecommerce.cart.cache.CartItemData(SKU_ID, "Cached SKU", new BigDecimal("10.00"), 2));
@@ -185,7 +202,15 @@ class CartServiceTest {
         doNothing().when(cartValidationService).validateStock(SKU_ID, 2);
 
         PromotionCalculateResponse promotionResponse = new PromotionCalculateResponse();
-        promotionResponse.setTotalDiscount(new BigDecimal("10.00"));
+        promotionResponse.setFullReductionDiscount(new BigDecimal("10.00"));
+        promotionResponse.setMemberDiscount(new BigDecimal("5.00"));
+        promotionResponse.setTotalDiscount(new BigDecimal("15.00"));
+        PromotionCalculateResponse.ApplicableCoupon coupon = new PromotionCalculateResponse.ApplicableCoupon();
+        coupon.setCouponId(1L);
+        coupon.setCouponCode("CPN-1");
+        coupon.setName("Coupon 1");
+        coupon.setDiscountAmount(new BigDecimal("6.00"));
+        promotionResponse.setApplicableCoupons(List.of(coupon));
         doReturn(promotionResponse).when(promotionCalculationService).calculate(any());
         doReturn(500).when(pointsRedeemEstimator).estimateRedeemPoints(any(), any());
 
@@ -198,9 +223,13 @@ class CartServiceTest {
         assertThat(response.getItemTotal()).isEqualByComparingTo(new BigDecimal("50.00"));
         assertThat(response.getShippingFee()).isEqualByComparingTo(new BigDecimal("8.00"));
         assertThat(response.getPackagingFee()).isEqualByComparingTo(new BigDecimal("2.00"));
-        assertThat(response.getDiscountAmount()).isEqualByComparingTo(new BigDecimal("10.00"));
+        assertThat(response.getDiscountAmount()).isEqualByComparingTo(new BigDecimal("15.00"));
+        assertThat(response.getFullReductionDiscount()).isEqualByComparingTo(new BigDecimal("10.00"));
+        assertThat(response.getMemberDiscount()).isEqualByComparingTo(new BigDecimal("5.00"));
+        assertThat(response.getApplicableCoupons()).hasSize(1);
+        assertThat(response.getApplicableCoupons().get(0).getCouponCode()).isEqualTo("CPN-1");
         assertThat(response.getPointsDeductionAmount()).isEqualByComparingTo(new BigDecimal("3.00"));
-        assertThat(response.getPayableAmount()).isEqualByComparingTo(new BigDecimal("47.00"));
+        assertThat(response.getPayableAmount()).isEqualByComparingTo(new BigDecimal("42.00"));
     }
 
     @Test

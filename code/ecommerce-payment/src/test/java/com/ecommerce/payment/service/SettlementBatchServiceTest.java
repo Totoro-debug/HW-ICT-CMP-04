@@ -4,10 +4,13 @@ import com.ecommerce.common.audit.AuditLogService;
 import com.ecommerce.payment.dto.SettlementBatchResponse;
 import com.ecommerce.payment.entity.PaymentRecord;
 import com.ecommerce.payment.entity.PaymentStatus;
+import com.ecommerce.payment.entity.RefundRecord;
+import com.ecommerce.payment.entity.RefundStatus;
 import com.ecommerce.payment.entity.SettlementBatch;
 import com.ecommerce.payment.entity.SettlementStatus;
 import com.ecommerce.payment.repository.InvoiceRecordRepository;
 import com.ecommerce.payment.repository.PaymentRecordRepository;
+import com.ecommerce.payment.repository.RefundRecordRepository;
 import com.ecommerce.payment.repository.SettlementBatchRepository;
 import com.ecommerce.payment.repository.SettlementOrderItemRepository;
 import org.junit.jupiter.api.BeforeEach;
@@ -20,6 +23,7 @@ import org.mockito.junit.jupiter.MockitoExtension;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
+import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.Optional;
@@ -27,6 +31,7 @@ import java.util.Optional;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -46,6 +51,9 @@ class SettlementBatchServiceTest {
     private PaymentRecordRepository paymentRecordRepository;
 
     @Mock
+    private RefundRecordRepository refundRecordRepository;
+
+    @Mock
     private InvoiceRecordRepository invoiceRecordRepository;
 
     @Mock
@@ -59,6 +67,7 @@ class SettlementBatchServiceTest {
                 settlementBatchRepository,
                 settlementOrderItemRepository,
                 paymentRecordRepository,
+                refundRecordRepository,
                 invoiceRecordRepository,
                 auditLogService
         );
@@ -76,18 +85,22 @@ class SettlementBatchServiceTest {
 
         when(settlementBatchRepository.findByBatchDate(batchDate))
                 .thenReturn(Optional.empty());
-        when(paymentRecordRepository.findByPaidAtBetween(any(), any()))
-                .thenReturn(Arrays.asList(paid1, paid2, pending, failed));
+        when(paymentRecordRepository.findByStatusAndPaidAtBetweenAndSettledAtIsNull(
+                eq(PaymentStatus.SUCCESS), any(), any()))
+                .thenReturn(Arrays.asList(paid1, paid2));
+        when(refundRecordRepository.findByStatusAndCompletedAtBetweenAndSettledAtIsNull(
+                eq(RefundStatus.COMPLETED), any(), any()))
+                .thenReturn(Collections.emptyList());
         when(invoiceRecordRepository.findAll()).thenReturn(Collections.emptyList());
 
         SettlementBatch savedBatch = new SettlementBatch();
         savedBatch.setId(1L);
         savedBatch.setBatchNo("BAT20260601ABC");
         savedBatch.setBatchDate(batchDate);
-        savedBatch.setTotalPaymentAmount(new BigDecimal("425.01"));
+        savedBatch.setTotalPaymentAmount(new BigDecimal("300.01"));
         savedBatch.setTotalRefundAmount(new BigDecimal("0.00"));
         savedBatch.setTotalInvoiceAmount(new BigDecimal("0.00"));
-        savedBatch.setOrderCount(4);
+        savedBatch.setOrderCount(2);
         savedBatch.setStatus(SettlementStatus.GENERATED);
 
         when(settlementBatchRepository.save(any(SettlementBatch.class)))
@@ -98,8 +111,8 @@ class SettlementBatchServiceTest {
         SettlementBatchResponse response = settlementBatchService.generateBatch(batchDate);
 
         assertNotNull(response);
-        assertEquals(4, response.getOrderCount());
-        assertEquals(new BigDecimal("425.01"), response.getTotalPaymentAmount());
+        assertEquals(2, response.getOrderCount());
+        assertEquals(new BigDecimal("300.01"), response.getTotalPaymentAmount());
         verify(auditLogService).record("SYSTEM", "SYSTEM", "SETTLEMENT_BATCH_GENERATED",
                 "SETTLEMENT_BATCH", "BAT20260601ABC", null, "GENERATED",
                 "Settlement batch generated for 2026-06-01");
@@ -116,8 +129,12 @@ class SettlementBatchServiceTest {
 
         when(settlementBatchRepository.findByBatchDate(batchDate))
                 .thenReturn(Optional.empty());
-        when(paymentRecordRepository.findByPaidAtBetween(any(), any()))
-                .thenReturn(Arrays.asList(payment1, payment2, pending));
+        when(paymentRecordRepository.findByStatusAndPaidAtBetweenAndSettledAtIsNull(
+                eq(PaymentStatus.SUCCESS), any(), any()))
+                .thenReturn(Arrays.asList(payment1, payment2));
+        when(refundRecordRepository.findByStatusAndCompletedAtBetweenAndSettledAtIsNull(
+                eq(RefundStatus.COMPLETED), any(), any()))
+                .thenReturn(Collections.emptyList());
         when(invoiceRecordRepository.findAll()).thenReturn(Collections.emptyList());
 
         ArgumentCaptor<SettlementBatch> batchCaptor =
@@ -129,13 +146,53 @@ class SettlementBatchServiceTest {
 
         SettlementBatchResponse response = settlementBatchService.generateBatch(batchDate);
 
-        assertEquals(3, response.getOrderCount());
-        assertEquals(new BigDecimal("600.01"), response.getTotalPaymentAmount());
+        assertEquals(2, response.getOrderCount());
+        assertEquals(new BigDecimal("500.01"), response.getTotalPaymentAmount());
 
         SettlementBatch captured = batchCaptor.getValue();
         assertEquals(batchDate, captured.getBatchDate());
         assertEquals(SettlementStatus.GENERATED, captured.getStatus());
         assertNotNull(captured.getBatchNo());
+    }
+
+    @Test
+    @DisplayName("settlement writes payment marks and completed refund total")
+    void testGenerateBatch_marksSettledPaymentsAndTotalsRefunds() {
+        LocalDate batchDate = LocalDate.of(2026, 6, 3);
+        PaymentRecord payment = createPayment(100L, "PAY100", new BigDecimal("300.00"), PaymentStatus.SUCCESS);
+        RefundRecord refund = createRefund("RF100", new BigDecimal("98.00"));
+        ArrayList<PaymentRecord> payments = new ArrayList<>(Arrays.asList(payment));
+        ArrayList<RefundRecord> refunds = new ArrayList<>(Arrays.asList(refund));
+
+        when(settlementBatchRepository.findByBatchDate(batchDate))
+                .thenReturn(Optional.empty());
+        when(paymentRecordRepository.findByStatusAndPaidAtBetweenAndSettledAtIsNull(
+                eq(PaymentStatus.SUCCESS), any(), any()))
+                .thenReturn(payments);
+        when(refundRecordRepository.findByStatusAndCompletedAtBetweenAndSettledAtIsNull(
+                eq(RefundStatus.COMPLETED), any(), any()))
+                .thenReturn(refunds);
+        when(invoiceRecordRepository.findAll()).thenReturn(Collections.emptyList());
+        when(settlementBatchRepository.save(any(SettlementBatch.class)))
+                .thenAnswer(invocation -> {
+                    SettlementBatch batch = invocation.getArgument(0);
+                    batch.setId(9L);
+                    return batch;
+                });
+        when(settlementOrderItemRepository.save(any()))
+                .thenAnswer(invocation -> invocation.getArgument(0));
+        when(paymentRecordRepository.save(any(PaymentRecord.class)))
+                .thenAnswer(invocation -> invocation.getArgument(0));
+        when(refundRecordRepository.save(any(RefundRecord.class)))
+                .thenAnswer(invocation -> invocation.getArgument(0));
+
+        SettlementBatchResponse response = settlementBatchService.generateBatch(batchDate);
+
+        assertEquals(new BigDecimal("98.00"), response.getTotalRefundAmount());
+        assertNotNull(payment.getSettledAt());
+        assertNotNull(payment.getSettlementBatchNo());
+        assertNotNull(refund.getSettledAt());
+        assertEquals(payment.getSettlementBatchNo(), refund.getSettlementBatchNo());
     }
 
     private PaymentRecord createPayment(Long orderId, String paymentNo,
@@ -146,5 +203,17 @@ class SettlementBatchServiceTest {
         p.setPaidAmount(paidAmount);
         p.setStatus(status);
         return p;
+    }
+
+    private RefundRecord createRefund(String refundNo, BigDecimal refundAmount) {
+        RefundRecord refund = new RefundRecord();
+        refund.setRefundNo(refundNo);
+        refund.setPaymentNo("PAY100");
+        refund.setOrderId(100L);
+        refund.setUserId(200L);
+        refund.setRefundAmount(refundAmount);
+        refund.setReason("reason");
+        refund.setStatus(RefundStatus.COMPLETED);
+        return refund;
     }
 }
