@@ -1,6 +1,8 @@
 package com.ecommerce.order.service;
 
 import com.ecommerce.common.exception.BusinessException;
+import com.ecommerce.common.test.RuntimeConfigRegistry;
+import com.ecommerce.order.config.OrderProperties;
 import com.ecommerce.user.query.UserDto;
 import com.ecommerce.user.query.UserQueryService;
 import org.slf4j.Logger;
@@ -16,9 +18,12 @@ public class OrderPreconditionChecker {
     private static final Logger log = LoggerFactory.getLogger(OrderPreconditionChecker.class);
 
     private final UserQueryService userQueryService;
+    private final OrderProperties orderProperties;
 
-    public OrderPreconditionChecker(UserQueryService userQueryService) {
+    public OrderPreconditionChecker(UserQueryService userQueryService,
+                                    OrderProperties orderProperties) {
         this.userQueryService = userQueryService;
+        this.orderProperties = orderProperties != null ? orderProperties : new OrderProperties();
     }
 
     /**
@@ -46,6 +51,24 @@ public class OrderPreconditionChecker {
             throw new BusinessException("VALIDATION_FAILED", "Order must have at least one item");
         }
 
+        int maxItems = getRuntimeInt("order.max-items", orderProperties.getMaxItems());
+        if (itemCount > maxItems) {
+            throw new BusinessException("VALIDATION_FAILED",
+                    "Order can contain at most " + maxItems + " distinct items. Got: " + itemCount);
+        }
+
         log.debug("Order preconditions passed for userId={}, itemCount={}", userId, itemCount);
+    }
+
+    private int getRuntimeInt(String key, int fallback) {
+        Object value = RuntimeConfigRegistry.get(key);
+        if (value == null) {
+            return fallback;
+        }
+        try {
+            return Integer.parseInt(String.valueOf(value));
+        } catch (NumberFormatException e) {
+            return fallback;
+        }
     }
 }

@@ -1,9 +1,12 @@
 package com.ecommerce.loyalty.event;
 
-import com.ecommerce.loyalty.service.LoyaltyPointService;
 import com.ecommerce.common.event.FailedEventRecord;
 import com.ecommerce.common.event.FailedEventRecordRepository;
 import com.ecommerce.common.event.ReviewApprovedEvent;
+import com.ecommerce.common.test.RuntimeConfigRegistry;
+import com.ecommerce.loyalty.config.LoyaltyProperties;
+import com.ecommerce.loyalty.service.LoyaltyPointService;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -29,10 +32,18 @@ class ReviewApprovedEventListenerTest {
     private FailedEventRecordRepository failedEventRecordRepository;
 
     private ReviewApprovedEventListener listener;
+    private LoyaltyProperties loyaltyProperties;
 
     @BeforeEach
     void setUp() {
-        listener = new ReviewApprovedEventListener(loyaltyPointService, failedEventRecordRepository);
+        RuntimeConfigRegistry.clear();
+        loyaltyProperties = new LoyaltyProperties();
+        listener = new ReviewApprovedEventListener(loyaltyPointService, failedEventRecordRepository, loyaltyProperties);
+    }
+
+    @AfterEach
+    void tearDown() {
+        RuntimeConfigRegistry.clear();
     }
 
     /**
@@ -57,17 +68,22 @@ class ReviewApprovedEventListenerTest {
                 eq("Review reward, reviewId=" + reviewId));
     }
 
-    /**
-     * Verifies the REVIEW_REWARD_POINTS constant is exactly 20
-     * by checking the value via reflection.
-     */
     @Test
-    void testReviewRewardPointsConstant_is20() throws Exception {
-        java.lang.reflect.Field field = ReviewApprovedEventListener.class
-                .getDeclaredField("REVIEW_REWARD_POINTS");
-        field.setAccessible(true);
-        int value = field.getInt(null);
-        assertEquals(20, value, "Review reward points constant should be 20");
+    void testReviewRewardPoints_usesConfiguredValue() {
+        loyaltyProperties.setReviewRewardPoints(30);
+        listener = new ReviewApprovedEventListener(loyaltyPointService, failedEventRecordRepository, loyaltyProperties);
+        Long reviewId = 999L;
+        Long userId = 888L;
+
+        ReviewApprovedEvent event = new ReviewApprovedEvent(new Object(), reviewId, userId);
+        listener.onReviewApproved(event);
+
+        verify(loyaltyPointService).earnPoints(
+                eq(userId),
+                eq(30),
+                eq("REVIEW"),
+                eq(reviewId.toString()),
+                eq("Review reward, reviewId=" + reviewId));
     }
 
     @Test

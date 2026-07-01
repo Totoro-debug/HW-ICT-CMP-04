@@ -1,11 +1,13 @@
 package com.ecommerce.logistics.service;
 
 import com.ecommerce.common.exception.ResourceNotFoundException;
+import com.ecommerce.logistics.config.LogisticsProperties;
 import com.ecommerce.logistics.dto.FreightTemplateRequest;
 import com.ecommerce.logistics.entity.FreightTemplate;
 import com.ecommerce.logistics.repository.FreightTemplateRepository;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -25,15 +27,23 @@ public class FreightTemplateService {
     private static final Logger log = LoggerFactory.getLogger(FreightTemplateService.class);
 
     private static final BigDecimal DEFAULT_FREIGHT = new BigDecimal("8.00");
-    private static final BigDecimal DEFAULT_FREE_SHIPPING_THRESHOLD = new BigDecimal("199.00");
 
     private final FreightTemplateRepository freightTemplateRepository;
     private final FreightTemplateCache freightTemplateCache;
+    private final LogisticsProperties logisticsProperties;
 
     public FreightTemplateService(FreightTemplateRepository freightTemplateRepository,
                                   FreightTemplateCache freightTemplateCache) {
+        this(freightTemplateRepository, freightTemplateCache, new LogisticsProperties());
+    }
+
+    @Autowired
+    public FreightTemplateService(FreightTemplateRepository freightTemplateRepository,
+                                  FreightTemplateCache freightTemplateCache,
+                                  LogisticsProperties logisticsProperties) {
         this.freightTemplateRepository = freightTemplateRepository;
         this.freightTemplateCache = freightTemplateCache;
+        this.logisticsProperties = logisticsProperties != null ? logisticsProperties : new LogisticsProperties();
     }
 
     /**
@@ -48,7 +58,7 @@ public class FreightTemplateService {
         template.setDefaultFreight(FreightCalculator.normalizeFreightAmount(request.getDefaultFreight() != null
                 ? request.getDefaultFreight() : DEFAULT_FREIGHT));
         template.setFreeShippingThreshold(FreightCalculator.normalizeFreightAmount(request.getFreeShippingThreshold() != null
-                ? request.getFreeShippingThreshold() : DEFAULT_FREE_SHIPPING_THRESHOLD));
+                ? request.getFreeShippingThreshold() : logisticsProperties.getFreeShippingThreshold()));
         template.setProvinceRules(request.getProvinceRules());
         template.setWeightRules(request.getWeightRules());
         template.setItemCountRules(request.getItemCountRules());

@@ -1,6 +1,7 @@
 package com.ecommerce.logistics.service;
 
 import com.ecommerce.common.exception.ResourceNotFoundException;
+import com.ecommerce.logistics.config.LogisticsProperties;
 import com.ecommerce.logistics.dto.FreightTemplateRequest;
 import com.ecommerce.logistics.entity.FreightTemplate;
 import com.ecommerce.logistics.repository.FreightTemplateRepository;
@@ -89,6 +90,27 @@ class FreightTemplateServiceTest {
         assertEquals("Default Template", result.getName());
         assertEquals(new BigDecimal("8.00"), result.getDefaultFreight());
         assertEquals(new BigDecimal("199.00"), result.getFreeShippingThreshold());
+    }
+
+    @Test
+    void testCreateTemplate_usesConfiguredDefaultFreeShippingThreshold() {
+        LogisticsProperties properties = new LogisticsProperties();
+        properties.setFreeShippingThreshold(new BigDecimal("50.00"));
+        FreightTemplateService configuredService = new FreightTemplateService(
+                freightTemplateRepository, new FreightTemplateCache(), properties);
+
+        FreightTemplateRequest request = new FreightTemplateRequest();
+        request.setName("Configured Template");
+
+        when(freightTemplateRepository.save(any(FreightTemplate.class))).thenAnswer(inv -> {
+            FreightTemplate t = inv.getArgument(0);
+            t.setId(4L);
+            return t;
+        });
+
+        FreightTemplate result = configuredService.createTemplate(request);
+
+        assertEquals(new BigDecimal("50.00"), result.getFreeShippingThreshold());
     }
 
     @Test

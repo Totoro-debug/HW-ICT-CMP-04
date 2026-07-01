@@ -1,5 +1,6 @@
 package com.ecommerce.logistics.service;
 
+import com.ecommerce.logistics.config.LogisticsProperties;
 import com.ecommerce.logistics.entity.FreightTemplate;
 import com.ecommerce.logistics.repository.FreightTemplateRepository;
 import org.junit.jupiter.api.BeforeEach;
@@ -56,6 +57,18 @@ class FreightCalculatorTest {
     void testCalculate_below199_chargesShipping() {
         BigDecimal result = calculator.calculateFreight(new BigDecimal("100.00"));
         assertEquals(new BigDecimal("8.00"), result);
+    }
+
+    @Test
+    void testCalculate_usesConfiguredFreeShippingThreshold() {
+        LogisticsProperties properties = new LogisticsProperties();
+        properties.setFreeShippingThreshold(new BigDecimal("50.00"));
+        FreightCalculator configuredCalculator = new FreightCalculator(
+                freightTemplateRepository, new FreightTemplateCache(), new com.fasterxml.jackson.databind.ObjectMapper(), properties);
+
+        BigDecimal result = configuredCalculator.calculateFreight(new BigDecimal("60.00"));
+
+        assertEquals(new BigDecimal("0.00"), result);
     }
 
     @Test

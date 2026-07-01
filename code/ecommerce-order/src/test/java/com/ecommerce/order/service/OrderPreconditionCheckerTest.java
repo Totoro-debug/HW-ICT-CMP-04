@@ -1,8 +1,11 @@
 package com.ecommerce.order.service;
 
 import com.ecommerce.common.exception.BusinessException;
+import com.ecommerce.common.test.RuntimeConfigRegistry;
+import com.ecommerce.order.config.OrderProperties;
 import com.ecommerce.user.query.UserDto;
 import com.ecommerce.user.query.UserQueryService;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -20,6 +23,11 @@ import static org.mockito.Mockito.when;
 @ExtendWith(MockitoExtension.class)
 @DisplayName("OrderPreconditionChecker")
 class OrderPreconditionCheckerTest {
+
+    @AfterEach
+    void tearDown() {
+        RuntimeConfigRegistry.clear();
+    }
 
     @Mock
     private UserQueryService userQueryService;
@@ -101,6 +109,25 @@ class OrderPreconditionCheckerTest {
         assertThatThrownBy(() -> preconditionChecker.check(3L, -1))
                 .isInstanceOf(BusinessException.class)
                 .hasMessageContaining("at least one item")
+                .extracting(ex -> ((BusinessException) ex).getCode())
+                .isEqualTo("VALIDATION_FAILED");
+    }
+
+    @Test
+    @DisplayName("check throws VALIDATION_FAILED when itemCount exceeds configured max")
+    void testCheck_exceedsConfiguredMax_throwsException() {
+        UserDto user = new UserDto();
+        user.setUserId(5L);
+        user.setStatus("ACTIVE");
+        when(userQueryService.getUserById(5L)).thenReturn(user);
+        OrderProperties orderProperties = new OrderProperties();
+        orderProperties.setMaxItems(30);
+        OrderPreconditionChecker configuredChecker = new OrderPreconditionChecker(userQueryService, orderProperties);
+        RuntimeConfigRegistry.put("order.max-items", 2);
+
+        assertThatThrownBy(() -> configuredChecker.check(5L, 3))
+                .isInstanceOf(BusinessException.class)
+                .hasMessageContaining("at most 2 distinct items")
                 .extracting(ex -> ((BusinessException) ex).getCode())
                 .isEqualTo("VALIDATION_FAILED");
     }

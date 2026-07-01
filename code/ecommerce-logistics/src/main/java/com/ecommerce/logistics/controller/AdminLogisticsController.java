@@ -1,5 +1,6 @@
 package com.ecommerce.logistics.controller;
 
+import com.ecommerce.logistics.config.LogisticsProperties;
 import com.ecommerce.logistics.dto.FreightTemplateRequest;
 import com.ecommerce.logistics.entity.FreightTemplate;
 import com.ecommerce.logistics.service.FreightTemplateService;
@@ -32,11 +33,14 @@ public class AdminLogisticsController {
 
     private final ShipmentService shipmentService;
     private final FreightTemplateService freightTemplateService;
+    private final LogisticsProperties logisticsProperties;
 
     public AdminLogisticsController(ShipmentService shipmentService,
-                                   FreightTemplateService freightTemplateService) {
+                                   FreightTemplateService freightTemplateService,
+                                   LogisticsProperties logisticsProperties) {
         this.shipmentService = shipmentService;
         this.freightTemplateService = freightTemplateService;
+        this.logisticsProperties = logisticsProperties;
     }
 
     /**
@@ -55,7 +59,7 @@ public class AdminLogisticsController {
     @PostMapping("/shipments/{shipmentId}/print-label")
     public ResponseEntity<Void> printLabel(@PathVariable("shipmentId") Long shipmentId) {
         log.info("POST /api/v1/admin/logistics/shipments/{}/print-label", shipmentId);
-        shipmentService.printLabel(shipmentId, "DEFAULT");
+        shipmentService.printLabel(shipmentId, logisticsProperties.getDefaultCarrier());
         return ResponseEntity.ok().build();
     }
 

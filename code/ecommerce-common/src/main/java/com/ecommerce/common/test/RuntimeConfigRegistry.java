@@ -5,11 +5,17 @@ import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 
 public final class RuntimeConfigRegistry {
-    private static final Map<String, Object> defaults = Map.of(
-            "payment.retry-times", 5,
-            "invoice.tax-rate", "0.06",
-            "loyalty.activity-multiplier", "1.0",
-            "member.discount-rate", "0.95"
+    private static final Map<String, Object> defaults = Map.ofEntries(
+            Map.entry("order.expire-minutes", 60),
+            Map.entry("order.max-items", 30),
+            Map.entry("payment.retry-times", 5),
+            Map.entry("payment.refund-fee-rate", "0.02"),
+            Map.entry("invoice.tax-rate", "0.06"),
+            Map.entry("cart.ttl-days", 7),
+            Map.entry("loyalty.max-redeem-points-per-order", 10000),
+            Map.entry("loyalty.max-redeem-ratio", "0.5"),
+            Map.entry("loyalty.activity-multiplier", "1.0"),
+            Map.entry("member.discount-rate", "0.95")
     );
     private static final Map<String, Object> overrides = new ConcurrentHashMap<>();
     private RuntimeConfigRegistry() {}

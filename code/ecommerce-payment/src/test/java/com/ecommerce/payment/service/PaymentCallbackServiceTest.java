@@ -55,6 +55,16 @@ class PaymentCallbackServiceTest {
     }
 
     @Test
+    @DisplayName("payment config binds appendix B defaults")
+    void testPaymentConfig_appendixBDefaults() {
+        PaymentConfig paymentConfig = new PaymentConfig();
+
+        assertEquals(5, paymentConfig.getRetryTimes());
+        assertEquals(5, paymentConfig.getCallbackTimeoutSeconds());
+        assertEquals(new BigDecimal("0.02"), paymentConfig.getRefundFeeRate());
+    }
+
+    @Test
     @DisplayName("callback with valid signature updates payment and order")
     void testProcessCallback_withValidSignature_succeeds() {
         PaymentCallbackRequest request = new PaymentCallbackRequest(

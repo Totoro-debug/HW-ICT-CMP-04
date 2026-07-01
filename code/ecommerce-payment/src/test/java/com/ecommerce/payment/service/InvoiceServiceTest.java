@@ -1,6 +1,8 @@
 package com.ecommerce.payment.service;
 
 import com.ecommerce.common.exception.BusinessException;
+import com.ecommerce.common.exception.ValidationException;
+import com.ecommerce.payment.config.InvoiceProperties;
 import com.ecommerce.payment.dto.InvoiceRequest;
 import com.ecommerce.payment.dto.InvoiceResponse;
 import com.ecommerce.payment.entity.InvoiceRecord;
@@ -53,7 +55,47 @@ class InvoiceServiceTest {
 
     @BeforeEach
     void setUp() {
-        invoiceService = new InvoiceService(invoiceRecordRepository, paymentRecordRepository);
+        invoiceService = new InvoiceService(invoiceRecordRepository, paymentRecordRepository, new InvoiceProperties());
+    }
+
+    @Test
+    @DisplayName("invoice title length is limited by invoice.max-title-length")
+    void testGenerateInvoice_titleTooLong_rejected() {
+        InvoiceRequest request = new InvoiceRequest(
+                1L, InvoiceType.PERSONAL,
+                new BigDecimal("30.00"),
+                "A".repeat(101), "TAX123"
+        );
+
+        assertThrows(ValidationException.class,
+                () -> invoiceService.generateInvoice(100L, request));
+    }
+
+    @Test
+    @DisplayName("invoice title length boundary allows 100 characters")
+    void testGenerateInvoice_titleLength100_allowed() {
+        InvoiceRequest request = new InvoiceRequest(
+                1L, InvoiceType.PERSONAL,
+                new BigDecimal("30.00"),
+                "A".repeat(100), "TAX123"
+        );
+
+        PaymentRecord payment = new PaymentRecord();
+        payment.setPaymentNo("PAY001");
+        payment.setOrderId(1L);
+        payment.setPaidAmount(new BigDecimal("100.00"));
+        payment.setStatus(PaymentStatus.SUCCESS);
+
+        when(paymentRecordRepository.findByOrderId(1L))
+                .thenReturn(Arrays.asList(payment));
+        when(invoiceRecordRepository.sumInvoiceAmountByOrderIdAndStatus(
+                1L, InvoiceStatus.ISSUED)).thenReturn(BigDecimal.ZERO);
+        when(invoiceRecordRepository.save(any(InvoiceRecord.class)))
+                .thenAnswer(invocation -> invocation.getArgument(0));
+
+        InvoiceResponse response = invoiceService.generateInvoice(100L, request);
+
+        assertEquals("A".repeat(100), response.getInvoiceTitle());
     }
 
     // ---- testGenerateInvoice_ignoresRequestAmount ----

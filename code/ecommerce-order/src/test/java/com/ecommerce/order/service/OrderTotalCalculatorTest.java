@@ -1,5 +1,6 @@
 package com.ecommerce.order.service;
 
+import com.ecommerce.order.config.OrderProperties;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
@@ -56,5 +57,26 @@ class OrderTotalCalculatorTest {
                 BigDecimal.ZERO,
                 BigDecimal.ZERO);
         assertThat(minimum).isEqualTo(new BigDecimal("0.01"));
+    }
+
+    @Test
+    @DisplayName("calculatePackagingFee uses configured fee per distinct item")
+    void testCalculatePackagingFee_usesConfiguredFee() {
+        OrderProperties orderProperties = new OrderProperties();
+        orderProperties.setPackagingFee(new BigDecimal("2.00"));
+        OrderTotalCalculator configuredCalculator = new OrderTotalCalculator(orderProperties);
+
+        assertThat(configuredCalculator.calculatePackagingFee(2)).isEqualTo(new BigDecimal("4.00"));
+    }
+
+    @Test
+    @DisplayName("calculateShippingFee uses configured free shipping threshold")
+    void testCalculateShippingFee_usesConfiguredThreshold() {
+        OrderProperties orderProperties = new OrderProperties();
+        orderProperties.setFreeShippingThreshold(new BigDecimal("50.00"));
+        OrderTotalCalculator configuredCalculator = new OrderTotalCalculator(orderProperties);
+
+        assertThat(configuredCalculator.calculateShippingFee(new BigDecimal("49.99"))).isEqualTo(new BigDecimal("8.00"));
+        assertThat(configuredCalculator.calculateShippingFee(new BigDecimal("50.00"))).isEqualTo(BigDecimal.ZERO);
     }
 }

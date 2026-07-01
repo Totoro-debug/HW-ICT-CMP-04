@@ -8,7 +8,7 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 
-import java.lang.reflect.Field;
+import java.util.concurrent.atomic.AtomicInteger;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatCode;
@@ -20,35 +20,28 @@ import static org.mockito.Mockito.when;
 /**
  * Unit tests for {@link ReviewApprovedEventListener}.
  *
- * <p>This listener fires both on review submission
- * (via {@code ReviewService.createReview}) and on admin approval (via
- * {@code ReviewModerationService.approve}), awarding 20 points each time
- * for review reward processing.
+ * <p>This legacy listener is kept outside Spring registration; the active
+ * reward path is handled by the loyalty module. Tests cover the fallback
+ * configured reward value and failure persistence behavior.
  */
 @DisplayName("ReviewApprovedEventListener")
 class ReviewApprovedEventListenerTest {
 
-    /**
-     * The review reward points constant — expected to be 20.
-     * Accessed via reflection since it is private.
-     */
-    private static final int EXPECTED_POINTS = 20;
-
     @Test
-    @DisplayName("onReviewApproved: awards 20 review reward points (REVIEW_REWARD_POINTS constant)")
-    void testOnReviewApproved_awardsPoints() throws Exception {
-        // Verify the constant is 20
-        Field field = ReviewApprovedEventListener.class.getDeclaredField("REVIEW_REWARD_POINTS");
-        field.setAccessible(true);
-        int points = field.getInt(null);
-        assertThat(points).isEqualTo(EXPECTED_POINTS);
-
-        // Verify the listener processes the event without throwing
-        ReviewApprovedEventListener listener = new ReviewApprovedEventListener();
+    @DisplayName("onReviewApproved: awards configured review reward points")
+    void testOnReviewApproved_awardsConfiguredPoints() {
+        AtomicInteger observedPoints = new AtomicInteger();
+        ReviewApprovedEventListener listener = new ReviewApprovedEventListener(null, 30) {
+            @Override
+            protected void awardReviewPoints(Long userId, Long reviewId) {
+                observedPoints.set(getReviewRewardPoints());
+            }
+        };
         ReviewApprovedEvent event = new ReviewApprovedEvent(this, 1L, 100L);
 
         assertThatCode(() -> listener.onReviewApproved(event))
                 .doesNotThrowAnyException();
+        assertThat(observedPoints.get()).isEqualTo(30);
     }
 
     @Test
@@ -62,7 +55,7 @@ class ReviewApprovedEventListenerTest {
         ReviewApprovedEvent submissionEvent = new ReviewApprovedEvent(this, 1L, 100L);
         ReviewApprovedEvent approvalEvent = new ReviewApprovedEvent(this, 1L, 100L);
 
-        // Both invocations should complete without error, awarding total 40 points
+        // Both invocations should complete without error.
         assertThatCode(() -> listener.onReviewApproved(submissionEvent))
                 .doesNotThrowAnyException();
         assertThatCode(() -> listener.onReviewApproved(approvalEvent))

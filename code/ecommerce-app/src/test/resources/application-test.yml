@@ -16,9 +16,9 @@ spring:
 
 security:
   jwt:
-    issuer: test-issuer
-    secret: this-is-a-very-long-secret-key-for-testing-purposes-only
-    expire-minutes: 60
+    issuer: shophub
+    secret: local-development-secret-change-me
+    expire-minutes: 120
 
 order:
   expire-minutes: 60
@@ -34,9 +34,12 @@ payment:
 
 logistics:
   callback-secret: shophub-logistics-callback-secret
+  default-carrier: LOCAL_EXPRESS
+  free-shipping-threshold: 199.00
 
 invoice:
   tax-rate: 0.06
+  max-title-length: 100
 
 cart:
   ttl-days: 7
@@ -49,3 +52,12 @@ loyalty:
   max-redeem-ratio: 0.5
   expire-months: 12
   review-reward-points: 20
+
+promotion:
+  stack-order:
+    - FULL_REDUCTION
+    - COUPON
+    - MEMBER_DISCOUNT
+
+test:
+  reset-enabled: false

@@ -1,6 +1,7 @@
 package com.ecommerce.promotion.service;
 
 import com.ecommerce.common.exception.OrderValidationException;
+import com.ecommerce.promotion.config.PromotionProperties;
 import com.ecommerce.promotion.dto.PromotionCalculateRequest;
 import com.ecommerce.promotion.dto.PromotionCalculateResponse;
 import com.ecommerce.promotion.entity.CouponStatus;
@@ -13,7 +14,6 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
-import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
@@ -47,7 +47,6 @@ class PromotionCalculationServiceTest {
     @Mock
     private SeckillService seckillService;
 
-    @InjectMocks
     private PromotionCalculationServiceImpl promotionCalculationService;
 
     private PromotionCalculateRequest request;
@@ -57,6 +56,8 @@ class PromotionCalculationServiceTest {
 
     @BeforeEach
     void setUp() {
+        promotionCalculationService = newService(new PromotionProperties());
+
         item = new PromotionCalculateRequest.CalculateItem();
         item.setSkuId(1L);
         item.setPrice(new BigDecimal("100.00"));
@@ -80,6 +81,11 @@ class PromotionCalculationServiceTest {
         userCoupon.setCouponTemplateId(100L);
         userCoupon.setCouponCode("CPN-DISC80");
         userCoupon.setStatus(CouponStatus.AVAILABLE);
+    }
+
+    private PromotionCalculationServiceImpl newService(PromotionProperties promotionProperties) {
+        return new PromotionCalculationServiceImpl(fullReductionService, couponService, couponValidator,
+                userCouponRepository, seckillService, promotionProperties);
     }
 
     @Test
@@ -108,6 +114,63 @@ class PromotionCalculationServiceTest {
         assertThat(response.getCouponDiscount()).isEqualByComparingTo(new BigDecimal("54.00"));
         assertThat(response.getMemberDiscount()).isEqualByComparingTo(new BigDecimal("10.80"));
         assertThat(response.getFinalAmount()).isEqualByComparingTo(new BigDecimal("205.20"));
+    }
+
+    @Test
+    @DisplayName("promotion properties provide Appendix B default stack order")
+    void promotionProperties_defaultStackOrder_matchesAppendixB() {
+        PromotionProperties properties = new PromotionProperties();
+
+        assertThat(properties.getStackOrder()).containsExactly("FULL_REDUCTION", "COUPON", "MEMBER_DISCOUNT");
+    }
+
+    @Test
+    @DisplayName("calculate follows configured stack order")
+    void calculate_followsConfiguredStackOrder() {
+        PromotionProperties properties = new PromotionProperties();
+        properties.setStackOrder(List.of("COUPON", "FULL_REDUCTION", "MEMBER_DISCOUNT"));
+        promotionCalculationService = newService(properties);
+
+        when(seckillService.validateSeckill(1L)).thenThrow(new RuntimeException("not seckill"));
+        when(fullReductionService.calculateBestReduction(new BigDecimal("300.00")))
+                .thenReturn(Optional.of(new BigDecimal("30.00")));
+
+        PromotionCalculateRequest.CalculateItem item2 = new PromotionCalculateRequest.CalculateItem();
+        item2.setSkuId(2L);
+        item2.setPrice(new BigDecimal("200.00"));
+        item2.setQuantity(1);
+        request.setItems(List.of(item, item2));
+
+        when(userCouponRepository.findById(1L)).thenReturn(Optional.of(userCoupon));
+        when(couponValidator.validate(eq(userCoupon), eq(1L), eq(new BigDecimal("300.00")), any()))
+                .thenReturn(discountTemplate);
+        when(couponService.calculateDiscount(new BigDecimal("300.00"), discountTemplate))
+                .thenReturn(new BigDecimal("60.00"));
+
+        PromotionCalculateResponse response = promotionCalculationService.calculate(request);
+
+        assertThat(response.getFullReductionDiscount()).isEqualByComparingTo(new BigDecimal("30.00"));
+        assertThat(response.getCouponDiscount()).isEqualByComparingTo(new BigDecimal("60.00"));
+        assertThat(response.getMemberDiscount()).isEqualByComparingTo(new BigDecimal("10.50"));
+        assertThat(response.getFinalAmount()).isEqualByComparingTo(new BigDecimal("199.50"));
+    }
+
+    @Test
+    @DisplayName("calculate ignores unknown configured stack steps")
+    void calculate_ignoresUnknownConfiguredStackSteps() {
+        PromotionProperties properties = new PromotionProperties();
+        properties.setStackOrder(List.of("FULL_REDUCTION", "UNKNOWN", "MEMBER_DISCOUNT"));
+        promotionCalculationService = newService(properties);
+        request.setCouponIds(null);
+        when(seckillService.validateSeckill(1L)).thenThrow(new RuntimeException("not seckill"));
+        when(fullReductionService.calculateBestReduction(new BigDecimal("100.00")))
+                .thenReturn(Optional.of(new BigDecimal("10.00")));
+
+        PromotionCalculateResponse response = promotionCalculationService.calculate(request);
+
+        assertThat(response.getFullReductionDiscount()).isEqualByComparingTo(new BigDecimal("10.00"));
+        assertThat(response.getMemberDiscount()).isEqualByComparingTo(new BigDecimal("4.50"));
+        assertThat(response.getFinalAmount()).isEqualByComparingTo(new BigDecimal("85.50"));
     }
 
     @Test

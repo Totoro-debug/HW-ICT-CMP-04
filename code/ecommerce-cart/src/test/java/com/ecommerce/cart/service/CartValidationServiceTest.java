@@ -1,5 +1,6 @@
 package com.ecommerce.cart.service;
 
+import com.ecommerce.cart.config.CartProperties;
 import com.ecommerce.common.exception.BusinessException;
 import com.ecommerce.common.exception.ResourceNotFoundException;
 import com.ecommerce.inventory.query.InventoryQueryService;
@@ -182,6 +183,20 @@ class CartValidationServiceTest {
         assertThatThrownBy(() -> cartValidationService.validateCartSize(100, 1))
                 .isInstanceOf(BusinessException.class)
                 .hasMessageContaining("Cart can contain at most")
+                .hasFieldOrPropertyWithValue("code", "VALIDATION_FAILED");
+    }
+
+    @Test
+    @DisplayName("validateCartSize uses configured max item types")
+    void testValidateCartSize_configuredMax_throwsException() {
+        CartProperties cartProperties = new CartProperties();
+        cartProperties.setMaxItems(2);
+        CartValidationService configuredService = new CartValidationService(
+                productQueryService, inventoryQueryService, cartProperties);
+
+        assertThatThrownBy(() -> configuredService.validateCartSize(2, 1))
+                .isInstanceOf(BusinessException.class)
+                .hasMessageContaining("at most 2 distinct items")
                 .hasFieldOrPropertyWithValue("code", "VALIDATION_FAILED");
     }
 }

@@ -5,6 +5,7 @@ import com.ecommerce.common.exception.ConflictException;
 import com.ecommerce.common.exception.OrderValidationException;
 import com.ecommerce.common.exception.ResourceNotFoundException;
 import com.ecommerce.common.idempotency.Idempotent;
+import com.ecommerce.common.test.RuntimeConfigRegistry;
 import com.ecommerce.order.query.OrderPaymentStatusUpdater;
 import com.ecommerce.payment.config.PaymentConfig;
 import com.ecommerce.payment.dto.PaymentCallbackRequest;
@@ -50,8 +51,10 @@ public class PaymentCallbackService {
     public String processCallback(PaymentCallbackRequest request, String headerSignature) {
         verifySignature(headerSignature);
         request.setSignature(headerSignature);
-        log.info("Processing payment callback: paymentNo={}, status={}",
-                request.getPaymentNo(), request.getStatus());
+        int callbackTimeoutSeconds = RuntimeConfigRegistry.getInt(
+                "payment.callback-timeout-seconds", paymentConfig.getCallbackTimeoutSeconds());
+        log.info("Processing payment callback: paymentNo={}, status={}, callbackTimeoutSeconds={}",
+                request.getPaymentNo(), request.getStatus(), callbackTimeoutSeconds);
 
         if (request.getCallbackSequence() != null) {
             PaymentRecord existing = paymentRecordRepository
@@ -132,9 +135,10 @@ public class PaymentCallbackService {
             throw new ConflictException("Cannot mark as FAILED when already SUCCESS");
         }
 
+        int retryTimes = RuntimeConfigRegistry.getInt("payment.retry-times", paymentConfig.getRetryTimes());
         payment.setStatus(PaymentStatus.FAILED);
         payment.setCallbackSequence(request.getCallbackSequence());
-        payment.setCallbackData("Failed callback at " + LocalDateTime.now());
+        payment.setCallbackData("Failed callback at " + LocalDateTime.now() + ", retryTimes=" + retryTimes);
         paymentRecordRepository.save(payment);
 
         orderPaymentStatusUpdater.markPaymentFailed(payment.getOrderId());

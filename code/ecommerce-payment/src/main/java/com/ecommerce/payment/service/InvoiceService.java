@@ -5,6 +5,7 @@ import com.ecommerce.common.exception.ResourceNotFoundException;
 import com.ecommerce.common.exception.ValidationException;
 import com.ecommerce.common.money.MonetaryUtil;
 import com.ecommerce.common.test.RuntimeConfigRegistry;
+import com.ecommerce.payment.config.InvoiceProperties;
 import com.ecommerce.payment.dto.InvoiceRequest;
 import com.ecommerce.payment.dto.InvoiceResponse;
 import com.ecommerce.payment.entity.InvoiceRecord;
@@ -33,15 +34,16 @@ public class InvoiceService {
 
     private static final Logger log = LoggerFactory.getLogger(InvoiceService.class);
 
-    private static final BigDecimal TAX_RATE = new BigDecimal("0.06");
-
     private final InvoiceRecordRepository invoiceRecordRepository;
     private final PaymentRecordRepository paymentRecordRepository;
+    private final InvoiceProperties invoiceProperties;
 
     public InvoiceService(InvoiceRecordRepository invoiceRecordRepository,
-                          PaymentRecordRepository paymentRecordRepository) {
+                          PaymentRecordRepository paymentRecordRepository,
+                          InvoiceProperties invoiceProperties) {
         this.invoiceRecordRepository = invoiceRecordRepository;
         this.paymentRecordRepository = paymentRecordRepository;
+        this.invoiceProperties = invoiceProperties != null ? invoiceProperties : new InvoiceProperties();
     }
 
     /**
@@ -51,6 +53,7 @@ public class InvoiceService {
     public InvoiceResponse generateInvoice(Long userId, InvoiceRequest request) {
         log.info("Generating invoice: userId={}, orderId={}, type={}, requestedAmount={}",
                 userId, request.getOrderId(), request.getInvoiceType(), request.getInvoiceAmount());
+        validateInvoiceTitle(request.getInvoiceTitle());
 
         // Find the successful payment for this order
         List<PaymentRecord> payments = paymentRecordRepository.findByOrderId(request.getOrderId());
@@ -80,7 +83,7 @@ public class InvoiceService {
                     "Invoice amount exceeds remaining invoiceable amount");
         }
 
-        BigDecimal taxRate = RuntimeConfigRegistry.getBigDecimal("invoice.tax-rate", TAX_RATE);
+        BigDecimal taxRate = RuntimeConfigRegistry.getBigDecimal("invoice.tax-rate", invoiceProperties.getTaxRate());
         BigDecimal taxAmount = MonetaryUtil.roundToCent(
                 invoiceAmount.multiply(taxRate).setScale(4, RoundingMode.HALF_UP));
 
@@ -118,6 +121,14 @@ public class InvoiceService {
         return invoices.stream()
                 .map(this::toInvoiceResponse)
                 .collect(Collectors.toList());
+    }
+
+    private void validateInvoiceTitle(String invoiceTitle) {
+        int maxTitleLength = RuntimeConfigRegistry.getInt(
+                "invoice.max-title-length", invoiceProperties.getMaxTitleLength());
+        if (invoiceTitle != null && invoiceTitle.length() > maxTitleLength) {
+            throw new ValidationException("invoiceTitle", "Invoice title length must not exceed " + maxTitleLength);
+        }
     }
 
     private String generateInvoiceNo() {

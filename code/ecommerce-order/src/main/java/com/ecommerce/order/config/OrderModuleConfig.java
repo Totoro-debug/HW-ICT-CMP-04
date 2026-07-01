@@ -1,5 +1,6 @@
 package com.ecommerce.order.config;
 
+import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.context.annotation.ComponentScan;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.scheduling.annotation.EnableScheduling;
@@ -12,6 +13,7 @@ import org.springframework.scheduling.annotation.EnableScheduling;
 @Configuration
 @ComponentScan(basePackages = "com.ecommerce.order")
 @EnableScheduling
+@EnableConfigurationProperties(OrderProperties.class)
 public class OrderModuleConfig {
 
     // Module configuration — beans are auto-detected via component scan.

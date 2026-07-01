@@ -1,5 +1,6 @@
 package com.ecommerce.logistics.controller;
 
+import com.ecommerce.logistics.config.LogisticsProperties;
 import com.ecommerce.logistics.dto.FreightTemplateRequest;
 import com.ecommerce.logistics.entity.FreightTemplate;
 import com.ecommerce.logistics.service.FreightTemplateService;
@@ -49,6 +50,9 @@ class AdminLogisticsControllerTest {
     @MockBean
     private LogisticsCallbackService callbackService;
 
+    @MockBean
+    private LogisticsProperties logisticsProperties;
+
     private static void authenticateAsAdmin() {
         TestApplication.TestSecurityContextRepository.setTestAuth(
                 new UsernamePasswordAuthenticationToken("1", null,
@@ -91,12 +95,13 @@ class AdminLogisticsControllerTest {
     @Test
     void testPrintLabel_authenticated_returnsOk() throws Exception {
         authenticateAsAdmin();
-        doNothing().when(shipmentService).printLabel(eq(1L), eq("DEFAULT"));
+        when(logisticsProperties.getDefaultCarrier()).thenReturn("LOCAL_EXPRESS");
+        doNothing().when(shipmentService).printLabel(eq(1L), eq("LOCAL_EXPRESS"));
 
         mockMvc.perform(post("/api/v1/admin/logistics/shipments/1/print-label"))
                 .andExpect(status().isOk());
 
-        verify(shipmentService).printLabel(1L, "DEFAULT");
+        verify(shipmentService).printLabel(1L, "LOCAL_EXPRESS");
     }
 
     @Test

@@ -1,5 +1,6 @@
 package com.ecommerce.logistics.controller;
 
+import com.ecommerce.logistics.config.LogisticsProperties;
 import com.ecommerce.logistics.dto.LogisticsCallbackRequest;
 import com.ecommerce.logistics.dto.ShipmentResponse;
 import com.ecommerce.logistics.service.FreightTemplateService;
@@ -52,6 +53,9 @@ class LogisticsControllerTest {
 
     @MockBean
     private FreightTemplateService freightTemplateService;
+
+    @MockBean
+    private LogisticsProperties logisticsProperties;
 
     // ==================== GET /api/v1/logistics/order/{orderId} ====================
 

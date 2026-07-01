@@ -7,6 +7,7 @@ import com.ecommerce.common.exception.OrderValidationException;
 import com.ecommerce.common.exception.ResourceNotFoundException;
 import com.ecommerce.common.money.MonetaryUtil;
 import com.ecommerce.common.money.MoneyValidationUtil;
+import com.ecommerce.common.test.RuntimeConfigRegistry;
 import com.ecommerce.common.test.SystemClockService;
 import com.ecommerce.inventory.query.InventoryReservationService;
 import com.ecommerce.inventory.query.ReserveItem;
@@ -21,6 +22,7 @@ import com.ecommerce.order.dto.OrderDetailResponse.OrderItemDto;
 import com.ecommerce.order.dto.OrderListResponse;
 import com.ecommerce.order.dto.VerifyPurchaseRequest;
 import com.ecommerce.order.dto.VerifyPurchaseResponse;
+import com.ecommerce.order.config.OrderProperties;
 import com.ecommerce.order.entity.Order;
 import com.ecommerce.order.entity.OrderEventLog;
 import com.ecommerce.order.entity.OrderItem;
@@ -97,6 +99,7 @@ public class OrderService {
     private FreightCalculationService freightCalculationService;
     private final com.ecommerce.promotion.service.PromotionCalculationService promotionCalculationService;
     private final com.ecommerce.promotion.service.PromotionUsageCommandService promotionUsageCommandService;
+    private final OrderProperties orderProperties;
 
     public OrderService(OrderRepository orderRepository,
                         OrderItemRepository orderItemRepository,
@@ -114,7 +117,8 @@ public class OrderService {
                         OrderSplitStrategy splitStrategy,
                         DomainEventPublisher eventPublisher,
                         com.ecommerce.promotion.service.PromotionCalculationService promotionCalculationService,
-                        com.ecommerce.promotion.service.PromotionUsageCommandService promotionUsageCommandService) {
+                        com.ecommerce.promotion.service.PromotionUsageCommandService promotionUsageCommandService,
+                        OrderProperties orderProperties) {
         this.orderRepository = orderRepository;
         this.orderItemRepository = orderItemRepository;
         this.orderEventLogRepository = orderEventLogRepository;
@@ -132,6 +136,7 @@ public class OrderService {
         this.eventPublisher = eventPublisher;
         this.promotionCalculationService = promotionCalculationService;
         this.promotionUsageCommandService = promotionUsageCommandService;
+        this.orderProperties = orderProperties != null ? orderProperties : new OrderProperties();
     }
 
     @Autowired(required = false)
@@ -258,7 +263,8 @@ public class OrderService {
         order.setPayableAmount(payableAmount);
         order.setPaidAmount(BigDecimal.ZERO);
         order.setRedeemedPoints(redeemedPoints);
-        order.setExpiresAt(SystemClockService.now().plusMinutes(60));
+        int expireMinutes = getRuntimeInt("order.expire-minutes", orderProperties.getExpireMinutes());
+        order.setExpiresAt(SystemClockService.now().plusMinutes(expireMinutes));
 
         // Snapshot address
         if (request.getAddressId() != null) {
@@ -504,6 +510,18 @@ public class OrderService {
 
     private String buildReservationRef(Long userId, String externalOrderNo) {
         return "ORDER:" + userId + ":" + externalOrderNo;
+    }
+
+    private int getRuntimeInt(String key, int fallback) {
+        Object value = RuntimeConfigRegistry.get(key);
+        if (value == null) {
+            return fallback;
+        }
+        try {
+            return Integer.parseInt(String.valueOf(value));
+        } catch (NumberFormatException e) {
+            return fallback;
+        }
     }
 
     private String toAddressSnapshot(AddressDto address) {

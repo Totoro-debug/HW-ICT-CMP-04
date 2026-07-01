@@ -2,6 +2,7 @@ package com.ecommerce.logistics.service;
 
 import com.ecommerce.common.integration.FreightCalculationService;
 import com.ecommerce.common.money.MonetaryUtil;
+import com.ecommerce.logistics.config.LogisticsProperties;
 import com.ecommerce.logistics.entity.FreightTemplate;
 import com.ecommerce.logistics.repository.FreightTemplateRepository;
 import com.fasterxml.jackson.core.type.TypeReference;
@@ -31,26 +32,34 @@ public class FreightCalculator implements FreightCalculationService {
     private static final Logger log = LoggerFactory.getLogger(FreightCalculator.class);
 
     private static final BigDecimal DEFAULT_FREIGHT = new BigDecimal("8.00");
-    private static final BigDecimal DEFAULT_FREE_SHIPPING_THRESHOLD = new BigDecimal("199.00");
     private static final TypeReference<List<Map<String, Object>>> RULE_LIST_TYPE = new TypeReference<>() {
     };
 
     private final FreightTemplateRepository freightTemplateRepository;
     private final FreightTemplateCache freightTemplateCache;
     private final ObjectMapper objectMapper;
+    private final LogisticsProperties logisticsProperties;
+
+    public FreightCalculator(FreightTemplateRepository freightTemplateRepository,
+                             FreightTemplateCache freightTemplateCache) {
+        this(freightTemplateRepository, freightTemplateCache, new ObjectMapper(), new LogisticsProperties());
+    }
 
     @Autowired
     public FreightCalculator(FreightTemplateRepository freightTemplateRepository,
-                             FreightTemplateCache freightTemplateCache) {
-        this(freightTemplateRepository, freightTemplateCache, new ObjectMapper());
+                             FreightTemplateCache freightTemplateCache,
+                             LogisticsProperties logisticsProperties) {
+        this(freightTemplateRepository, freightTemplateCache, new ObjectMapper(), logisticsProperties);
     }
 
     FreightCalculator(FreightTemplateRepository freightTemplateRepository,
                       FreightTemplateCache freightTemplateCache,
-                      ObjectMapper objectMapper) {
+                      ObjectMapper objectMapper,
+                      LogisticsProperties logisticsProperties) {
         this.freightTemplateRepository = freightTemplateRepository;
         this.freightTemplateCache = freightTemplateCache;
         this.objectMapper = objectMapper;
+        this.logisticsProperties = logisticsProperties != null ? logisticsProperties : new LogisticsProperties();
     }
 
     /**
@@ -100,9 +109,10 @@ public class FreightCalculator implements FreightCalculationService {
     }
 
     private BigDecimal calculateDefault(BigDecimal itemTotal) {
-        if (itemTotal.compareTo(DEFAULT_FREE_SHIPPING_THRESHOLD) >= 0) {
+        BigDecimal freeShippingThreshold = logisticsProperties.getFreeShippingThreshold();
+        if (itemTotal.compareTo(freeShippingThreshold) >= 0) {
             log.info("Free shipping (default): itemTotal={} reaches threshold={}",
-                    itemTotal, DEFAULT_FREE_SHIPPING_THRESHOLD);
+                    itemTotal, freeShippingThreshold);
             return normalizeFreightAmount(BigDecimal.ZERO);
         }
         log.info("Freight charged (default): itemTotal={}, freight={}", itemTotal, DEFAULT_FREIGHT);
@@ -112,7 +122,7 @@ public class FreightCalculator implements FreightCalculationService {
     private BigDecimal calculateWithTemplate(FreightCalculationContext context, FreightTemplate template) {
         BigDecimal itemTotal = context.getItemTotal();
         BigDecimal threshold = template.getFreeShippingThreshold() != null
-                ? template.getFreeShippingThreshold() : DEFAULT_FREE_SHIPPING_THRESHOLD;
+                ? template.getFreeShippingThreshold() : logisticsProperties.getFreeShippingThreshold();
         BigDecimal defaultFreight = template.getDefaultFreight() != null
                 ? template.getDefaultFreight() : DEFAULT_FREIGHT;
 

@@ -3,6 +3,7 @@ package com.ecommerce.review.service;
 import com.ecommerce.common.event.FailedEventRecord;
 import com.ecommerce.common.event.FailedEventRecordRepository;
 import com.ecommerce.common.event.ReviewApprovedEvent;
+import com.ecommerce.review.config.ReviewRewardProperties;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -16,17 +17,26 @@ public class ReviewApprovedEventListener {
 
     private static final Logger log = LoggerFactory.getLogger(ReviewApprovedEventListener.class);
 
-    /** Review reward points per approved review (matches loyalty.review-reward-points config). */
-    private static final int REVIEW_REWARD_POINTS = 20;
-
     private final FailedEventRecordRepository failedEventRecordRepository;
+    private final int reviewRewardPoints;
 
     public ReviewApprovedEventListener() {
-        this(null);
+        this(null, 20);
     }
 
     public ReviewApprovedEventListener(FailedEventRecordRepository failedEventRecordRepository) {
+        this(failedEventRecordRepository, 20);
+    }
+
+    public ReviewApprovedEventListener(FailedEventRecordRepository failedEventRecordRepository,
+                                       ReviewRewardProperties reviewRewardProperties) {
+        this(failedEventRecordRepository, reviewRewardProperties.getReviewRewardPoints());
+    }
+
+    public ReviewApprovedEventListener(FailedEventRecordRepository failedEventRecordRepository,
+                                       int reviewRewardPoints) {
         this.failedEventRecordRepository = failedEventRecordRepository;
+        this.reviewRewardPoints = reviewRewardPoints;
     }
 
     public void onReviewApproved(ReviewApprovedEvent event) {
@@ -35,11 +45,11 @@ public class ReviewApprovedEventListener {
 
         try {
             // In production, this would call LoyaltyPointService.earnPoints()
-            // to award REVIEW_REWARD_POINTS to the user. For this module, the
+            // to award reviewRewardPoints to the user. For this module, the
             // points award is handled by the event-driven integration.
             awardReviewPoints(event.getUserId(), event.getReviewId());
             log.info("Awarded {} review reward points for reviewId={}, userId={}",
-                    REVIEW_REWARD_POINTS, event.getReviewId(), event.getUserId());
+                    reviewRewardPoints, event.getReviewId(), event.getUserId());
         } catch (Exception e) {
             log.error("Failed to award review points for reviewId={}: {}",
                     event.getReviewId(), e.getMessage(), e);
@@ -67,6 +77,10 @@ public class ReviewApprovedEventListener {
         }
     }
 
+    protected int getReviewRewardPoints() {
+        return reviewRewardPoints;
+    }
+
     /**
      * Award review reward points.
      * In a real implementation, this would integrate with the loyalty module
@@ -74,10 +88,10 @@ public class ReviewApprovedEventListener {
      */
     protected void awardReviewPoints(Long userId, Long reviewId) {
         // In production, this would call:
-        //   loyaltyPointService.earnPoints(userId, REVIEW_REWARD_POINTS,
+        //   loyaltyPointService.earnPoints(userId, reviewRewardPoints,
         //       "REVIEW", reviewId.toString(),
         //       "Review reward, reviewId=" + reviewId);
         log.info("Awarding {} review points to userId={} for reviewId={}",
-                REVIEW_REWARD_POINTS, userId, reviewId);
+                reviewRewardPoints, userId, reviewId);
     }
 }

@@ -1,10 +1,13 @@
 package com.ecommerce.order.service;
 
 import com.ecommerce.common.money.MonetaryUtil;
+import com.ecommerce.common.test.RuntimeConfigRegistry;
+import com.ecommerce.order.config.OrderProperties;
 import com.ecommerce.order.entity.Order;
 import com.ecommerce.order.entity.OrderItem;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 
 import java.math.BigDecimal;
@@ -20,9 +23,18 @@ public class OrderTotalCalculator {
     private static final Logger log = LoggerFactory.getLogger(OrderTotalCalculator.class);
 
     private static final BigDecimal SHIPPING_FEE = new BigDecimal("8.00");
-    private static final BigDecimal FREE_SHIPPING_THRESHOLD = new BigDecimal("199.00");
-    private static final BigDecimal PACKAGING_FEE_PER_ITEM = new BigDecimal("1.00");
     private static final BigDecimal MIN_PAYABLE_AMOUNT = new BigDecimal("0.01");
+
+    private final OrderProperties orderProperties;
+
+    public OrderTotalCalculator() {
+        this(new OrderProperties());
+    }
+
+    @Autowired
+    public OrderTotalCalculator(OrderProperties orderProperties) {
+        this.orderProperties = orderProperties != null ? orderProperties : new OrderProperties();
+    }
 
     /**
      * Calculate the item total from a list of order items.
@@ -48,7 +60,9 @@ public class OrderTotalCalculator {
         if (itemTotal == null || itemTotal.compareTo(BigDecimal.ZERO) <= 0) {
             return BigDecimal.ZERO;
         }
-        if (itemTotal.compareTo(FREE_SHIPPING_THRESHOLD) >= 0) {
+        BigDecimal freeShippingThreshold = getRuntimeBigDecimal(
+                "order.free-shipping-threshold", orderProperties.getFreeShippingThreshold());
+        if (itemTotal.compareTo(freeShippingThreshold) >= 0) {
             return BigDecimal.ZERO;
         }
         return SHIPPING_FEE;
@@ -62,7 +76,9 @@ public class OrderTotalCalculator {
         if (itemCount <= 0) {
             return BigDecimal.ZERO;
         }
-        return MonetaryUtil.multiply(PACKAGING_FEE_PER_ITEM, BigDecimal.valueOf(itemCount));
+        BigDecimal packagingFee = getRuntimeBigDecimal(
+                "order.packaging-fee", orderProperties.getPackagingFee());
+        return MonetaryUtil.multiply(packagingFee, BigDecimal.valueOf(itemCount));
     }
 
     /**
@@ -117,5 +133,17 @@ public class OrderTotalCalculator {
         order.setDiscountAmount(discountAmount);
         order.setPointsDeductionAmount(pointsDeductionAmount);
         order.setPayableAmount(payableAmount);
+    }
+
+    private BigDecimal getRuntimeBigDecimal(String key, BigDecimal fallback) {
+        Object value = RuntimeConfigRegistry.get(key);
+        if (value == null) {
+            return fallback;
+        }
+        try {
+            return new BigDecimal(String.valueOf(value));
+        } catch (NumberFormatException e) {
+            return fallback;
+        }
     }
 }

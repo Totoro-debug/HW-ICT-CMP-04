@@ -19,6 +19,9 @@ public class PaymentConfig {
      */
     private BigDecimal refundFeeRate = BigDecimal.valueOf(0.02);
 
+    private int retryTimes = 5;
+    private int callbackTimeoutSeconds = 5;
+
     /**
      * Shared secret/signature value used to authenticate payment gateway callbacks.
      * Tests use the default value via X-Payment-Signature.
@@ -27,6 +30,12 @@ public class PaymentConfig {
 
     public BigDecimal getRefundFeeRate() { return refundFeeRate; }
     public void setRefundFeeRate(BigDecimal refundFeeRate) { this.refundFeeRate = refundFeeRate; }
+
+    public int getRetryTimes() { return retryTimes; }
+    public void setRetryTimes(int retryTimes) { this.retryTimes = retryTimes; }
+
+    public int getCallbackTimeoutSeconds() { return callbackTimeoutSeconds; }
+    public void setCallbackTimeoutSeconds(int callbackTimeoutSeconds) { this.callbackTimeoutSeconds = callbackTimeoutSeconds; }
 
     public String getCallbackSignature() { return callbackSignature; }
     public void setCallbackSignature(String callbackSignature) { this.callbackSignature = callbackSignature; }

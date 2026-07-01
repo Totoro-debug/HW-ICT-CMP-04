@@ -4,6 +4,7 @@ import com.ecommerce.common.integration.PromotionDiscountCalculator;
 import com.ecommerce.common.money.MonetaryUtil;
 import com.ecommerce.common.money.MoneyValidationUtil;
 import com.ecommerce.common.test.RuntimeConfigRegistry;
+import com.ecommerce.promotion.config.PromotionProperties;
 import com.ecommerce.promotion.dto.PromotionCalculateRequest;
 import com.ecommerce.promotion.dto.PromotionCalculateResponse;
 import com.ecommerce.promotion.entity.CouponTemplate;
@@ -28,17 +29,20 @@ public class PromotionCalculationServiceImpl implements PromotionCalculationServ
     private final CouponValidator couponValidator;
     private final UserCouponRepository userCouponRepository;
     private final SeckillService seckillService;
+    private final PromotionProperties promotionProperties;
 
     public PromotionCalculationServiceImpl(FullReductionService fullReductionService,
                                            CouponService couponService,
                                            CouponValidator couponValidator,
                                            UserCouponRepository userCouponRepository,
-                                           SeckillService seckillService) {
+                                           SeckillService seckillService,
+                                           PromotionProperties promotionProperties) {
         this.fullReductionService = fullReductionService;
         this.couponService = couponService;
         this.couponValidator = couponValidator;
         this.userCouponRepository = userCouponRepository;
         this.seckillService = seckillService;
+        this.promotionProperties = promotionProperties != null ? promotionProperties : new PromotionProperties();
     }
 
     @Override
@@ -71,12 +75,10 @@ public class PromotionCalculationServiceImpl implements PromotionCalculationServ
 
         StackingContext context = new StackingContext(itemTotal);
 
-        context.applyFullReduction(fullReductionService.calculateBestReduction(fullReductionEligibleTotal)
-                .orElse(BigDecimal.ZERO));
-        CouponApplicationResult couponResult = calculateCouponDiscount(request.getUserId(),
-                request.getCouponIds(), request.getItems(), context.currentAmount());
-        context.applyCoupon(couponResult.discount());
-        context.applyMemberDiscount(calculateMemberDiscount(request.getUserId(), context.currentAmount()));
+        CouponApplicationResult couponResult = CouponApplicationResult.empty();
+        for (String step : promotionProperties.getStackOrder()) {
+            couponResult = applyConfiguredStackingStep(step, request, context, fullReductionEligibleTotal, couponResult);
+        }
         context.applyTierPrice(calculateTierPriceDiscount(request, context.currentAmount()));
 
         PromotionCalculateResponse response = new PromotionCalculateResponse();
@@ -126,6 +128,32 @@ public class PromotionCalculationServiceImpl implements PromotionCalculationServ
         } catch (RuntimeException ex) {
             return false;
         }
+    }
+
+    private CouponApplicationResult applyConfiguredStackingStep(String step,
+                                                                 PromotionCalculateRequest request,
+                                                                 StackingContext context,
+                                                                 BigDecimal fullReductionEligibleTotal,
+                                                                 CouponApplicationResult couponResult) {
+        if (step == null) {
+            return couponResult;
+        }
+        switch (step.trim().toUpperCase()) {
+            case "FULL_REDUCTION" -> context.applyFullReduction(
+                    fullReductionService.calculateBestReduction(fullReductionEligibleTotal).orElse(BigDecimal.ZERO));
+            case "COUPON" -> {
+                CouponApplicationResult result = calculateCouponDiscount(request.getUserId(),
+                        request.getCouponIds(), request.getItems(), context.currentAmount());
+                context.applyCoupon(result.discount());
+                return result;
+            }
+            case "MEMBER_DISCOUNT" -> context.applyMemberDiscount(
+                    calculateMemberDiscount(request.getUserId(), context.currentAmount()));
+            default -> {
+                return couponResult;
+            }
+        }
+        return couponResult;
     }
 
     /**

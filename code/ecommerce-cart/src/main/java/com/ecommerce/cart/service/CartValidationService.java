@@ -1,5 +1,6 @@
 package com.ecommerce.cart.service;
 
+import com.ecommerce.cart.config.CartProperties;
 import com.ecommerce.common.exception.BusinessException;
 import com.ecommerce.common.exception.ResourceNotFoundException;
 import com.ecommerce.inventory.query.InventoryQueryService;
@@ -19,16 +20,18 @@ public class CartValidationService {
     private static final Logger log = LoggerFactory.getLogger(CartValidationService.class);
 
     private static final String SKU_STATUS_ON_SHELF = "ON_SHELF";
-    private static final int MAX_ITEM_TYPES = 100;
     private static final int MAX_QUANTITY = 999;
 
     private final ProductQueryService productQueryService;
     private final InventoryQueryService inventoryQueryService;
+    private final CartProperties cartProperties;
 
     public CartValidationService(ProductQueryService productQueryService,
-                                  InventoryQueryService inventoryQueryService) {
+                                  InventoryQueryService inventoryQueryService,
+                                  CartProperties cartProperties) {
         this.productQueryService = productQueryService;
         this.inventoryQueryService = inventoryQueryService;
+        this.cartProperties = cartProperties != null ? cartProperties : new CartProperties();
     }
 
     /**
@@ -91,9 +94,10 @@ public class CartValidationService {
      * @throws BusinessException if the cart would exceed the max
      */
     public void validateCartSize(int currentItemCount, int newItemTypesToAdd) {
-        if (currentItemCount + newItemTypesToAdd > MAX_ITEM_TYPES) {
+        int maxItemTypes = cartProperties.getMaxItems();
+        if (currentItemCount + newItemTypesToAdd > maxItemTypes) {
             throw new BusinessException("VALIDATION_FAILED",
-                    "Cart can contain at most " + MAX_ITEM_TYPES + " distinct items. "
+                    "Cart can contain at most " + maxItemTypes + " distinct items. "
                             + "Current: " + currentItemCount + ", adding: " + newItemTypesToAdd);
         }
     }

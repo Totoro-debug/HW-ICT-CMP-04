@@ -2,12 +2,15 @@ package com.ecommerce.loyalty.service;
 
 import com.ecommerce.common.exception.BusinessException;
 import com.ecommerce.common.exception.OrderValidationException;
+import com.ecommerce.common.test.RuntimeConfigRegistry;
+import com.ecommerce.loyalty.config.LoyaltyProperties;
 import com.ecommerce.loyalty.entity.LoyaltyAccount;
 import com.ecommerce.loyalty.entity.MemberLevel;
 import com.ecommerce.loyalty.entity.PointsTransaction;
 import com.ecommerce.loyalty.entity.PointsTransactionType;
 import com.ecommerce.loyalty.repository.LoyaltyAccountRepository;
 import com.ecommerce.loyalty.repository.PointsTransactionRepository;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -42,11 +45,20 @@ class LoyaltyPointServiceTest {
     @Mock
     private PointsExpireService pointsExpireService;
 
+    private LoyaltyProperties loyaltyProperties;
     private LoyaltyPointService service;
 
     @BeforeEach
     void setUp() {
-        service = new LoyaltyPointService(accountRepository, transactionRepository, new MemberBenefitService(), pointsExpireService);
+        RuntimeConfigRegistry.clear();
+        loyaltyProperties = new LoyaltyProperties();
+        service = new LoyaltyPointService(accountRepository, transactionRepository, new MemberBenefitService(),
+                pointsExpireService, loyaltyProperties);
+    }
+
+    @AfterEach
+    void tearDown() {
+        RuntimeConfigRegistry.clear();
     }
 
     // ======================== calcOrderPoints ========================
@@ -69,6 +81,17 @@ class LoyaltyPointServiceTest {
 
         assertEquals(expected, result,
                 "activityMultiplier=2.0 should double the base order points");
+    }
+
+    @Test
+    void testCalcOrderPoints_usesConfiguredPointsPerYuan() {
+        loyaltyProperties.setPointsPerYuan(2);
+        LoyaltyAccount account = createAccount(1L, MemberLevel.NORMAL, 0, 0);
+        when(accountRepository.findByUserId(1L)).thenReturn(Optional.of(account));
+
+        int result = service.calcOrderPoints(new BigDecimal("10.00"), 1L, BigDecimal.ONE);
+
+        assertEquals(20, result);
     }
 
     // ======================== earnPoints ========================
@@ -171,6 +194,31 @@ class LoyaltyPointServiceTest {
         // estimate = min(5000, 10000, 5000) = 5000
         int estimate = service.estimateRedeemPoints(BigDecimal.valueOf(100), 1L);
         assertEquals(5000, estimate, "Estimate should be 5000 (limited by 50% cap and available points)");
+        verify(pointsExpireService).expireForUser(1L);
+    }
+
+    @Test
+    void testEstimateRedeem_usesConfiguredRedeemCaps() {
+        RuntimeConfigRegistry.put("loyalty.max-redeem-ratio", "0.25");
+        RuntimeConfigRegistry.put("loyalty.max-redeem-points-per-order", 3000);
+        LoyaltyAccount account = createAccount(1L, MemberLevel.NORMAL, 50000, 50000);
+        when(accountRepository.findByUserId(1L)).thenReturn(Optional.of(account));
+
+        int estimate = service.estimateRedeemPoints(BigDecimal.valueOf(100), 1L);
+
+        assertEquals(2500, estimate);
+        verify(pointsExpireService).expireForUser(1L);
+    }
+
+    @Test
+    void testEstimateRedeem_usesConfiguredRedeemRate() {
+        loyaltyProperties.setRedeemRate(50);
+        LoyaltyAccount account = createAccount(1L, MemberLevel.NORMAL, 50000, 50000);
+        when(accountRepository.findByUserId(1L)).thenReturn(Optional.of(account));
+
+        int estimate = service.estimateRedeemPoints(BigDecimal.valueOf(100), 1L);
+
+        assertEquals(2500, estimate);
         verify(pointsExpireService).expireForUser(1L);
     }
 

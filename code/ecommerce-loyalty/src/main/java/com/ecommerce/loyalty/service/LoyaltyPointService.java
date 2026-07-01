@@ -7,6 +7,7 @@ import com.ecommerce.common.integration.LoyaltyQueryService;
 import com.ecommerce.common.integration.PointsRedeemEstimator;
 import com.ecommerce.common.test.RuntimeConfigRegistry;
 import com.ecommerce.common.test.SystemClockService;
+import com.ecommerce.loyalty.config.LoyaltyProperties;
 import com.ecommerce.loyalty.entity.LoyaltyAccount;
 import com.ecommerce.loyalty.entity.MemberLevel;
 import com.ecommerce.loyalty.entity.PointsTransaction;
@@ -15,6 +16,7 @@ import com.ecommerce.loyalty.repository.LoyaltyAccountRepository;
 import com.ecommerce.loyalty.repository.PointsTransactionRepository;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -32,30 +34,31 @@ public class LoyaltyPointService implements LoyaltyQueryService, LoyaltyCommandS
 
     private static final Logger log = LoggerFactory.getLogger(LoyaltyPointService.class);
 
-    /** 100 points = 1 yuan */
-    private static final int POINTS_PER_YUAN = 100;
-
-    /** Maximum redeemable points per order (10,000 points = 100 yuan) */
-    private static final int MAX_REDEEM_POINTS = 10_000;
-
-    /** Maximum redeem ratio: points deduction cannot exceed 50% of order amount */
-    private static final BigDecimal MAX_REDEEM_RATIO = new BigDecimal("0.5");
-
-    private static final int DEFAULT_EXPIRE_MONTHS = 12;
-
     private final LoyaltyAccountRepository accountRepository;
     private final PointsTransactionRepository transactionRepository;
     private final MemberBenefitService memberBenefitService;
     private final PointsExpireService pointsExpireService;
+    private final LoyaltyProperties loyaltyProperties;
 
     public LoyaltyPointService(LoyaltyAccountRepository accountRepository,
                                PointsTransactionRepository transactionRepository,
                                MemberBenefitService memberBenefitService,
                                PointsExpireService pointsExpireService) {
+        this(accountRepository, transactionRepository, memberBenefitService,
+                pointsExpireService, new LoyaltyProperties());
+    }
+
+    @Autowired
+    public LoyaltyPointService(LoyaltyAccountRepository accountRepository,
+                               PointsTransactionRepository transactionRepository,
+                               MemberBenefitService memberBenefitService,
+                               PointsExpireService pointsExpireService,
+                               LoyaltyProperties loyaltyProperties) {
         this.accountRepository = accountRepository;
         this.transactionRepository = transactionRepository;
         this.memberBenefitService = memberBenefitService;
         this.pointsExpireService = pointsExpireService;
+        this.loyaltyProperties = loyaltyProperties != null ? loyaltyProperties : new LoyaltyProperties();
     }
 
     // ======================== LoyaltyQueryService ========================
@@ -222,23 +225,45 @@ public class LoyaltyPointService implements LoyaltyQueryService, LoyaltyCommandS
         BigDecimal configuredActivityMultiplier = BigDecimal.valueOf(
                 RuntimeConfigRegistry.getDouble("loyalty.activity-multiplier", 1.0d));
         BigDecimal requestActivityMultiplier = activityMultiplier != null ? activityMultiplier : BigDecimal.ONE;
-        BigDecimal points = amount.multiply(levelMultiplier)
+        BigDecimal points = amount.multiply(BigDecimal.valueOf(getPointsPerYuan()))
+                .multiply(levelMultiplier)
                 .multiply(requestActivityMultiplier)
                 .multiply(configuredActivityMultiplier);
         return points.setScale(0, RoundingMode.DOWN).intValue();
     }
 
     private int calculateRedeemablePoints(BigDecimal orderAmount, int availablePoints) {
-        // 50% of order amount in points: orderAmount * 100 * 0.5
-        int ratioCapped = orderAmount.multiply(new BigDecimal(POINTS_PER_YUAN))
-                .multiply(MAX_REDEEM_RATIO)
+        int ratioCapped = orderAmount.multiply(BigDecimal.valueOf(getRedeemRate()))
+                .multiply(getMaxRedeemRatio())
                 .setScale(0, RoundingMode.DOWN)
                 .intValue();
-        return Math.min(Math.min(availablePoints, MAX_REDEEM_POINTS), ratioCapped);
+        return Math.min(Math.min(availablePoints, getMaxRedeemPointsPerOrder()), ratioCapped);
     }
 
     public int calcOrderPoints(BigDecimal amount, Long userId, double activityMultiplier) {
         return calcOrderPoints(amount, userId, BigDecimal.valueOf(activityMultiplier));
+    }
+
+    private int getPointsPerYuan() {
+        return RuntimeConfigRegistry.getInt("loyalty.points-per-yuan", loyaltyProperties.getPointsPerYuan());
+    }
+
+    private int getRedeemRate() {
+        return RuntimeConfigRegistry.getInt("loyalty.redeem-rate", loyaltyProperties.getRedeemRate());
+    }
+
+    private int getMaxRedeemPointsPerOrder() {
+        return RuntimeConfigRegistry.getInt("loyalty.max-redeem-points-per-order",
+                loyaltyProperties.getMaxRedeemPointsPerOrder());
+    }
+
+    private BigDecimal getMaxRedeemRatio() {
+        return RuntimeConfigRegistry.getBigDecimal("loyalty.max-redeem-ratio",
+                loyaltyProperties.getMaxRedeemRatio());
+    }
+
+    private int getExpireMonths() {
+        return RuntimeConfigRegistry.getInt("loyalty.expire-months", loyaltyProperties.getExpireMonths());
     }
 
     /**
@@ -276,7 +301,7 @@ public class LoyaltyPointService implements LoyaltyQueryService, LoyaltyCommandS
         tx.setBizType(bizType);
         tx.setBizId(bizId);
         tx.setDescription(description);
-        tx.setExpiresAt(SystemClockService.now().plusMonths(DEFAULT_EXPIRE_MONTHS));
+        tx.setExpiresAt(SystemClockService.now().plusMonths(getExpireMonths()));
         transactionRepository.save(tx);
 
         log.info("Earned {} points for userId={}, balance={}", points, userId, account.getAvailablePoints());
