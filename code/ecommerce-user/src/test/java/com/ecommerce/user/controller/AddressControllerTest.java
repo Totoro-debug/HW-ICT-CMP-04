@@ -1,5 +1,6 @@
 package com.ecommerce.user.controller;
 
+import com.ecommerce.common.security.ApiSecurityErrorWriter;
 import com.ecommerce.user.cache.UserRoleCacheManager;
 import com.ecommerce.user.dto.AddressRequest;
 import com.ecommerce.user.dto.AddressResponse;
@@ -34,7 +35,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 @WebMvcTest(AddressController.class)
-@Import({JwtTokenProvider.class, SecurityConfig.class})
+@Import({JwtTokenProvider.class, SecurityConfig.class, ApiSecurityErrorWriter.class})
 @TestPropertySource(properties = {
         "security.jwt.secret=0123456789abcdef0123456789abcdef",
         "security.jwt.issuer=test-issuer",
@@ -115,22 +116,30 @@ class AddressControllerTest {
     }
 
     @Test
-    @DisplayName("returns 403 Forbidden when creating address without authentication")
-    void testCreateAddress_unauthenticated_returns403() throws Exception {
+    @DisplayName("returns 401 Unauthorized when creating address without authentication")
+    void testCreateAddress_unauthenticated_returns401() throws Exception {
         mockMvc.perform(post("/api/v1/users/addresses")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(addressRequest())))
-                .andExpect(status().isForbidden());
+                .andExpect(status().isUnauthorized())
+                .andExpect(jsonPath("$.code").value("UNAUTHORIZED"))
+                .andExpect(jsonPath("$.message").isNotEmpty())
+                .andExpect(jsonPath("$.traceId").isNotEmpty())
+                .andExpect(jsonPath("$.details").isMap());
     }
 
     @Test
-    @DisplayName("returns 403 Forbidden when ADMIN creates a user-only address")
+    @DisplayName("returns 403 Forbidden with standard error body when ADMIN creates a user-only address")
     void testCreateAddress_adminRole_returns403() throws Exception {
         mockMvc.perform(post("/api/v1/users/addresses")
                         .header("Authorization", adminAuthHeader())
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(addressRequest())))
-                .andExpect(status().isForbidden());
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.code").value("FORBIDDEN"))
+                .andExpect(jsonPath("$.message").isNotEmpty())
+                .andExpect(jsonPath("$.traceId").isNotEmpty())
+                .andExpect(jsonPath("$.details").isMap());
     }
 
     // --- GET /api/v1/users/addresses ---
@@ -179,12 +188,16 @@ class AddressControllerTest {
     }
 
     @Test
-    @DisplayName("returns 403 Forbidden when updating address without authentication")
-    void testUpdateAddress_unauthenticated_returns403() throws Exception {
+    @DisplayName("returns 401 Unauthorized when updating address without authentication")
+    void testUpdateAddress_unauthenticated_returns401() throws Exception {
         mockMvc.perform(put("/api/v1/users/addresses/10")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(addressRequest())))
-                .andExpect(status().isForbidden());
+                .andExpect(status().isUnauthorized())
+                .andExpect(jsonPath("$.code").value("UNAUTHORIZED"))
+                .andExpect(jsonPath("$.message").isNotEmpty())
+                .andExpect(jsonPath("$.traceId").isNotEmpty())
+                .andExpect(jsonPath("$.details").isMap());
     }
 
     // --- DELETE /api/v1/users/addresses/{addressId} ---
@@ -200,9 +213,13 @@ class AddressControllerTest {
     }
 
     @Test
-    @DisplayName("returns 403 Forbidden when deleting address without authentication")
-    void testDeleteAddress_unauthenticated_returns403() throws Exception {
+    @DisplayName("returns 401 Unauthorized when deleting address without authentication")
+    void testDeleteAddress_unauthenticated_returns401() throws Exception {
         mockMvc.perform(delete("/api/v1/users/addresses/10"))
-                .andExpect(status().isForbidden());
+                .andExpect(status().isUnauthorized())
+                .andExpect(jsonPath("$.code").value("UNAUTHORIZED"))
+                .andExpect(jsonPath("$.message").isNotEmpty())
+                .andExpect(jsonPath("$.traceId").isNotEmpty())
+                .andExpect(jsonPath("$.details").isMap());
     }
 }

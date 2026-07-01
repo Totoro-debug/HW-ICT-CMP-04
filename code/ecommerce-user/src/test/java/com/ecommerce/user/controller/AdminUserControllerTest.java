@@ -1,5 +1,6 @@
 package com.ecommerce.user.controller;
 
+import com.ecommerce.common.security.ApiSecurityErrorWriter;
 import com.ecommerce.user.cache.UserRoleCacheManager;
 import com.ecommerce.user.config.SecurityConfig;
 import com.ecommerce.user.service.JwtTokenProvider;
@@ -19,10 +20,11 @@ import java.util.List;
 
 import static org.mockito.Mockito.verify;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 @WebMvcTest(AdminUserController.class)
-@Import({JwtTokenProvider.class, SecurityConfig.class})
+@Import({JwtTokenProvider.class, SecurityConfig.class, ApiSecurityErrorWriter.class})
 @TestPropertySource(properties = {
         "security.jwt.secret=0123456789abcdef0123456789abcdef",
         "security.jwt.issuer=test-issuer",
@@ -69,18 +71,26 @@ class AdminUserControllerTest {
     }
 
     @Test
-    @DisplayName("returns 403 Forbidden when non-ADMIN user tries to freeze")
+    @DisplayName("returns 403 Forbidden with standard error body when non-ADMIN user tries to freeze")
     void testFreezeUser_userRole_returns403() throws Exception {
         mockMvc.perform(post("/api/v1/admin/users/5/freeze")
                         .header("Authorization", userAuthHeader()))
-                .andExpect(status().isForbidden());
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.code").value("FORBIDDEN"))
+                .andExpect(jsonPath("$.message").isNotEmpty())
+                .andExpect(jsonPath("$.traceId").isNotEmpty())
+                .andExpect(jsonPath("$.details").isMap());
     }
 
     @Test
-    @DisplayName("returns 403 Forbidden when unauthenticated request tries to freeze")
-    void testFreezeUser_unauthenticated_returns403() throws Exception {
+    @DisplayName("returns 401 Unauthorized with standard error body when unauthenticated request tries to freeze")
+    void testFreezeUser_unauthenticated_returns401() throws Exception {
         mockMvc.perform(post("/api/v1/admin/users/5/freeze"))
-                .andExpect(status().isForbidden());
+                .andExpect(status().isUnauthorized())
+                .andExpect(jsonPath("$.code").value("UNAUTHORIZED"))
+                .andExpect(jsonPath("$.message").isNotEmpty())
+                .andExpect(jsonPath("$.traceId").isNotEmpty())
+                .andExpect(jsonPath("$.details").isMap());
     }
 
     // --- POST /api/v1/admin/users/{userId}/unfreeze ---
@@ -96,17 +106,25 @@ class AdminUserControllerTest {
     }
 
     @Test
-    @DisplayName("returns 403 Forbidden when non-ADMIN user tries to unfreeze")
+    @DisplayName("returns 403 Forbidden with standard error body when non-ADMIN user tries to unfreeze")
     void testUnfreezeUser_userRole_returns403() throws Exception {
         mockMvc.perform(post("/api/v1/admin/users/5/unfreeze")
                         .header("Authorization", userAuthHeader()))
-                .andExpect(status().isForbidden());
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.code").value("FORBIDDEN"))
+                .andExpect(jsonPath("$.message").isNotEmpty())
+                .andExpect(jsonPath("$.traceId").isNotEmpty())
+                .andExpect(jsonPath("$.details").isMap());
     }
 
     @Test
-    @DisplayName("returns 403 Forbidden when unauthenticated request tries to unfreeze")
-    void testUnfreezeUser_unauthenticated_returns403() throws Exception {
+    @DisplayName("returns 401 Unauthorized with standard error body when unauthenticated request tries to unfreeze")
+    void testUnfreezeUser_unauthenticated_returns401() throws Exception {
         mockMvc.perform(post("/api/v1/admin/users/5/unfreeze"))
-                .andExpect(status().isForbidden());
+                .andExpect(status().isUnauthorized())
+                .andExpect(jsonPath("$.code").value("UNAUTHORIZED"))
+                .andExpect(jsonPath("$.message").isNotEmpty())
+                .andExpect(jsonPath("$.traceId").isNotEmpty())
+                .andExpect(jsonPath("$.details").isMap());
     }
 }

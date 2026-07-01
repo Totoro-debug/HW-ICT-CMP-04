@@ -36,18 +36,18 @@ class GlobalExceptionHandlerTest {
     }
 
     @Test
-    @DisplayName("handles generic business forbidden-like codes with HTTP 400")
-    void testBusinessException_forbiddenCodes_return400() {
-        assertBusinessExceptionStatus("USER_NOT_ACTIVE", HttpStatus.BAD_REQUEST);
-        assertBusinessExceptionStatus("USER_FROZEN", HttpStatus.BAD_REQUEST);
-        assertBusinessExceptionStatus("REVIEW_PURCHASE_REQUIRED", HttpStatus.BAD_REQUEST);
+    @DisplayName("handles frozen business forbidden codes with HTTP 403")
+    void testBusinessException_forbiddenCodes_return403() {
+        assertBusinessExceptionStatus("USER_NOT_ACTIVE", HttpStatus.FORBIDDEN);
+        assertBusinessExceptionStatus("USER_FROZEN", HttpStatus.FORBIDDEN);
+        assertBusinessExceptionStatus("REVIEW_PURCHASE_REQUIRED", HttpStatus.FORBIDDEN);
     }
 
     @Test
-    @DisplayName("handles formerly conflict business error codes with HTTP 400")
-    void testBusinessException_conflictCodes_return400() {
-        assertBusinessExceptionStatus("ORDER_STATUS_CONFLICT", HttpStatus.BAD_REQUEST);
-        assertBusinessExceptionStatus("REFUND_WAITING_WAREHOUSE_ACCEPT", HttpStatus.BAD_REQUEST);
+    @DisplayName("handles frozen conflict business error codes with HTTP 409")
+    void testBusinessException_conflictCodes_return409() {
+        assertBusinessExceptionStatus("ORDER_STATUS_CONFLICT", HttpStatus.CONFLICT);
+        assertBusinessExceptionStatus("REFUND_WAITING_WAREHOUSE_ACCEPT", HttpStatus.CONFLICT);
     }
 
     @Test

@@ -1,6 +1,7 @@
 package com.ecommerce.order.service;
 
 import com.ecommerce.common.exception.BusinessException;
+import com.ecommerce.common.exception.OrderValidationException;
 import com.ecommerce.common.money.MoneyValidationUtil;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -22,7 +23,11 @@ public class OrderValidator {
      * @param amount the amount to validate
      */
     public void validateAmount(BigDecimal amount) {
-        MoneyValidationUtil.validatePayableAmount(amount);
+        try {
+            MoneyValidationUtil.validatePayableAmount(amount);
+        } catch (OrderValidationException ex) {
+            throw new OrderValidationException(OrderValidationException.CODE, ex.getMessage());
+        }
         log.debug("Amount validated: {}", amount);
     }
 

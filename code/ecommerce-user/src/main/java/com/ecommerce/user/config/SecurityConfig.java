@@ -1,5 +1,6 @@
 package com.ecommerce.user.config;
 
+import com.ecommerce.common.security.ApiSecurityErrorWriter;
 import com.ecommerce.user.cache.UserRoleCacheManager;
 import com.ecommerce.user.security.JwtAuthFilter;
 import com.ecommerce.user.service.JwtTokenProvider;
@@ -22,9 +23,11 @@ import org.springframework.security.web.authentication.UsernamePasswordAuthentic
 public class SecurityConfig {
 
     private final JwtTokenProvider jwtTokenProvider;
+    private final ApiSecurityErrorWriter apiSecurityErrorWriter;
 
-    public SecurityConfig(JwtTokenProvider jwtTokenProvider) {
+    public SecurityConfig(JwtTokenProvider jwtTokenProvider, ApiSecurityErrorWriter apiSecurityErrorWriter) {
         this.jwtTokenProvider = jwtTokenProvider;
+        this.apiSecurityErrorWriter = apiSecurityErrorWriter;
     }
 
     @Bean
@@ -40,6 +43,9 @@ public class SecurityConfig {
                 .csrf(csrf -> csrf.disable())
                 .sessionManagement(session ->
                         session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
+                .exceptionHandling(ex -> ex
+                        .authenticationEntryPoint(apiSecurityErrorWriter::writeUnauthorized)
+                        .accessDeniedHandler(apiSecurityErrorWriter::writeForbidden))
                 .authorizeHttpRequests(auth -> auth
                         .requestMatchers("/api/v1/users/register").permitAll()
                         .requestMatchers("/api/v1/users/activate").permitAll()

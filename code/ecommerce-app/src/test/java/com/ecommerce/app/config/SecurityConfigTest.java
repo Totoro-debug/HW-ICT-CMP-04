@@ -2,6 +2,7 @@ package com.ecommerce.app.config;
 
 import com.ecommerce.app.CorsConfig;
 import com.ecommerce.app.SecurityConfig;
+import com.ecommerce.common.security.ApiSecurityErrorWriter;
 import com.ecommerce.user.service.JwtTokenProvider;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.DisplayName;
@@ -34,6 +35,7 @@ import org.springframework.web.bind.annotation.RestController;
 import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertInstanceOf;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
@@ -68,6 +70,7 @@ class SecurityConfigTest {
     @Import({
             SecurityConfig.class,
             CorsConfig.class,
+            ApiSecurityErrorWriter.class,
             JwtTokenProvider.class,
             PublicTestController.class,
             UserTestController.class,
@@ -107,6 +110,9 @@ class SecurityConfigTest {
 
         @PostMapping("/api/v1/admin/test")
         String adminPost() { return "ok"; }
+
+        @PostMapping("/api/v1/admin/products/spu")
+        String productSpu() { return "ok"; }
     }
 
     @Autowired
@@ -162,10 +168,14 @@ class SecurityConfigTest {
     // --- User-role-protected endpoints ---
 
     @Test
-    @DisplayName("GET /api/v1/cart returns 403 without authentication")
+    @DisplayName("GET /api/v1/cart returns 401 without authentication")
     void testUserEndpoints_requireAuth_cart_unauthenticated() throws Exception {
         mockMvc.perform(get("/api/v1/cart"))
-                .andExpect(status().isForbidden());
+                .andExpect(status().isUnauthorized())
+                .andExpect(jsonPath("$.code").value("UNAUTHORIZED"))
+                .andExpect(jsonPath("$.message").isNotEmpty())
+                .andExpect(jsonPath("$.traceId").isNotEmpty())
+                .andExpect(jsonPath("$.details").isMap());
     }
 
     @Test
@@ -177,10 +187,14 @@ class SecurityConfigTest {
     }
 
     @Test
-    @DisplayName("GET /api/v1/orders returns 403 without authentication")
+    @DisplayName("GET /api/v1/orders returns 401 without authentication")
     void testUserEndpoints_requireAuth_orders_unauthenticated() throws Exception {
         mockMvc.perform(get("/api/v1/orders"))
-                .andExpect(status().isForbidden());
+                .andExpect(status().isUnauthorized())
+                .andExpect(jsonPath("$.code").value("UNAUTHORIZED"))
+                .andExpect(jsonPath("$.message").isNotEmpty())
+                .andExpect(jsonPath("$.traceId").isNotEmpty())
+                .andExpect(jsonPath("$.details").isMap());
     }
 
     @Test
@@ -194,10 +208,14 @@ class SecurityConfigTest {
     // --- Admin-role-protected endpoints ---
 
     @Test
-    @DisplayName("/api/v1/admin/test returns 403 without authentication")
+    @DisplayName("/api/v1/admin/test returns 401 without authentication")
     void testAdminEndpoints_requireAdminRole_unauthenticated() throws Exception {
         mockMvc.perform(get("/api/v1/admin/test"))
-                .andExpect(status().isForbidden());
+                .andExpect(status().isUnauthorized())
+                .andExpect(jsonPath("$.code").value("UNAUTHORIZED"))
+                .andExpect(jsonPath("$.message").isNotEmpty())
+                .andExpect(jsonPath("$.traceId").isNotEmpty())
+                .andExpect(jsonPath("$.details").isMap());
     }
 
     @Test
@@ -205,16 +223,24 @@ class SecurityConfigTest {
     void testAdminEndpoints_requireAdminRole_withUserRole() throws Exception {
         mockMvc.perform(get("/api/v1/admin/test")
                         .header("Authorization", userAuthHeader()))
-                .andExpect(status().isForbidden());
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.code").value("FORBIDDEN"))
+                .andExpect(jsonPath("$.message").isNotEmpty())
+                .andExpect(jsonPath("$.traceId").isNotEmpty())
+                .andExpect(jsonPath("$.details").isMap());
     }
 
     @Test
-    @DisplayName("POST /api/v1/admin/test returns 403 without authentication")
+    @DisplayName("POST /api/v1/admin/test returns 401 without authentication")
     void testAdminEndpoints_requireAdminRole_post_unauthenticated() throws Exception {
         mockMvc.perform(post("/api/v1/admin/test")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{}"))
-                .andExpect(status().isForbidden());
+                .andExpect(status().isUnauthorized())
+                .andExpect(jsonPath("$.code").value("UNAUTHORIZED"))
+                .andExpect(jsonPath("$.message").isNotEmpty())
+                .andExpect(jsonPath("$.traceId").isNotEmpty())
+                .andExpect(jsonPath("$.details").isMap());
     }
 
     @Test
@@ -224,7 +250,38 @@ class SecurityConfigTest {
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{}")
                         .header("Authorization", userAuthHeader()))
-                .andExpect(status().isForbidden());
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.code").value("FORBIDDEN"))
+                .andExpect(jsonPath("$.message").isNotEmpty())
+                .andExpect(jsonPath("$.traceId").isNotEmpty())
+                .andExpect(jsonPath("$.details").isMap());
+    }
+
+    @Test
+    @DisplayName("POST /api/v1/admin/products/spu returns 401 without authentication")
+    void testProductAdminEndpoint_unauthenticated() throws Exception {
+        mockMvc.perform(post("/api/v1/admin/products/spu")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{}"))
+                .andExpect(status().isUnauthorized())
+                .andExpect(jsonPath("$.code").value("UNAUTHORIZED"))
+                .andExpect(jsonPath("$.message").isNotEmpty())
+                .andExpect(jsonPath("$.traceId").isNotEmpty())
+                .andExpect(jsonPath("$.details").isMap());
+    }
+
+    @Test
+    @DisplayName("POST /api/v1/admin/products/spu returns 403 with USER role")
+    void testProductAdminEndpoint_withUserRole() throws Exception {
+        mockMvc.perform(post("/api/v1/admin/products/spu")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{}")
+                        .header("Authorization", userAuthHeader()))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.code").value("FORBIDDEN"))
+                .andExpect(jsonPath("$.message").isNotEmpty())
+                .andExpect(jsonPath("$.traceId").isNotEmpty())
+                .andExpect(jsonPath("$.details").isMap());
     }
 
     // --- PasswordEncoder ---

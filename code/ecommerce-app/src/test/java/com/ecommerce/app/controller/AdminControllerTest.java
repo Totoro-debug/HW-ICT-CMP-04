@@ -3,6 +3,7 @@ package com.ecommerce.app.controller;
 import com.ecommerce.app.CorsConfig;
 import com.ecommerce.app.SecurityConfig;
 import com.ecommerce.common.audit.AuditLogItem;
+import com.ecommerce.common.security.ApiSecurityErrorWriter;
 import com.ecommerce.common.audit.AuditLogQuery;
 import com.ecommerce.common.audit.AuditLogService;
 import com.ecommerce.common.event.FailedEventRecordQueryService;
@@ -68,6 +69,7 @@ class AdminControllerTest {
     @Import({
             SecurityConfig.class,
             CorsConfig.class,
+            ApiSecurityErrorWriter.class,
             JwtTokenProvider.class,
             GlobalExceptionHandler.class,
             EventFailureAdminController.class,
@@ -134,11 +136,15 @@ class AdminControllerTest {
     }
 
     @Test
-    @DisplayName("failed event replay endpoint requires ADMIN role")
+    @DisplayName("failed event replay endpoint returns standard 403 body for USER role")
     void replayFailure_userRole_forbidden() throws Exception {
         mockMvc.perform(post("/api/v1/admin/events/failures/10/replay")
                         .header("Authorization", userAuthHeader()))
-                .andExpect(status().isForbidden());
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.code").value("FORBIDDEN"))
+                .andExpect(jsonPath("$.message").isNotEmpty())
+                .andExpect(jsonPath("$.traceId").isNotEmpty())
+                .andExpect(jsonPath("$.details").isMap());
     }
 
     @Test
@@ -169,10 +175,14 @@ class AdminControllerTest {
     }
 
     @Test
-    @DisplayName("audit log endpoint requires ADMIN role")
+    @DisplayName("audit log endpoint returns standard 403 body for USER role")
     void getAuditLogs_userRole_forbidden() throws Exception {
         mockMvc.perform(get("/api/v1/admin/audit-logs")
                         .header("Authorization", userAuthHeader()))
-                .andExpect(status().isForbidden());
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.code").value("FORBIDDEN"))
+                .andExpect(jsonPath("$.message").isNotEmpty())
+                .andExpect(jsonPath("$.traceId").isNotEmpty())
+                .andExpect(jsonPath("$.details").isMap());
     }
 }

@@ -1,5 +1,6 @@
 package com.ecommerce.user.controller;
 
+import com.ecommerce.common.security.ApiSecurityErrorWriter;
 import com.ecommerce.user.cache.UserRoleCacheManager;
 import com.ecommerce.user.config.SecurityConfig;
 import com.ecommerce.user.dto.LoginRequest;
@@ -37,7 +38,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 @WebMvcTest(UserController.class)
-@Import({JwtTokenProvider.class, SecurityConfig.class})
+@Import({JwtTokenProvider.class, SecurityConfig.class, ApiSecurityErrorWriter.class})
 @TestPropertySource(properties = {
         "security.jwt.secret=0123456789abcdef0123456789abcdef",
         "security.jwt.issuer=test-issuer",
@@ -120,13 +121,17 @@ class UserControllerTest {
     }
 
     @Test
-    @DisplayName("returns 403 Forbidden when ADMIN requests user-only current user info")
+    @DisplayName("returns 403 Forbidden with standard error body when ADMIN requests user-only current user info")
     void testGetMe_adminRole_returns403() throws Exception {
         String token = jwtTokenProvider.generateToken(1L, List.of("ADMIN"));
 
         mockMvc.perform(get("/api/v1/users/me")
                         .header("Authorization", "Bearer " + token))
-                .andExpect(status().isForbidden());
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.code").value("FORBIDDEN"))
+                .andExpect(jsonPath("$.message").isNotEmpty())
+                .andExpect(jsonPath("$.traceId").isNotEmpty())
+                .andExpect(jsonPath("$.details").isMap());
     }
 
     @Test
@@ -154,9 +159,13 @@ class UserControllerTest {
     }
 
     @Test
-    @DisplayName("returns 403 Forbidden when requesting user info without authentication")
-    void testGetMe_unauthenticated_returns403() throws Exception {
+    @DisplayName("returns 401 Unauthorized with standard error body when requesting user info without authentication")
+    void testGetMe_unauthenticated_returns401() throws Exception {
         mockMvc.perform(get("/api/v1/users/me"))
-                .andExpect(status().isForbidden());
+                .andExpect(status().isUnauthorized())
+                .andExpect(jsonPath("$.code").value("UNAUTHORIZED"))
+                .andExpect(jsonPath("$.message").isNotEmpty())
+                .andExpect(jsonPath("$.traceId").isNotEmpty())
+                .andExpect(jsonPath("$.details").isMap());
     }
 }

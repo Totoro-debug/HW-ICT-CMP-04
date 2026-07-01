@@ -78,7 +78,7 @@ public class GlobalExceptionHandler {
         String traceId = generateTraceId();
         log.warn("Business exception [{}]: code={}, message={}", traceId, ex.getCode(), ex.getMessage());
         ApiError error = new ApiError(ex.getCode(), ex.getMessage(), traceId, ex.getDetails());
-        return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(error);
+        return ResponseEntity.status(statusForBusinessCode(ex.getCode())).body(error);
     }
 
     @ExceptionHandler(MethodArgumentNotValidException.class)
@@ -99,6 +99,14 @@ public class GlobalExceptionHandler {
         log.error("Internal error [{}]: {}", traceId, ex.getMessage(), ex);
         ApiError error = new ApiError("INTERNAL_ERROR", "An unexpected error occurred", traceId, new HashMap<>());
         return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(error);
+    }
+
+    private HttpStatus statusForBusinessCode(String code) {
+        return switch (code) {
+            case "USER_NOT_ACTIVE", "USER_FROZEN", "REVIEW_PURCHASE_REQUIRED" -> HttpStatus.FORBIDDEN;
+            case "ORDER_STATUS_CONFLICT", "REFUND_WAITING_WAREHOUSE_ACCEPT" -> HttpStatus.CONFLICT;
+            default -> HttpStatus.BAD_REQUEST;
+        };
     }
 
     private String generateTraceId() {

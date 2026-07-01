@@ -23,7 +23,7 @@ class OrderValidatorTest {
                 .isInstanceOf(com.ecommerce.common.exception.OrderValidationException.class)
                 .hasMessageContaining("Payable amount must be at least 0.01")
                 .extracting(ex -> ((com.ecommerce.common.exception.BusinessException) ex).getCode())
-                .isEqualTo("PAYABLE_AMOUNT_TOO_LOW");
+                .isEqualTo("ORDER_INVALID_AMOUNT");
     }
 
     @Test
@@ -33,7 +33,7 @@ class OrderValidatorTest {
                 .isInstanceOf(com.ecommerce.common.exception.OrderValidationException.class)
                 .hasMessageContaining("Payable amount must be at least 0.01")
                 .extracting(ex -> ((com.ecommerce.common.exception.BusinessException) ex).getCode())
-                .isEqualTo("PAYABLE_AMOUNT_TOO_LOW");
+                .isEqualTo("ORDER_INVALID_AMOUNT");
     }
 
     @Test
@@ -43,7 +43,7 @@ class OrderValidatorTest {
                 .isInstanceOf(com.ecommerce.common.exception.OrderValidationException.class)
                 .hasMessageContaining("Payable amount must be at least 0.01")
                 .extracting(ex -> ((com.ecommerce.common.exception.BusinessException) ex).getCode())
-                .isEqualTo("PAYABLE_AMOUNT_TOO_LOW");
+                .isEqualTo("ORDER_INVALID_AMOUNT");
     }
 
     @Test

@@ -138,8 +138,8 @@ class ReviewControllerTest {
         }
 
         @Test
-        @DisplayName("createReview: purchase gate failure returns 400 REVIEW_PURCHASE_REQUIRED")
-        void testCreateReview_purchaseGateFailure_returns400() throws Exception {
+        @DisplayName("createReview: purchase gate failure returns 403 REVIEW_PURCHASE_REQUIRED")
+        void testCreateReview_purchaseGateFailure_returns403() throws Exception {
             setupMockAuthentication("1", "ROLE_USER");
             when(reviewService.createReview(eq(1L), any(ReviewCreateRequest.class)))
                     .thenThrow(new BusinessException("REVIEW_PURCHASE_REQUIRED",
@@ -148,7 +148,7 @@ class ReviewControllerTest {
             mockMvc.perform(post("/api/v1/reviews")
                             .contentType(MediaType.APPLICATION_JSON)
                             .content(objectMapper.writeValueAsString(createRequest)))
-                    .andExpect(status().isBadRequest())
+                    .andExpect(status().isForbidden())
                     .andExpect(jsonPath("$.code").value("REVIEW_PURCHASE_REQUIRED"));
         }
 
