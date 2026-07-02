@@ -128,7 +128,7 @@ public class InventoryService implements InventoryQueryService {
                     newStock.setSkuId(request.getSkuId());
                     newStock.setOnHandStock(0);
                     newStock.setReservedStock(0);
-                    newStock.setSafetyStock(0);
+                    newStock.setWarningThreshold(0);
                     return newStock;
                 });
 

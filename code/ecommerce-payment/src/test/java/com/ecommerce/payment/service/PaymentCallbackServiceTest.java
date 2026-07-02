@@ -73,7 +73,7 @@ class PaymentCallbackServiceTest {
                 "valid-signature"
         );
 
-        PaymentRecord payment = payment("PAY001", 1L, new BigDecimal("99.00"), PaymentStatus.PENDING);
+        PaymentRecord payment = payment("PAY001", 1L, new BigDecimal("99.00"), PaymentStatus.CREATED);
 
         when(paymentRecordRepository.findByPaymentNo("PAY001"))
                 .thenReturn(Optional.of(payment));
@@ -97,7 +97,7 @@ class PaymentCallbackServiceTest {
                 "valid-signature"
         );
 
-        PaymentRecord payment = payment("PAY002", 2L, new BigDecimal("199.00"), PaymentStatus.PENDING);
+        PaymentRecord payment = payment("PAY002", 2L, new BigDecimal("199.00"), PaymentStatus.CREATED);
 
         when(paymentRecordRepository.findByPaymentNo("PAY002"))
                 .thenReturn(Optional.of(payment));
@@ -152,7 +152,7 @@ class PaymentCallbackServiceTest {
     void testProcessCallback_amountMismatch_throwsOrderValidationException() {
         PaymentCallbackRequest request = new PaymentCallbackRequest(
                 "PAY005", 5L, "SUCCESS", new BigDecimal("10.01"), "seq-005", "valid-signature");
-        PaymentRecord payment = payment("PAY005", 5L, new BigDecimal("10.00"), PaymentStatus.PENDING);
+        PaymentRecord payment = payment("PAY005", 5L, new BigDecimal("10.00"), PaymentStatus.CREATED);
 
         when(paymentRecordRepository.findByPaymentNo("PAY005"))
                 .thenReturn(Optional.of(payment));

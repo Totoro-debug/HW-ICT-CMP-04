@@ -32,7 +32,7 @@ public class Review extends BaseEntity {
     @Column(nullable = false)
     private int rating;
 
-    @Column(columnDefinition = "TEXT")
+    @Column(nullable = false, length = 1000)
     private String content;
 
     @Column(columnDefinition = "TEXT")

@@ -9,30 +9,29 @@ import java.time.LocalDateTime;
  */
 public class ShipmentDeliveredEvent extends AbstractDomainEvent {
 
-    private final Long shipmentId;
     private final Long orderId;
-    private final Long userId;
+    private final Long shipmentId;
     private final LocalDateTime deliveredAt;
 
-    public ShipmentDeliveredEvent(Object source, Long shipmentId, Long orderId,
-                                  Long userId, LocalDateTime deliveredAt) {
-        super(source);
-        this.shipmentId = shipmentId;
-        this.orderId = orderId;
-        this.userId = userId;
-        this.deliveredAt = deliveredAt;
+    public ShipmentDeliveredEvent(Object source, Long orderId, Long shipmentId,
+                                  LocalDateTime deliveredAt) {
+        this(source, orderId, shipmentId, deliveredAt, null);
     }
 
-    public Long getShipmentId() {
-        return shipmentId;
+    public ShipmentDeliveredEvent(Object source, Long orderId, Long shipmentId,
+                                  LocalDateTime deliveredAt, String traceId) {
+        super(source, "ShipmentDeliveredEvent", orderId == null ? null : String.valueOf(orderId), traceId);
+        this.orderId = orderId;
+        this.shipmentId = shipmentId;
+        this.deliveredAt = deliveredAt;
     }
 
     public Long getOrderId() {
         return orderId;
     }
 
-    public Long getUserId() {
-        return userId;
+    public Long getShipmentId() {
+        return shipmentId;
     }
 
     public LocalDateTime getDeliveredAt() {

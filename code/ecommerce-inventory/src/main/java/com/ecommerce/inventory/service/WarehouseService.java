@@ -24,6 +24,7 @@ public class WarehouseService {
     @Transactional
     public Warehouse create(WarehouseCreateRequest request) {
         Warehouse warehouse = new Warehouse();
+        warehouse.setCode(generateCode(request));
         warehouse.setName(request.getName());
         warehouse.setProvince(request.getProvince());
         warehouse.setCity(request.getCity());
@@ -35,6 +36,14 @@ public class WarehouseService {
         Warehouse saved = warehouseRepository.save(warehouse);
         log.info("Warehouse created: id={}, name={}", saved.getId(), saved.getName());
         return saved;
+    }
+
+    private String generateCode(WarehouseCreateRequest request) {
+        String source = String.join("-",
+                request.getName(),
+                String.valueOf(request.getPriority()),
+                String.valueOf(System.nanoTime()));
+        return "WH-" + Integer.toUnsignedString(source.hashCode()).toUpperCase();
     }
 
     @Transactional(readOnly = true)

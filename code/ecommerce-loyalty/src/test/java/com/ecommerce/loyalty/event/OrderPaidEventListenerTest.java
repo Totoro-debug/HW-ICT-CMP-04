@@ -3,6 +3,7 @@ package com.ecommerce.loyalty.event;
 import com.ecommerce.common.event.FailedEventRecord;
 import com.ecommerce.common.event.FailedEventRecordRepository;
 import com.ecommerce.common.event.OrderPaidEvent;
+import com.ecommerce.common.event.OrderPaidEventItem;
 import com.ecommerce.loyalty.service.LoyaltyPointService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -12,6 +13,7 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
 import java.math.BigDecimal;
+import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.mockito.ArgumentMatchers.any;
@@ -54,7 +56,8 @@ class OrderPaidEventListenerTest {
         Long userId = 200L;
         BigDecimal paidAmount = new BigDecimal("150.00");
 
-        OrderPaidEvent event = new OrderPaidEvent(new Object(), orderId, userId, "PAY-100", paidAmount);
+        OrderPaidEvent event = new OrderPaidEvent(new Object(), orderId, userId, "PAY-100", paidAmount,
+                List.of(new OrderPaidEventItem(1L, 2L, 1, paidAmount, paidAmount)));
 
         // Mock calcOrderPoints with the default activity multiplier.
         when(loyaltyPointService.calcOrderPoints(paidAmount, userId, BigDecimal.ONE))
@@ -69,7 +72,7 @@ class OrderPaidEventListenerTest {
         // Verify earnPoints was called with the calculated points
         verify(loyaltyPointService).earnPoints(
                 eq(userId), eq(150), eq("PAYMENT"),
-                eq("PAY-100"),
+                eq(event.getEventId()),
                 eq("Order payment reward, orderId=" + orderId));
     }
 
@@ -107,6 +110,9 @@ class OrderPaidEventListenerTest {
         assertEquals(0, record.getRetryCount());
         assertEquals(false, record.isRetried());
         verify(loyaltyPointService).earnPoints(
-                eq(600L), eq(88), eq("PAYMENT"), eq("PAY-500"), contains("orderId=500"));
+                eq(600L), eq(88), eq("PAYMENT"), eq(event.getEventId()), contains("orderId=500"));
+        org.junit.jupiter.api.Assertions.assertTrue(record.getEventPayload().contains("eventId"));
+        org.junit.jupiter.api.Assertions.assertTrue(record.getEventPayload().contains("items"));
+        org.junit.jupiter.api.Assertions.assertFalse(record.getEventPayload().contains("paymentNo"));
     }
 }

@@ -10,6 +10,7 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
 import java.math.BigDecimal;
+import java.time.LocalDateTime;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.mockito.Mockito.verify;
@@ -37,6 +38,11 @@ class PaymentSucceededEventListenerTest {
         assertEquals("PaymentSucceededEvent", captor.getValue().getEventType());
         assertEquals("payment listener failed", captor.getValue().getErrorMessage());
         assertEquals(0, captor.getValue().getRetryCount());
+        org.junit.jupiter.api.Assertions.assertTrue(captor.getValue().getEventPayload().contains("eventType"));
+        org.junit.jupiter.api.Assertions.assertTrue(captor.getValue().getEventPayload().contains("aggregateId"));
+        org.junit.jupiter.api.Assertions.assertTrue(captor.getValue().getEventPayload().contains("traceId"));
+        org.junit.jupiter.api.Assertions.assertTrue(captor.getValue().getEventPayload().contains("paidAt"));
+        org.junit.jupiter.api.Assertions.assertFalse(captor.getValue().getEventPayload().contains("userId"));
     }
 
     static class PaymentSucceededEvent extends AbstractDomainEvent {
@@ -44,6 +50,7 @@ class PaymentSucceededEventListenerTest {
         private final Long orderId;
         private final Long userId;
         private final BigDecimal paidAmount;
+        private final LocalDateTime paidAt;
 
         PaymentSucceededEvent(Object source, String paymentNo, Long orderId, Long userId, BigDecimal paidAmount) {
             super(source);
@@ -51,11 +58,13 @@ class PaymentSucceededEventListenerTest {
             this.orderId = orderId;
             this.userId = userId;
             this.paidAmount = paidAmount;
+            this.paidAt = LocalDateTime.of(2026, 6, 28, 1, 2);
         }
 
         public String getPaymentNo() { return paymentNo; }
         public Long getOrderId() { return orderId; }
         public Long getUserId() { return userId; }
         public BigDecimal getPaidAmount() { return paidAmount; }
+        public LocalDateTime getPaidAt() { return paidAt; }
     }
 }

@@ -9,6 +9,8 @@ import com.ecommerce.order.event.OrderCancelledEvent;
 import com.ecommerce.order.event.OrderCreatedEvent;
 import com.ecommerce.order.event.OrderPaidEvent;
 import com.ecommerce.order.repository.OrderRepository;
+import com.ecommerce.order.service.OrderPaymentEventHandler;
+import com.ecommerce.order.service.OrderService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.context.event.EventListener;
@@ -38,11 +40,17 @@ public class OrderEventListener {
 
     private final OrderRepository orderRepository;
     private final FailedEventRecordRepository failedEventRecordRepository;
+    private final OrderPaymentEventHandler orderPaymentEventHandler;
+    private final OrderService orderService;
 
     public OrderEventListener(OrderRepository orderRepository,
-                              FailedEventRecordRepository failedEventRecordRepository) {
+                              FailedEventRecordRepository failedEventRecordRepository,
+                              OrderPaymentEventHandler orderPaymentEventHandler,
+                              OrderService orderService) {
         this.orderRepository = orderRepository;
         this.failedEventRecordRepository = failedEventRecordRepository;
+        this.orderPaymentEventHandler = orderPaymentEventHandler;
+        this.orderService = orderService;
     }
 
     /**
@@ -71,6 +79,33 @@ public class OrderEventListener {
     @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
     public void onOrderCancelled(OrderCancelledEvent event) {
         handleNonStrongEvent(event, "OrderEventListener.onOrderCancelled", this::processOrderCancelled);
+    }
+
+    @EventListener(condition = "#event.getClass().getName() == 'com.ecommerce.payment.event.PaymentSucceededEvent'")
+    public void onPaymentSucceeded(Object event) {
+        try {
+            Long orderId = readLong(event, "getOrderId");
+            String paymentNo = readString(event, "getPaymentNo");
+            java.math.BigDecimal paidAmount = (java.math.BigDecimal) readValue(event, "getPaidAmount");
+            LocalDateTime paidAt = (LocalDateTime) readValue(event, "getPaidAt");
+            orderPaymentEventHandler.handlePaymentSuccess(orderId, paymentNo, paidAmount, paidAt);
+        } catch (Exception ex) {
+            log.error("Order PaymentSucceededEvent listener failed: {}", ex.getMessage(), ex);
+            persistFailure((Object) event, "OrderEventListener.onPaymentSucceeded", ex);
+        }
+    }
+
+    @EventListener(condition = "#event.getClass().getName() == 'com.ecommerce.logistics.event.ShipmentDeliveredEvent'")
+    public void onShipmentDelivered(Object event) {
+        try {
+            Long orderId = readLong(event, "getOrderId");
+            Long shipmentId = readLong(event, "getShipmentId");
+            LocalDateTime deliveredAt = (LocalDateTime) readValue(event, "getDeliveredAt");
+            processShipmentDelivered(orderId, shipmentId, deliveredAt);
+        } catch (Exception ex) {
+            log.error("Order ShipmentDeliveredEvent listener failed: {}", ex.getMessage(), ex);
+            persistFailure((Object) event, "OrderEventListener.onShipmentDelivered", ex);
+        }
     }
 
     /**
@@ -136,6 +171,34 @@ public class OrderEventListener {
         log.debug("OrderCancelledEvent processing complete for orderId={}", event.getOrderId());
     }
 
+    private void processShipmentDelivered(Long orderId, Long shipmentId, LocalDateTime deliveredAt) {
+        Order order = orderRepository.findById(orderId)
+                .orElseThrow(() -> new com.ecommerce.common.exception.ResourceNotFoundException(
+                        "Order not found: " + orderId));
+        OrderStatus fromStatus = order.getStatus();
+        if (fromStatus != OrderStatus.DELIVERED && fromStatus != OrderStatus.COMPLETED) {
+            order.setStatus(OrderStatus.DELIVERED);
+            orderRepository.save(order);
+        }
+        orderService.recordEvent(orderId, fromStatus, OrderStatus.DELIVERED,
+                "SHIPMENT_DELIVERED", "LOGISTICS_SYSTEM",
+                "Shipment delivered: shipmentId=" + shipmentId + ", deliveredAt=" + deliveredAt);
+    }
+
+    private Long readLong(Object event, String methodName) throws ReflectiveOperationException {
+        Object value = readValue(event, methodName);
+        return value instanceof Number number ? number.longValue() : null;
+    }
+
+    private String readString(Object event, String methodName) throws ReflectiveOperationException {
+        Object value = readValue(event, methodName);
+        return value != null ? String.valueOf(value) : null;
+    }
+
+    private Object readValue(Object event, String methodName) throws ReflectiveOperationException {
+        return event.getClass().getMethod(methodName).invoke(event);
+    }
+
     private <T extends com.ecommerce.common.event.AbstractDomainEvent> void handleNonStrongEvent(
             T event, String handlerName, Consumer<T> handler) {
         try {
@@ -150,10 +213,14 @@ public class OrderEventListener {
     private void persistFailure(com.ecommerce.common.event.AbstractDomainEvent event,
                                 String handlerName,
                                 Exception exception) {
+        persistFailure((Object) event, handlerName, exception);
+    }
+
+    private void persistFailure(Object event, String handlerName, Exception exception) {
         try {
             FailedEventRecord record = new FailedEventRecord();
             record.setEventType(handlerName + ":" + event.getClass().getSimpleName());
-            record.setEventPayload("{\"eventId\":\"" + event.getEventId() + "\"}");
+            record.setEventPayload(serializeEvent(event));
             record.setErrorMessage(exception.getMessage());
             record.setLastError(exception.getMessage());
             record.setOccurredAt(LocalDateTime.now());
@@ -163,6 +230,46 @@ public class OrderEventListener {
             failedEventRecordRepository.save(record);
         } catch (Exception persistenceException) {
             log.error("Failed to persist order event failure record: {}", persistenceException.getMessage(), persistenceException);
+        }
+    }
+
+    private String serializeEvent(Object event) {
+        StringBuilder payload = new StringBuilder("{");
+        appendJson(payload, "eventId", safeRead(event, "getEventId"));
+        appendJson(payload, "eventType", safeRead(event, "getEventType"));
+        appendJson(payload, "occurredAt", safeRead(event, "getOccurredAt"));
+        appendJson(payload, "aggregateId", safeRead(event, "getAggregateId"));
+        appendJson(payload, "traceId", safeRead(event, "getTraceId"));
+        appendJson(payload, "paymentNo", safeRead(event, "getPaymentNo"));
+        appendJson(payload, "orderId", safeRead(event, "getOrderId"));
+        appendJson(payload, "paidAmount", safeRead(event, "getPaidAmount"));
+        appendJson(payload, "paidAt", safeRead(event, "getPaidAt"));
+        appendJson(payload, "shipmentId", safeRead(event, "getShipmentId"));
+        appendJson(payload, "deliveredAt", safeRead(event, "getDeliveredAt"));
+        payload.append("}");
+        return payload.toString();
+    }
+
+    private Object safeRead(Object event, String methodName) {
+        try {
+            return readValue(event, methodName);
+        } catch (Exception ignored) {
+            return null;
+        }
+    }
+
+    private void appendJson(StringBuilder payload, String field, Object value) {
+        if (value == null) {
+            return;
+        }
+        if (payload.length() > 1) {
+            payload.append(',');
+        }
+        payload.append('"').append(field).append("\":");
+        if (value instanceof Number) {
+            payload.append(value);
+        } else {
+            payload.append('"').append(String.valueOf(value).replace("\\", "\\\\").replace("\"", "\\\"")).append('"');
         }
     }
 }

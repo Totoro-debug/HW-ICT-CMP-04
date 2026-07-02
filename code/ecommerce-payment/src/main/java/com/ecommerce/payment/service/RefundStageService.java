@@ -49,12 +49,12 @@ public class RefundStageService {
                 .orElseThrow(() -> new ResourceNotFoundException("RefundRecord", refundId));
 
         RefundStatus beforeStatus = refund.getStatus();
-        if (beforeStatus != RefundStatus.WAITING_WAREHOUSE_ACCEPT) {
+        if (beforeStatus != RefundStatus.REVIEWED) {
             throw new ConflictException(
                     "Refund must pass review and wait for warehouse acceptance before completion");
         }
 
-        refund.setStatus(RefundStatus.WAREHOUSE_ACCEPTED);
+        refund.setStatus(RefundStatus.ACCEPTED);
         refund.setWarehouseAcceptorId(acceptorId);
         RefundRecord saved = refundRecordRepository.save(refund);
         auditLogService.record(String.valueOf(acceptorId), String.valueOf(acceptorId),
@@ -70,27 +70,22 @@ public class RefundStageService {
         RefundRecord refund = refundRecordRepository.findById(refundId)
                 .orElseThrow(() -> new ResourceNotFoundException("RefundRecord", refundId));
 
-        if (refund.getStatus() == RefundStatus.COMPLETED) {
+        if (refund.getStatus() == RefundStatus.REFUNDED) {
             return;
         }
-        if (refund.getStatus() != RefundStatus.WAREHOUSE_ACCEPTED) {
+        if (refund.getStatus() != RefundStatus.ACCEPTED) {
             throw new ConflictException("Refund is not ready for completion: " + refund.getStatus());
         }
 
         PaymentRecord payment = paymentRecordRepository.findByPaymentNo(refund.getPaymentNo())
                 .orElseThrow(() -> new ResourceNotFoundException("PaymentRecord", refund.getPaymentNo()));
-        if (payment.getStatus() != PaymentStatus.SUCCESS && payment.getStatus() != PaymentStatus.REFUNDED) {
+        if (payment.getStatus() != PaymentStatus.SUCCESS) {
             throw new ConflictException("Cannot complete refund for payment in status: " + payment.getStatus());
         }
 
-        refund.setStatus(RefundStatus.COMPLETED);
+        refund.setStatus(RefundStatus.REFUNDED);
         refund.setCompletedAt(LocalDateTime.now());
         RefundRecord savedRefund = refundRecordRepository.save(refund);
-
-        if (payment.getStatus() != PaymentStatus.REFUNDED) {
-            payment.setStatus(PaymentStatus.REFUNDED);
-            paymentRecordRepository.save(payment);
-        }
 
         RefundCompletedEvent event = new RefundCompletedEvent(
                 this, savedRefund.getRefundNo(), savedRefund.getPaymentNo(),

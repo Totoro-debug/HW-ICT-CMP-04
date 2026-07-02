@@ -25,10 +25,10 @@ public class CouponTemplate extends BaseEntity {
     @Column(nullable = false)
     private CouponType type;
 
-    @Column(name = "discount_value", precision = 10, scale = 4)
+    @Column(name = "discount_value", precision = 6, scale = 4)
     private BigDecimal discountValue;
 
-    @Column(name = "threshold_amount", precision = 12, scale = 2)
+    @Column(name = "threshold_amount", precision = 18, scale = 2)
     private BigDecimal thresholdAmount;
 
     @Column(name = "max_discount", precision = 12, scale = 2)

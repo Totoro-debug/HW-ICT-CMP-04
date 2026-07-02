@@ -90,9 +90,10 @@ public class RefundService {
         refund.setPaymentNo(request.getPaymentNo());
         refund.setOrderId(request.getOrderId());
         refund.setUserId(userId);
+        refund.setPaidAmount(payment.getPaidAmount());
         refund.setRefundAmount(refundAmount);
         refund.setReason(request.getReason());
-        refund.setStatus(RefundStatus.PENDING_REVIEW);
+        refund.setStatus(RefundStatus.APPLIED);
 
         refund = refundRecordRepository.save(refund);
 
@@ -113,12 +114,12 @@ public class RefundService {
                 .orElseThrow(() -> new ResourceNotFoundException("RefundRecord", refundId));
 
         RefundStatus beforeStatus = refund.getStatus();
-        if (beforeStatus != RefundStatus.PENDING_REVIEW) {
+        if (beforeStatus != RefundStatus.APPLIED) {
             throw new ConflictException("Refund is not in PENDING_REVIEW status: " + refund.getStatus());
         }
 
         if (request.isApproved()) {
-            refund.setStatus(RefundStatus.WAITING_WAREHOUSE_ACCEPT);
+            refund.setStatus(RefundStatus.REVIEWED);
             refund.setReviewerId(reviewerId);
             refund.setReviewNote(request.getNote());
             refundRecordRepository.save(refund);

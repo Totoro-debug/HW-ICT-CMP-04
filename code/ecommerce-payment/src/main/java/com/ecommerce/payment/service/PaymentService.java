@@ -2,6 +2,7 @@ package com.ecommerce.payment.service;
 
 import com.ecommerce.common.event.DomainEventPublisher;
 import com.ecommerce.common.event.OrderPaidEvent;
+import com.ecommerce.common.event.OrderPaidEventItem;
 import com.ecommerce.common.exception.ResourceNotFoundException;
 import com.ecommerce.order.query.OrderDto;
 import com.ecommerce.order.query.OrderQueryService;
@@ -17,6 +18,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDateTime;
+import java.util.List;
 import java.util.UUID;
 
 /**
@@ -66,7 +68,7 @@ public class PaymentService {
         payment.setOrderAmount(order.getPayableAmount());
         payment.setPaidAmount(order.getPayableAmount());
         payment.setMethod(request.getMethod());
-        payment.setStatus(PaymentStatus.PENDING);
+        payment.setStatus(PaymentStatus.CREATED);
         payment.setClientPaymentNo(request.getClientPaymentNo());
 
         payment = paymentRecordRepository.save(payment);
@@ -95,14 +97,19 @@ public class PaymentService {
                 payment.getPaymentNo(), payment.getOrderId());
 
         OrderDto order = orderQueryService.getOrder(payment.getOrderId());
+        LocalDateTime paidAt = payment.getPaidAt() != null ? payment.getPaidAt() : LocalDateTime.now();
+        if (payment.getPaidAt() == null) {
+            payment.setPaidAt(paidAt);
+            paymentRecordRepository.save(payment);
+        }
         PaymentSucceededEvent paymentSucceededEvent = new PaymentSucceededEvent(
                 this, payment.getPaymentNo(), payment.getOrderId(),
-                order.getUserId(), payment.getPaidAmount());
+                order.getUserId(), payment.getPaidAmount(), paidAt);
         eventPublisher.publish(paymentSucceededEvent);
 
         OrderPaidEvent orderPaidEvent = new OrderPaidEvent(
                 this, payment.getOrderId(), order.getUserId(),
-                payment.getPaymentNo(), payment.getPaidAmount());
+                payment.getPaymentNo(), payment.getPaidAmount(), toOrderPaidItems(order));
         eventPublisher.publish(orderPaidEvent);
 
         log.info("Payment confirmed events published: paymentNo={}", payment.getPaymentNo());
@@ -113,6 +120,16 @@ public class PaymentService {
     private String generatePaymentNo() {
         return "PAY" + System.currentTimeMillis() + UUID.randomUUID()
                 .toString().replace("-", "").substring(0, 8).toUpperCase();
+    }
+
+    private List<OrderPaidEventItem> toOrderPaidItems(OrderDto order) {
+        if (order.getItems() == null) {
+            return List.of();
+        }
+        return order.getItems().stream()
+                .map(item -> new OrderPaidEventItem(item.getSkuId(), item.getProductId(), item.getQuantity(),
+                        item.getUnitPrice(), item.getPayableAmount()))
+                .toList();
     }
 
     private PayResponse toPayResponse(PaymentRecord payment) {

@@ -24,8 +24,8 @@ public class InventoryStock extends BaseEntity {
     @Column(name = "reserved_stock")
     private int reservedStock;
 
-    @Column(name = "safety_stock")
-    private int safetyStock;
+    @Column(name = "warning_threshold")
+    private int warningThreshold;
 
     public InventoryStock() {
     }
@@ -69,11 +69,19 @@ public class InventoryStock extends BaseEntity {
         this.reservedStock = reservedStock;
     }
 
+    public int getWarningThreshold() {
+        return warningThreshold;
+    }
+
+    public void setWarningThreshold(int warningThreshold) {
+        this.warningThreshold = warningThreshold;
+    }
+
     public int getSafetyStock() {
-        return safetyStock;
+        return warningThreshold;
     }
 
     public void setSafetyStock(int safetyStock) {
-        this.safetyStock = safetyStock;
+        this.warningThreshold = safetyStock;
     }
 }

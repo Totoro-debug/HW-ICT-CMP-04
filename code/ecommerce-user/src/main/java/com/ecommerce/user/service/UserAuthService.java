@@ -79,7 +79,7 @@ public class UserAuthService {
             throw new AuthorizationException("UNAUTHORIZED", "Invalid password");
         }
 
-        List<String> roles = Collections.singletonList(user.getRole().name());
+        List<String> roles = user.getRoleList();
         userRoleCacheManager.putRoles(user.getId(), roles);
         String token = jwtTokenProvider.generateToken(user.getId(), roles);
 
@@ -149,7 +149,7 @@ public class UserAuthService {
         UserStatus beforeStatus = user.getStatus();
         user.setStatus(UserStatus.ACTIVE);
         userRepository.save(user);
-        userRoleCacheManager.refresh(userId, Collections.singletonList(user.getRole().name()));
+        userRoleCacheManager.refresh(userId, user.getRoleList());
         recordUserStatusAudit(user, "USER_UNFREEZE", beforeStatus, UserStatus.ACTIVE,
                 "User unfrozen by admin operation");
         log.info("User unfrozen: id={}", userId);

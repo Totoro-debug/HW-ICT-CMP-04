@@ -4,12 +4,15 @@ import com.ecommerce.common.exception.BusinessException;
 import com.ecommerce.common.exception.ConflictException;
 import com.ecommerce.common.exception.ResourceNotFoundException;
 import com.ecommerce.common.money.MonetaryUtil;
+import com.ecommerce.promotion.entity.Coupon;
 import com.ecommerce.promotion.entity.CouponStatus;
 import com.ecommerce.promotion.entity.CouponTemplate;
 import com.ecommerce.promotion.entity.CouponType;
 import com.ecommerce.promotion.entity.UserCoupon;
+import com.ecommerce.promotion.repository.CouponRepository;
 import com.ecommerce.promotion.repository.CouponTemplateRepository;
 import com.ecommerce.promotion.repository.UserCouponRepository;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -25,11 +28,20 @@ public class CouponService {
 
     private final CouponTemplateRepository couponTemplateRepository;
     private final UserCouponRepository userCouponRepository;
+    private final CouponRepository couponRepository;
 
     public CouponService(CouponTemplateRepository couponTemplateRepository,
                           UserCouponRepository userCouponRepository) {
+        this(couponTemplateRepository, userCouponRepository, null);
+    }
+
+    @Autowired
+    public CouponService(CouponTemplateRepository couponTemplateRepository,
+                          UserCouponRepository userCouponRepository,
+                          CouponRepository couponRepository) {
         this.couponTemplateRepository = couponTemplateRepository;
         this.userCouponRepository = userCouponRepository;
+        this.couponRepository = couponRepository;
     }
 
     /**
@@ -63,6 +75,7 @@ public class CouponService {
         userCoupon.setCouponCode(generateCouponCode());
         userCoupon.setStatus(CouponStatus.AVAILABLE);
         userCoupon.setClaimedAt(LocalDateTime.now());
+        syncDesignCoupon(template, userCoupon.getCouponCode());
 
         return userCouponRepository.save(userCoupon);
     }
@@ -116,6 +129,26 @@ public class CouponService {
             default:
                 return BigDecimal.ZERO;
         }
+    }
+
+    private Coupon syncDesignCoupon(CouponTemplate template, String couponCode) {
+        if (couponRepository == null) {
+            return null;
+        }
+        Coupon coupon = couponRepository.findByCouponCode(couponCode).orElseGet(Coupon::new);
+        coupon.setCouponCode(couponCode);
+        coupon.setType(template.getType());
+        if (template.getType() == CouponType.DISCOUNT) {
+            coupon.setDiscountRate(template.getDiscountValue());
+            coupon.setAmount(null);
+        } else {
+            coupon.setDiscountRate(null);
+            coupon.setAmount(template.getDiscountValue());
+        }
+        coupon.setThresholdAmount(template.getThresholdAmount());
+        coupon.setValidFrom(template.getStartTime());
+        coupon.setValidTo(template.getEndTime());
+        return couponRepository.save(coupon);
     }
 
     private void validateTemplateAvailable(CouponTemplate template, LocalDateTime now) {

@@ -2,6 +2,8 @@ package com.ecommerce.order.query;
 
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
+import java.util.ArrayList;
+import java.util.List;
 
 /**
  * Cross-module DTO that exposes order data to other services
@@ -26,6 +28,7 @@ public class OrderDto {
     private int redeemedPoints;
     private String paymentNo;
     private String cancelReason;
+    private List<ItemDto> items = new ArrayList<>();
     private LocalDateTime createdAt;
     private LocalDateTime paidAt;
     private LocalDateTime cancelledAt;
@@ -170,6 +173,14 @@ public class OrderDto {
         this.cancelReason = cancelReason;
     }
 
+    public List<ItemDto> getItems() {
+        return items;
+    }
+
+    public void setItems(List<ItemDto> items) {
+        this.items = items == null ? new ArrayList<>() : new ArrayList<>(items);
+    }
+
     public LocalDateTime getCreatedAt() {
         return createdAt;
     }
@@ -200,5 +211,53 @@ public class OrderDto {
 
     public void setExpiresAt(LocalDateTime expiresAt) {
         this.expiresAt = expiresAt;
+    }
+
+    public static class ItemDto {
+        private Long skuId;
+        private Long productId;
+        private int quantity;
+        private BigDecimal unitPrice;
+        private BigDecimal payableAmount;
+
+        public Long getSkuId() {
+            return skuId;
+        }
+
+        public void setSkuId(Long skuId) {
+            this.skuId = skuId;
+        }
+
+        public Long getProductId() {
+            return productId;
+        }
+
+        public void setProductId(Long productId) {
+            this.productId = productId;
+        }
+
+        public int getQuantity() {
+            return quantity;
+        }
+
+        public void setQuantity(int quantity) {
+            this.quantity = quantity;
+        }
+
+        public BigDecimal getUnitPrice() {
+            return unitPrice;
+        }
+
+        public void setUnitPrice(BigDecimal unitPrice) {
+            this.unitPrice = unitPrice;
+        }
+
+        public BigDecimal getPayableAmount() {
+            return payableAmount;
+        }
+
+        public void setPayableAmount(BigDecimal payableAmount) {
+            this.payableAmount = payableAmount;
+        }
     }
 }

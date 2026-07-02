@@ -1,10 +1,12 @@
 package com.ecommerce.loyalty.service;
 
 import com.ecommerce.loyalty.entity.LoyaltyAccount;
+import com.ecommerce.loyalty.entity.LoyaltyPoint;
 import com.ecommerce.loyalty.entity.MemberLevel;
 import com.ecommerce.loyalty.entity.PointsTransaction;
 import com.ecommerce.loyalty.entity.PointsTransactionType;
 import com.ecommerce.loyalty.repository.LoyaltyAccountRepository;
+import com.ecommerce.loyalty.repository.LoyaltyPointRepository;
 import com.ecommerce.loyalty.repository.PointsTransactionRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -13,6 +15,7 @@ import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
+import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Optional;
@@ -20,6 +23,7 @@ import java.util.Optional;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -36,11 +40,16 @@ class PointsExpireServiceTest {
     @Mock
     private LoyaltyAccountRepository accountRepository;
 
+    @Mock
+    private LoyaltyPointRepository loyaltyPointRepository;
+
     private PointsExpireService pointsExpireService;
 
     @BeforeEach
     void setUp() {
-        pointsExpireService = new PointsExpireService(transactionRepository, accountRepository);
+        lenient().when(loyaltyPointRepository.findByExpireDateLessThanEqualAndAvailablePointsGreaterThan(any(), eq(0))).thenReturn(List.of());
+        lenient().when(loyaltyPointRepository.findByUserIdAndExpireDateLessThanEqualAndAvailablePointsGreaterThan(any(), any(), eq(0))).thenReturn(List.of());
+        pointsExpireService = new PointsExpireService(transactionRepository, accountRepository, loyaltyPointRepository);
     }
 
     @Test
@@ -54,8 +63,17 @@ class PointsExpireServiceTest {
                 .thenReturn(false);
         when(accountRepository.findByUserId(1L)).thenReturn(Optional.of(account));
 
+        LoyaltyPoint bucket = new LoyaltyPoint();
+        bucket.setUserId(1L);
+        bucket.setPoints(500);
+        bucket.setAvailablePoints(500);
+        bucket.setExpireDate(LocalDate.now().minusDays(1));
+        when(loyaltyPointRepository.findByExpireDateLessThanEqualAndAvailablePointsGreaterThan(any(), eq(0)))
+                .thenReturn(List.of(bucket));
+
         pointsExpireService.expire();
 
+        assertEquals(0, bucket.getAvailablePoints());
         assertEquals(500, account.getAvailablePoints());
         assertEquals(500, account.getExpiredPoints());
         assertEquals(500, account.getTotalPoints());
@@ -97,8 +115,17 @@ class PointsExpireServiceTest {
                 .thenReturn(false);
         when(accountRepository.findByUserId(2L)).thenReturn(Optional.of(account));
 
+        LoyaltyPoint bucket = new LoyaltyPoint();
+        bucket.setUserId(2L);
+        bucket.setPoints(300);
+        bucket.setAvailablePoints(300);
+        bucket.setExpireDate(LocalDate.now().minusDays(1));
+        when(loyaltyPointRepository.findByUserIdAndExpireDateLessThanEqualAndAvailablePointsGreaterThan(eq(2L), any(), eq(0)))
+                .thenReturn(List.of(bucket));
+
         pointsExpireService.expireForUser(2L);
 
+        assertEquals(0, bucket.getAvailablePoints());
         assertEquals(500, account.getAvailablePoints());
         assertEquals(300, account.getExpiredPoints());
         ArgumentCaptor<PointsTransaction> txCaptor = ArgumentCaptor.forClass(PointsTransaction.class);

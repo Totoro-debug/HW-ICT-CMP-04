@@ -4,6 +4,7 @@ import com.ecommerce.common.exception.ValidationException;
 import com.ecommerce.promotion.dto.CouponCreateRequest;
 import com.ecommerce.promotion.entity.CouponTemplate;
 import com.ecommerce.promotion.entity.CouponType;
+import com.ecommerce.promotion.repository.CouponRepository;
 import com.ecommerce.promotion.repository.CouponTemplateRepository;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.BeforeEach;
@@ -29,12 +30,15 @@ class CouponTemplateServiceTest {
     @Mock
     private CouponTemplateRepository couponTemplateRepository;
 
+    @Mock
+    private CouponRepository couponRepository;
+
     private CouponTemplateService couponTemplateService;
     private CouponCreateRequest request;
 
     @BeforeEach
     void setUp() {
-        couponTemplateService = new CouponTemplateService(couponTemplateRepository, new ObjectMapper());
+        couponTemplateService = new CouponTemplateService(couponTemplateRepository, couponRepository, new ObjectMapper());
         request = new CouponCreateRequest();
         request.setName("Amount off");
         request.setType(CouponType.AMOUNT_OFF);

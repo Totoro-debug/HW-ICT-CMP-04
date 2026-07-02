@@ -7,6 +7,11 @@ import jakarta.persistence.EnumType;
 import jakarta.persistence.Enumerated;
 import jakarta.persistence.Table;
 
+import java.util.Arrays;
+import java.util.Collections;
+import java.util.List;
+import java.util.stream.Collectors;
+
 /**
  * User account entity holding core authentication and identity fields.
  */
@@ -30,9 +35,8 @@ public class User extends BaseEntity {
     @Column(nullable = false, length = 32)
     private UserStatus status;
 
-    @Enumerated(EnumType.STRING)
-    @Column(nullable = false, length = 16)
-    private UserRole role;
+    @Column(name = "roles", nullable = false, length = 128)
+    private String roles;
 
     public User() {
     }
@@ -77,11 +81,43 @@ public class User extends BaseEntity {
         this.status = status;
     }
 
+    public String getRoles() {
+        return roles;
+    }
+
+    public void setRoles(String roles) {
+        this.roles = roles;
+    }
+
+    public List<String> getRoleList() {
+        if (roles == null || roles.isBlank()) {
+            return Collections.emptyList();
+        }
+        return Arrays.stream(roles.split(","))
+                .map(String::trim)
+                .filter(role -> !role.isEmpty())
+                .collect(Collectors.toList());
+    }
+
+    public void setRoleList(List<String> roles) {
+        if (roles == null || roles.isEmpty()) {
+            this.roles = null;
+            return;
+        }
+        this.roles = roles.stream()
+                .map(String::trim)
+                .filter(role -> !role.isEmpty())
+                .collect(Collectors.joining(","));
+    }
+
     public UserRole getRole() {
-        return role;
+        return getRoleList().stream()
+                .findFirst()
+                .map(UserRole::valueOf)
+                .orElse(null);
     }
 
     public void setRole(UserRole role) {
-        this.role = role;
+        this.roles = role == null ? null : role.name();
     }
 }

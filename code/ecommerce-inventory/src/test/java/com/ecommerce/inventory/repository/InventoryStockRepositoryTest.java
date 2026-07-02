@@ -74,7 +74,7 @@ class InventoryStockRepositoryTest {
         assertThat(result).isPresent();
         assertThat(result.get().getOnHandStock()).isEqualTo(200);
         assertThat(result.get().getReservedStock()).isEqualTo(20);
-        assertThat(result.get().getSafetyStock()).isEqualTo(10);
+        assertThat(result.get().getWarningThreshold()).isEqualTo(10);
     }
 
     @Test
@@ -111,7 +111,7 @@ class InventoryStockRepositoryTest {
         stock.setSkuId(300L);
         stock.setOnHandStock(100);
         stock.setReservedStock(10);
-        stock.setSafetyStock(5);
+        stock.setWarningThreshold(5);
 
         InventoryStock saved = repository.save(stock);
 
@@ -120,7 +120,7 @@ class InventoryStockRepositoryTest {
         assertThat(saved.getSkuId()).isEqualTo(300L);
         assertThat(saved.getOnHandStock()).isEqualTo(100);
         assertThat(saved.getReservedStock()).isEqualTo(10);
-        assertThat(saved.getSafetyStock()).isEqualTo(5);
+        assertThat(saved.getWarningThreshold()).isEqualTo(5);
         assertThat(saved.getCreatedAt()).isNotNull();
         assertThat(saved.getUpdatedAt()).isNotNull();
     }
@@ -152,7 +152,7 @@ class InventoryStockRepositoryTest {
         stock.setSkuId(skuId);
         stock.setOnHandStock(onHand);
         stock.setReservedStock(reserved);
-        stock.setSafetyStock(safety);
+        stock.setWarningThreshold(safety);
         return stock;
     }
 }

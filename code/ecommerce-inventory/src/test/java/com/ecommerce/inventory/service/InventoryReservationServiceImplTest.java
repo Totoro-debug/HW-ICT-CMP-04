@@ -278,7 +278,7 @@ class InventoryReservationServiceImplTest {
         stock.setSkuId(skuId);
         stock.setOnHandStock(onHandStock);
         stock.setReservedStock(reservedStock);
-        stock.setSafetyStock(0);
+        stock.setWarningThreshold(0);
         return stock;
     }
 

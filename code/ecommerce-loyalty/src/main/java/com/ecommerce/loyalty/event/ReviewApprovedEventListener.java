@@ -4,6 +4,7 @@ import com.ecommerce.loyalty.config.LoyaltyProperties;
 import com.ecommerce.loyalty.service.LoyaltyPointService;
 import com.ecommerce.common.event.FailedEventRecord;
 import com.ecommerce.common.event.FailedEventRecordRepository;
+import com.ecommerce.common.event.FailedEventStatus;
 import com.ecommerce.common.event.ReviewApprovedEvent;
 import com.ecommerce.common.test.RuntimeConfigRegistry;
 import org.slf4j.Logger;
@@ -37,8 +38,8 @@ public class ReviewApprovedEventListener {
 
     @EventListener
     public void onReviewApproved(ReviewApprovedEvent event) {
-        log.info("Received ReviewApprovedEvent: reviewId={}, userId={}",
-                event.getReviewId(), event.getUserId());
+        log.info("Received ReviewApprovedEvent: reviewId={}, userId={}, orderId={}, productId={}",
+                event.getReviewId(), event.getUserId(), event.getOrderId(), event.getProductId());
 
         try {
             int reviewRewardPoints = RuntimeConfigRegistry.getInt("loyalty.review-reward-points",
@@ -60,12 +61,21 @@ public class ReviewApprovedEventListener {
         try {
             FailedEventRecord record = new FailedEventRecord();
             record.setEventType("ReviewApprovedEvent");
-            record.setEventPayload("{\"reviewId\":" + event.getReviewId()
-                    + ",\"userId\":" + event.getUserId() + "}");
+            record.setEventPayload("{\"eventId\":\"" + event.getEventId()
+                    + "\",\"eventType\":\"" + event.getEventType()
+                    + "\",\"occurredAt\":\"" + event.getOccurredAt()
+                    + "\",\"aggregateId\":\"" + event.getAggregateId()
+                    + "\",\"traceId\":\"" + event.getTraceId()
+                    + "\",\"reviewId\":" + event.getReviewId()
+                    + ",\"userId\":" + event.getUserId()
+                    + ",\"orderId\":" + event.getOrderId()
+                    + ",\"productId\":" + event.getProductId() + "}");
             record.setErrorMessage(exception.getMessage());
+            record.setLastError(exception.getMessage());
             record.setOccurredAt(LocalDateTime.now());
             record.setRetried(false);
             record.setRetryCount(0);
+            record.setStatus(FailedEventStatus.PENDING);
             failedEventRecordRepository.save(record);
         } catch (Exception persistException) {
             log.error("Failed to persist ReviewApprovedEvent failure for reviewId={}: {}",

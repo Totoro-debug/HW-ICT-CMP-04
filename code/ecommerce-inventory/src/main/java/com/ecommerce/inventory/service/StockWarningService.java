@@ -49,7 +49,7 @@ public class StockWarningService {
                     response.setSkuId(stock.getSkuId());
                     response.setWarehouseId(stock.getWarehouseId());
                     response.setOnHandStock(stock.getOnHandStock());
-                    response.setSafetyStock(stock.getSafetyStock());
+                    response.setSafetyStock(stock.getWarningThreshold());
                     response.setWarningThreshold(rule.getWarningThreshold());
                     response.setMessage(String.format(
                             "SKU %d in warehouse %d is below warning threshold: %d <= %d",

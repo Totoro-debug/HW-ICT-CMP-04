@@ -153,10 +153,23 @@ public class OrderQueryServiceImpl implements OrderQueryService, OrderPaymentSta
         dto.setRedeemedPoints(order.getRedeemedPoints());
         dto.setPaymentNo(order.getPaymentNo());
         dto.setCancelReason(order.getCancelReason());
+        dto.setItems(orderItemRepository.findByOrderId(order.getId()).stream()
+                .map(this::toItemDto)
+                .toList());
         dto.setCreatedAt(order.getCreatedAt());
         dto.setPaidAt(order.getPaidAt());
         dto.setCancelledAt(order.getCancelledAt());
         dto.setExpiresAt(order.getExpiresAt());
+        return dto;
+    }
+
+    private OrderDto.ItemDto toItemDto(OrderItem item) {
+        OrderDto.ItemDto dto = new OrderDto.ItemDto();
+        dto.setSkuId(item.getSkuId());
+        dto.setProductId(item.getSkuId());
+        dto.setQuantity(item.getQuantity());
+        dto.setUnitPrice(item.getUnitPrice());
+        dto.setPayableAmount(item.getItemAmount());
         return dto;
     }
 }

@@ -12,40 +12,40 @@ import java.math.BigDecimal;
 import java.time.LocalDateTime;
 
 @Entity
-@Table(name = "invoice_records", indexes = {
-        @Index(name = "idx_invoice_no", columnList = "invoiceNo", unique = true),
-        @Index(name = "idx_invoice_order_id", columnList = "orderId"),
-        @Index(name = "idx_invoice_user_id", columnList = "userId"),
+@Table(name = "invoices", indexes = {
+        @Index(name = "idx_invoice_no", columnList = "invoice_no", unique = true),
+        @Index(name = "idx_invoice_order_id", columnList = "order_id"),
+        @Index(name = "idx_invoice_user_id", columnList = "user_id"),
         @Index(name = "idx_invoice_status", columnList = "status")
 })
 public class InvoiceRecord extends BaseEntity {
 
-    @Column(nullable = false, unique = true, length = 64)
+    @Column(name = "invoice_no", nullable = false, unique = true, length = 64)
     private String invoiceNo;
 
-    @Column(nullable = false)
+    @Column(name = "order_id", nullable = false)
     private Long orderId;
 
-    @Column(nullable = false)
+    @Column(name = "user_id", nullable = false)
     private Long userId;
 
     @Enumerated(EnumType.STRING)
     @Column(nullable = false, length = 20)
     private InvoiceType invoiceType;
 
-    @Column(nullable = false, precision = 12, scale = 2)
+    @Column(name = "amount", nullable = false, precision = 18, scale = 2)
     private BigDecimal invoiceAmount;
 
-    @Column(nullable = false, precision = 12, scale = 2)
+    @Column(name = "tax_rate", nullable = false, precision = 6, scale = 4)
     private BigDecimal taxRate;
 
-    @Column(nullable = false, precision = 12, scale = 2)
+    @Column(name = "tax_amount", nullable = false, precision = 18, scale = 2)
     private BigDecimal taxAmount;
 
-    @Column(nullable = false, precision = 12, scale = 2)
+    @Column(name = "remaining_invoiceable_amount", nullable = false, precision = 18, scale = 2)
     private BigDecimal remainingInvoiceableAmount;
 
-    @Column(length = 200)
+    @Column(name = "title", length = 200)
     private String invoiceTitle;
 
     @Column(length = 50)

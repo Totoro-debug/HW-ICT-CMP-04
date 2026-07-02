@@ -68,7 +68,7 @@ public class UserQueryServiceImpl implements UserQueryService {
         dto.setPhone(user.getPhone());
         dto.setNickname(user.getNickname());
         dto.setStatus(user.getStatus().name());
-        dto.setRole(user.getRole().name());
+        dto.setRole(user.getRole() == null ? null : user.getRole().name());
         return dto;
     }
 

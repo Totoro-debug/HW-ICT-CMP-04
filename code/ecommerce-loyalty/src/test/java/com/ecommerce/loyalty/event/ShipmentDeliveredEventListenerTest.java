@@ -38,6 +38,11 @@ class ShipmentDeliveredEventListenerTest {
         assertEquals("ShipmentDeliveredEvent", captor.getValue().getEventType());
         assertEquals("shipment listener failed", captor.getValue().getErrorMessage());
         assertEquals(0, captor.getValue().getRetryCount());
+        org.junit.jupiter.api.Assertions.assertTrue(captor.getValue().getEventPayload().contains("eventType"));
+        org.junit.jupiter.api.Assertions.assertTrue(captor.getValue().getEventPayload().contains("aggregateId"));
+        org.junit.jupiter.api.Assertions.assertTrue(captor.getValue().getEventPayload().contains("traceId"));
+        org.junit.jupiter.api.Assertions.assertTrue(captor.getValue().getEventPayload().contains("deliveredAt"));
+        org.junit.jupiter.api.Assertions.assertFalse(captor.getValue().getEventPayload().contains("userId"));
     }
 
     static class ShipmentDeliveredEvent extends AbstractDomainEvent {

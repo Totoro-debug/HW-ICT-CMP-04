@@ -9,6 +9,7 @@ import com.ecommerce.loyalty.entity.MemberLevel;
 import com.ecommerce.loyalty.entity.PointsTransaction;
 import com.ecommerce.loyalty.entity.PointsTransactionType;
 import com.ecommerce.loyalty.repository.LoyaltyAccountRepository;
+import com.ecommerce.loyalty.repository.LoyaltyPointRepository;
 import com.ecommerce.loyalty.repository.PointsTransactionRepository;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -26,7 +27,10 @@ import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyInt;
+import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.Mockito.doAnswer;
+import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -43,6 +47,9 @@ class LoyaltyPointServiceTest {
     private PointsTransactionRepository transactionRepository;
 
     @Mock
+    private LoyaltyPointRepository loyaltyPointRepository;
+
+    @Mock
     private PointsExpireService pointsExpireService;
 
     private LoyaltyProperties loyaltyProperties;
@@ -52,8 +59,11 @@ class LoyaltyPointServiceTest {
     void setUp() {
         RuntimeConfigRegistry.clear();
         loyaltyProperties = new LoyaltyProperties();
-        service = new LoyaltyPointService(accountRepository, transactionRepository, new MemberBenefitService(),
-                pointsExpireService, loyaltyProperties);
+        lenient().when(loyaltyPointRepository.sumAvailablePointsByUserId(anyLong())).thenReturn(0);
+        lenient().when(loyaltyPointRepository.findByUserIdAndAvailablePointsGreaterThanOrderByExpireDateAscIdAsc(anyLong(), anyInt()))
+                .thenReturn(java.util.List.of());
+        service = new LoyaltyPointService(accountRepository, transactionRepository, loyaltyPointRepository,
+                new MemberBenefitService(), pointsExpireService, loyaltyProperties);
     }
 
     @AfterEach

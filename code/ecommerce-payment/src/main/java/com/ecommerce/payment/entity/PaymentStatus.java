@@ -1,8 +1,8 @@
 package com.ecommerce.payment.entity;
 
 public enum PaymentStatus {
-    PENDING,
+    CREATED,
     SUCCESS,
     FAILED,
-    REFUNDED
+    CLOSED
 }

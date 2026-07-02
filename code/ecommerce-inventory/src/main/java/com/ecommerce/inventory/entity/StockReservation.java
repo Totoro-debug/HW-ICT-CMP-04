@@ -11,7 +11,7 @@ import jakarta.persistence.UniqueConstraint;
 import java.time.LocalDateTime;
 
 @Entity
-@Table(name = "stock_reservation", uniqueConstraints = {
+@Table(name = "stock_reservations", uniqueConstraints = {
         @UniqueConstraint(columnNames = { "order_id", "sku_id", "warehouse_id" })
 })
 public class StockReservation extends BaseEntity {

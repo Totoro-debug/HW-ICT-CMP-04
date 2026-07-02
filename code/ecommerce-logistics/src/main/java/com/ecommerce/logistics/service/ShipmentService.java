@@ -299,7 +299,7 @@ public class ShipmentService {
 
         if (newStatus == ShipmentStatus.DELIVERED) {
             eventPublisher.publishEvent(new ShipmentDeliveredEvent(this,
-                    shipment.getId(), shipment.getOrderId(), shipment.getUserId(), shipment.getDeliveredAt()));
+                    shipment.getOrderId(), shipment.getId(), shipment.getDeliveredAt()));
             log.info("ShipmentDeliveredEvent published for shipmentId={}, orderId={}",
                     shipment.getId(), shipment.getOrderId());
         }

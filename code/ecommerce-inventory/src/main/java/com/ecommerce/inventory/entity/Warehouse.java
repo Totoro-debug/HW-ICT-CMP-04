@@ -1,13 +1,18 @@
 package com.ecommerce.inventory.entity;
 
 import com.ecommerce.common.model.BaseEntity;
+import com.fasterxml.jackson.annotation.JsonIgnore;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.Table;
 
 @Entity
-@Table(name = "warehouse")
+@Table(name = "warehouses")
 public class Warehouse extends BaseEntity {
+
+    @JsonIgnore
+    @Column(nullable = false, unique = true, length = 64)
+    private String code;
 
     @Column(nullable = false, length = 100)
     private String name;
@@ -34,6 +39,14 @@ public class Warehouse extends BaseEntity {
     private String status;
 
     public Warehouse() {
+    }
+
+    public String getCode() {
+        return code;
+    }
+
+    public void setCode(String code) {
+        this.code = code;
     }
 
     public String getName() {

@@ -55,7 +55,7 @@ class AdminRefundControllerTest {
         response.setOrderId(1L);
         response.setUserId(100L);
         response.setRefundAmount(new BigDecimal("97.00"));
-        response.setStatus(RefundStatus.COMPLETED); // Directly completed, skipping warehouse acceptance
+        response.setStatus(RefundStatus.REFUNDED); // Directly completed, skipping warehouse acceptance
         response.setReviewNote("Approved");
         response.setCompletedAt(java.time.LocalDateTime.now());
 
@@ -66,7 +66,7 @@ class AdminRefundControllerTest {
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(request)))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.status").value("COMPLETED"))
+                .andExpect(jsonPath("$.status").value("REFUNDED"))
                 .andExpect(jsonPath("$.refundNo").value("RF001"));
 
         verify(refundService).reviewRefund(anyLong(), anyLong(), any(RefundReviewRequest.class));
@@ -86,14 +86,14 @@ class AdminRefundControllerTest {
         RefundResponse response = new RefundResponse();
         response.setId(refundId);
         response.setRefundNo("RF001");
-        response.setStatus(RefundStatus.WAREHOUSE_ACCEPTED);
+        response.setStatus(RefundStatus.ACCEPTED);
 
         when(refundService.warehouseAccept(anyLong(), anyLong()))
                 .thenReturn(response);
 
         mockMvc.perform(post("/api/v1/admin/refunds/{refundId}/warehouse-accept", refundId))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.status").value("WAREHOUSE_ACCEPTED"));
+                .andExpect(jsonPath("$.status").value("ACCEPTED"));
 
         verify(refundService).warehouseAccept(anyLong(), anyLong());
     }

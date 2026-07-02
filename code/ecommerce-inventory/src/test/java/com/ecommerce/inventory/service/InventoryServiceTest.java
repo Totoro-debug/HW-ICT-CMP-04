@@ -64,7 +64,7 @@ class InventoryServiceTest {
         stock.setSkuId(100L);
         stock.setOnHandStock(100);
         stock.setReservedStock(0);
-        stock.setSafetyStock(10);
+        stock.setWarningThreshold(10);
     }
 
     // ---- checkAvailability tests ----
@@ -244,7 +244,7 @@ class InventoryServiceTest {
         assertThat(result.getWarehouseId()).isEqualTo(2L);
         assertThat(result.getSkuId()).isEqualTo(200L);
         assertThat(result.getReservedStock()).isEqualTo(0);
-        assertThat(result.getSafetyStock()).isEqualTo(0);
+        assertThat(result.getWarningThreshold()).isEqualTo(0);
     }
 
     @Test

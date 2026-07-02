@@ -5,6 +5,8 @@ import com.ecommerce.common.event.FailedEventRecordRepository;
 import com.ecommerce.common.event.FailedEventStatus;
 import com.ecommerce.order.event.OrderPaidEvent;
 import com.ecommerce.order.repository.OrderRepository;
+import com.ecommerce.order.service.OrderPaymentEventHandler;
+import com.ecommerce.order.service.OrderService;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
@@ -26,11 +28,14 @@ class OrderEventListenerTest {
     void testOnOrderPaid_failurePersistsRecordAndDoesNotThrow() {
         OrderRepository orderRepository = mock(OrderRepository.class);
         FailedEventRecordRepository failedEventRecordRepository = mock(FailedEventRecordRepository.class);
+        OrderPaymentEventHandler orderPaymentEventHandler = mock(OrderPaymentEventHandler.class);
+        OrderService orderService = mock(OrderService.class);
         when(orderRepository.findById(100L)).thenThrow(new IllegalStateException("database unavailable"));
         when(failedEventRecordRepository.save(any(FailedEventRecord.class)))
                 .thenAnswer(invocation -> invocation.getArgument(0));
 
-        OrderEventListener listener = new OrderEventListener(orderRepository, failedEventRecordRepository);
+        OrderEventListener listener = new OrderEventListener(
+                orderRepository, failedEventRecordRepository, orderPaymentEventHandler, orderService);
         OrderPaidEvent event = new OrderPaidEvent(this, 100L, 200L, "PAY-001", new BigDecimal("10.00"));
 
         assertThatCode(() -> listener.onOrderPaid(event)).doesNotThrowAnyException();

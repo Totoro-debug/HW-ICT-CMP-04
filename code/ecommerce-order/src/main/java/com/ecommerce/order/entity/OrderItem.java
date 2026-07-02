@@ -13,8 +13,8 @@ import java.math.BigDecimal;
  */
 @Entity
 @Table(name = "order_items", indexes = {
-        @Index(name = "idx_order_items_order_id", columnList = "orderId"),
-        @Index(name = "idx_order_items_sku_id", columnList = "skuId")
+        @Index(name = "idx_order_items_order_id", columnList = "order_id"),
+        @Index(name = "idx_order_items_sku_id", columnList = "sku_id")
 })
 public class OrderItem extends BaseEntity {
 
@@ -26,29 +26,29 @@ public class OrderItem extends BaseEntity {
     @Column(name = "sku_id", nullable = false)
     private Long skuId;
 
-    /** SKU name snapshot at time of purchase */
-    @Column(name = "sku_name", nullable = false, length = 256)
-    private String skuName;
+    /** Product name snapshot at time of purchase */
+    @Column(name = "product_name", nullable = false, length = 256)
+    private String productName;
 
     /** SKU code snapshot at time of purchase */
     @Column(name = "sku_code", nullable = false, length = 64)
     private String skuCode;
 
     /** Unit price at time of purchase */
-    @Column(nullable = false, precision = 12, scale = 2)
-    private BigDecimal price;
+    @Column(name = "unit_price", nullable = false, precision = 18, scale = 2)
+    private BigDecimal unitPrice;
 
     /** Quantity ordered */
     @Column(nullable = false)
     private int quantity;
 
-    /** Line subtotal: price * quantity */
-    @Column(nullable = false, precision = 12, scale = 2)
-    private BigDecimal subtotal;
+    /** Line amount: unit price * quantity */
+    @Column(name = "item_amount", nullable = false, precision = 18, scale = 2)
+    private BigDecimal itemAmount;
 
-    /** JSON snapshot of the full product data at order time */
-    @Column(name = "product_snapshot", columnDefinition = "TEXT")
-    private String productSnapshot;
+    /** SKU specs snapshot at order time */
+    @Column(name = "sku_specs", columnDefinition = "CLOB")
+    private String skuSpecs;
 
     public OrderItem() {
     }
@@ -69,12 +69,20 @@ public class OrderItem extends BaseEntity {
         this.skuId = skuId;
     }
 
+    public String getProductName() {
+        return productName;
+    }
+
+    public void setProductName(String productName) {
+        this.productName = productName;
+    }
+
     public String getSkuName() {
-        return skuName;
+        return productName;
     }
 
     public void setSkuName(String skuName) {
-        this.skuName = skuName;
+        this.productName = skuName;
     }
 
     public String getSkuCode() {
@@ -85,12 +93,20 @@ public class OrderItem extends BaseEntity {
         this.skuCode = skuCode;
     }
 
+    public BigDecimal getUnitPrice() {
+        return unitPrice;
+    }
+
+    public void setUnitPrice(BigDecimal unitPrice) {
+        this.unitPrice = unitPrice;
+    }
+
     public BigDecimal getPrice() {
-        return price;
+        return unitPrice;
     }
 
     public void setPrice(BigDecimal price) {
-        this.price = price;
+        this.unitPrice = price;
     }
 
     public int getQuantity() {
@@ -101,19 +117,35 @@ public class OrderItem extends BaseEntity {
         this.quantity = quantity;
     }
 
+    public BigDecimal getItemAmount() {
+        return itemAmount;
+    }
+
+    public void setItemAmount(BigDecimal itemAmount) {
+        this.itemAmount = itemAmount;
+    }
+
     public BigDecimal getSubtotal() {
-        return subtotal;
+        return itemAmount;
     }
 
     public void setSubtotal(BigDecimal subtotal) {
-        this.subtotal = subtotal;
+        this.itemAmount = subtotal;
+    }
+
+    public String getSkuSpecs() {
+        return skuSpecs;
+    }
+
+    public void setSkuSpecs(String skuSpecs) {
+        this.skuSpecs = skuSpecs;
     }
 
     public String getProductSnapshot() {
-        return productSnapshot;
+        return skuSpecs;
     }
 
     public void setProductSnapshot(String productSnapshot) {
-        this.productSnapshot = productSnapshot;
+        this.skuSpecs = productSnapshot;
     }
 }

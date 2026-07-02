@@ -3,6 +3,7 @@ package com.ecommerce.loyalty.event;
 import com.ecommerce.common.event.AbstractDomainEvent;
 import com.ecommerce.common.event.FailedEventRecord;
 import com.ecommerce.common.event.FailedEventRecordRepository;
+import com.ecommerce.common.event.FailedEventStatus;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.scheduling.annotation.Async;
@@ -43,11 +44,11 @@ public class PaymentSucceededEventListener {
     }
 
     protected void handlePaymentSucceeded(AbstractDomainEvent event) {
-        log.info("Received PaymentSucceededEvent in loyalty: paymentNo={}, orderId={}, userId={}, paidAmount={}",
+        log.info("Received PaymentSucceededEvent in loyalty: paymentNo={}, orderId={}, paidAmount={}, paidAt={}",
                 invokeGetter(event, "getPaymentNo"),
                 invokeGetter(event, "getOrderId"),
-                invokeGetter(event, "getUserId"),
-                invokeGetter(event, "getPaidAmount"));
+                invokeGetter(event, "getPaidAmount"),
+                invokeGetter(event, "getPaidAt"));
         // Payment points are awarded by payment's post-payment adapter through LoyaltyCommandService.
     }
 
@@ -56,14 +57,20 @@ public class PaymentSucceededEventListener {
             FailedEventRecord record = new FailedEventRecord();
             record.setEventType("PaymentSucceededEvent");
             record.setEventPayload("{\"eventId\":\"" + event.getEventId()
+                    + "\",\"eventType\":\"" + event.getEventType()
+                    + "\",\"occurredAt\":\"" + event.getOccurredAt()
+                    + "\",\"aggregateId\":\"" + event.getAggregateId()
+                    + "\",\"traceId\":\"" + event.getTraceId()
                     + "\",\"paymentNo\":\"" + invokeGetter(event, "getPaymentNo")
                     + "\",\"orderId\":" + invokeGetter(event, "getOrderId")
-                    + ",\"userId\":" + invokeGetter(event, "getUserId")
-                    + ",\"paidAmount\":" + invokeGetter(event, "getPaidAmount") + "}");
+                    + ",\"paidAmount\":" + invokeGetter(event, "getPaidAmount")
+                    + ",\"paidAt\":\"" + invokeGetter(event, "getPaidAt") + "\"}");
             record.setErrorMessage(exception.getMessage());
+            record.setLastError(exception.getMessage());
             record.setOccurredAt(LocalDateTime.now());
             record.setRetried(false);
             record.setRetryCount(0);
+            record.setStatus(FailedEventStatus.PENDING);
             failedEventRecordRepository.save(record);
         } catch (Exception persistException) {
             log.error("Failed to persist PaymentSucceededEvent failure: eventId={}, error={}",

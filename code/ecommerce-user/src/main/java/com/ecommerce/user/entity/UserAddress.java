@@ -33,7 +33,7 @@ public class UserAddress extends BaseEntity {
     @Column(name = "receiver_phone", nullable = false, length = 20)
     private String receiverPhone;
 
-    @Column(name = "is_default", nullable = false)
+    @Column(name = "default_address", nullable = false)
     private boolean isDefault;
 
     public UserAddress() {

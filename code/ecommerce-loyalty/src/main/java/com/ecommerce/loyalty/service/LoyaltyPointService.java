@@ -9,10 +9,12 @@ import com.ecommerce.common.test.RuntimeConfigRegistry;
 import com.ecommerce.common.test.SystemClockService;
 import com.ecommerce.loyalty.config.LoyaltyProperties;
 import com.ecommerce.loyalty.entity.LoyaltyAccount;
+import com.ecommerce.loyalty.entity.LoyaltyPoint;
 import com.ecommerce.loyalty.entity.MemberLevel;
 import com.ecommerce.loyalty.entity.PointsTransaction;
 import com.ecommerce.loyalty.entity.PointsTransactionType;
 import com.ecommerce.loyalty.repository.LoyaltyAccountRepository;
+import com.ecommerce.loyalty.repository.LoyaltyPointRepository;
 import com.ecommerce.loyalty.repository.PointsTransactionRepository;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -22,6 +24,8 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
+import java.time.LocalDate;
+import java.util.List;
 
 /**
  * Core service for points operations: query, earn, redeem, and estimate.
@@ -36,6 +40,7 @@ public class LoyaltyPointService implements LoyaltyQueryService, LoyaltyCommandS
 
     private final LoyaltyAccountRepository accountRepository;
     private final PointsTransactionRepository transactionRepository;
+    private final LoyaltyPointRepository loyaltyPointRepository;
     private final MemberBenefitService memberBenefitService;
     private final PointsExpireService pointsExpireService;
     private final LoyaltyProperties loyaltyProperties;
@@ -44,18 +49,29 @@ public class LoyaltyPointService implements LoyaltyQueryService, LoyaltyCommandS
                                PointsTransactionRepository transactionRepository,
                                MemberBenefitService memberBenefitService,
                                PointsExpireService pointsExpireService) {
-        this(accountRepository, transactionRepository, memberBenefitService,
+        this(accountRepository, transactionRepository, null, memberBenefitService,
+                pointsExpireService, new LoyaltyProperties());
+    }
+
+    public LoyaltyPointService(LoyaltyAccountRepository accountRepository,
+                               PointsTransactionRepository transactionRepository,
+                               LoyaltyPointRepository loyaltyPointRepository,
+                               MemberBenefitService memberBenefitService,
+                               PointsExpireService pointsExpireService) {
+        this(accountRepository, transactionRepository, loyaltyPointRepository, memberBenefitService,
                 pointsExpireService, new LoyaltyProperties());
     }
 
     @Autowired
     public LoyaltyPointService(LoyaltyAccountRepository accountRepository,
                                PointsTransactionRepository transactionRepository,
+                               LoyaltyPointRepository loyaltyPointRepository,
                                MemberBenefitService memberBenefitService,
                                PointsExpireService pointsExpireService,
                                LoyaltyProperties loyaltyProperties) {
         this.accountRepository = accountRepository;
         this.transactionRepository = transactionRepository;
+        this.loyaltyPointRepository = loyaltyPointRepository;
         this.memberBenefitService = memberBenefitService;
         this.pointsExpireService = pointsExpireService;
         this.loyaltyProperties = loyaltyProperties != null ? loyaltyProperties : new LoyaltyProperties();
@@ -64,6 +80,12 @@ public class LoyaltyPointService implements LoyaltyQueryService, LoyaltyCommandS
     // ======================== LoyaltyQueryService ========================
 
     public int getAvailablePoints(Long userId) {
+        Integer availablePoints = loyaltyPointRepository != null
+                ? loyaltyPointRepository.sumAvailablePointsByUserId(userId)
+                : null;
+        if (availablePoints != null && availablePoints > 0) {
+            return availablePoints;
+        }
         LoyaltyAccount account = getAccount(userId);
         return account.getAvailablePoints();
     }
@@ -133,6 +155,7 @@ public class LoyaltyPointService implements LoyaltyQueryService, LoyaltyCommandS
         account.setRedeemedPoints(account.getRedeemedPoints() + actual);
         account.setTotalPoints(Math.max(0, account.getTotalPoints() - actual));
         accountRepository.save(account);
+        deductAvailableLoyaltyPoints(userId, actual);
 
         recordTransaction(userId, PointsTransactionType.REDEEM, -actual, account.getAvailablePoints(),
                 bizType, bizId, "Points redeem, deducted " + actual + " points");
@@ -156,6 +179,7 @@ public class LoyaltyPointService implements LoyaltyQueryService, LoyaltyCommandS
         account.setAvailablePoints(account.getAvailablePoints() - points);
         account.setFrozenPoints(account.getFrozenPoints() + points);
         accountRepository.save(account);
+        deductAvailableLoyaltyPoints(userId, points);
         recordTransaction(userId, PointsTransactionType.FREEZE, -points, account.getAvailablePoints(),
                 bizType, bizId, description);
     }
@@ -175,6 +199,7 @@ public class LoyaltyPointService implements LoyaltyQueryService, LoyaltyCommandS
         account.setFrozenPoints(account.getFrozenPoints() - points);
         account.setAvailablePoints(account.getAvailablePoints() + points);
         accountRepository.save(account);
+        addLoyaltyPointBucket(userId, points, points, null, bizType);
         recordTransaction(userId, PointsTransactionType.UNFREEZE, points, account.getAvailablePoints(),
                 bizType, bizId, description);
     }
@@ -303,8 +328,41 @@ public class LoyaltyPointService implements LoyaltyQueryService, LoyaltyCommandS
         tx.setDescription(description);
         tx.setExpiresAt(SystemClockService.now().plusMonths(getExpireMonths()));
         transactionRepository.save(tx);
+        addLoyaltyPointBucket(userId, points, points, tx.getExpiresAt().toLocalDate(), bizType);
 
         log.info("Earned {} points for userId={}, balance={}", points, userId, account.getAvailablePoints());
+    }
+
+    private void addLoyaltyPointBucket(Long userId, int points, int availablePoints,
+                                       LocalDate expireDate, String sourceType) {
+        if (loyaltyPointRepository == null) {
+            return;
+        }
+        LoyaltyPoint loyaltyPoint = new LoyaltyPoint();
+        loyaltyPoint.setUserId(userId);
+        loyaltyPoint.setPoints(points);
+        loyaltyPoint.setAvailablePoints(availablePoints);
+        loyaltyPoint.setExpireDate(expireDate);
+        loyaltyPoint.setSourceType(sourceType);
+        loyaltyPointRepository.save(loyaltyPoint);
+    }
+
+    private void deductAvailableLoyaltyPoints(Long userId, int points) {
+        if (loyaltyPointRepository == null) {
+            return;
+        }
+        int remaining = points;
+        List<LoyaltyPoint> buckets = loyaltyPointRepository
+                .findByUserIdAndAvailablePointsGreaterThanOrderByExpireDateAscIdAsc(userId, 0);
+        for (LoyaltyPoint bucket : buckets) {
+            if (remaining <= 0) {
+                break;
+            }
+            int deducted = Math.min(bucket.getAvailablePoints(), remaining);
+            bucket.setAvailablePoints(bucket.getAvailablePoints() - deducted);
+            remaining -= deducted;
+        }
+        loyaltyPointRepository.saveAll(buckets);
     }
 
     // ======================== Helpers ========================

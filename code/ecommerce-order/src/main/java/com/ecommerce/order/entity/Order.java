@@ -44,31 +44,31 @@ public class Order extends BaseEntity {
     private OrderStatus status;
 
     /** Sum of (item price * quantity) for all order items */
-    @Column(name = "item_total", nullable = false, precision = 12, scale = 2)
+    @Column(name = "item_total", nullable = false, precision = 18, scale = 2)
     private BigDecimal itemTotal;
 
     /** Shipping fee for the order */
-    @Column(name = "shipping_fee", nullable = false, precision = 12, scale = 2)
+    @Column(name = "shipping_fee", nullable = false, precision = 18, scale = 2)
     private BigDecimal shippingFee;
 
     /** Packaging fee for the order */
-    @Column(name = "packaging_fee", nullable = false, precision = 12, scale = 2)
+    @Column(name = "packaging_fee", nullable = false, precision = 18, scale = 2)
     private BigDecimal packagingFee;
 
     /** Total discount amount (promotions + coupons + member) */
-    @Column(name = "discount_amount", nullable = false, precision = 12, scale = 2)
+    @Column(name = "discount_amount", nullable = false, precision = 18, scale = 2)
     private BigDecimal discountAmount;
 
     /** Amount deducted via loyalty points redemption */
-    @Column(name = "points_deduction_amount", nullable = false, precision = 12, scale = 2)
+    @Column(name = "points_deduction_amount", nullable = false, precision = 18, scale = 2)
     private BigDecimal pointsDeductionAmount;
 
     /** Final amount the customer must pay */
-    @Column(name = "payable_amount", nullable = false, precision = 12, scale = 2)
+    @Column(name = "payable_amount", nullable = false, precision = 18, scale = 2)
     private BigDecimal payableAmount;
 
     /** Amount actually paid (set after payment confirmation) */
-    @Column(name = "paid_amount", precision = 12, scale = 2)
+    @Column(name = "paid_amount", precision = 18, scale = 2)
     private BigDecimal paidAmount;
 
     /** JSON snapshot of the shipping address at order time */

@@ -12,24 +12,21 @@ import java.math.BigDecimal;
 import java.time.LocalDateTime;
 
 @Entity
-@Table(name = "payment_records", indexes = {
-        @Index(name = "idx_payment_no", columnList = "paymentNo", unique = true),
-        @Index(name = "idx_payment_order_id", columnList = "orderId"),
+@Table(name = "payments", indexes = {
+        @Index(name = "idx_payment_no", columnList = "payment_no", unique = true),
+        @Index(name = "idx_payment_order_id", columnList = "order_id"),
         @Index(name = "idx_payment_status", columnList = "status")
 })
 public class PaymentRecord extends BaseEntity {
 
-    @Column(nullable = false, unique = true, length = 64)
+    @Column(name = "payment_no", nullable = false, unique = true, length = 64)
     private String paymentNo;
 
-    @Column(nullable = false)
+    @Column(name = "order_id", nullable = false)
     private Long orderId;
 
-    @Column(nullable = false, precision = 12, scale = 2)
-    private BigDecimal orderAmount;
-
-    @Column(nullable = false, precision = 12, scale = 2)
-    private BigDecimal paidAmount;
+    @Column(name = "amount", nullable = false, precision = 18, scale = 2)
+    private BigDecimal amount;
 
     @Enumerated(EnumType.STRING)
     @Column(nullable = false, length = 20)
@@ -48,6 +45,7 @@ public class PaymentRecord extends BaseEntity {
     @Column(columnDefinition = "TEXT")
     private String callbackData;
 
+    @Column(name = "paid_at")
     private LocalDateTime paidAt;
 
     private LocalDateTime settledAt;
@@ -62,10 +60,12 @@ public class PaymentRecord extends BaseEntity {
     public void setPaymentNo(String paymentNo) { this.paymentNo = paymentNo; }
     public Long getOrderId() { return orderId; }
     public void setOrderId(Long orderId) { this.orderId = orderId; }
-    public BigDecimal getOrderAmount() { return orderAmount; }
-    public void setOrderAmount(BigDecimal orderAmount) { this.orderAmount = orderAmount; }
-    public BigDecimal getPaidAmount() { return paidAmount; }
-    public void setPaidAmount(BigDecimal paidAmount) { this.paidAmount = paidAmount; }
+    public BigDecimal getAmount() { return amount; }
+    public void setAmount(BigDecimal amount) { this.amount = amount; }
+    public BigDecimal getOrderAmount() { return amount; }
+    public void setOrderAmount(BigDecimal orderAmount) { this.amount = orderAmount; }
+    public BigDecimal getPaidAmount() { return amount; }
+    public void setPaidAmount(BigDecimal paidAmount) { this.amount = paidAmount; }
     public PaymentMethod getMethod() { return method; }
     public void setMethod(PaymentMethod method) { this.method = method; }
     public PaymentStatus getStatus() { return status; }

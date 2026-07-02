@@ -3,6 +3,7 @@ package com.ecommerce.loyalty.event;
 import com.ecommerce.common.event.AbstractDomainEvent;
 import com.ecommerce.common.event.FailedEventRecord;
 import com.ecommerce.common.event.FailedEventRecordRepository;
+import com.ecommerce.common.event.FailedEventStatus;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.scheduling.annotation.Async;
@@ -43,10 +44,9 @@ public class ShipmentDeliveredEventListener {
     }
 
     protected void handleShipmentDelivered(AbstractDomainEvent event) {
-        log.info("Received ShipmentDeliveredEvent in loyalty: shipmentId={}, orderId={}, userId={}, deliveredAt={}",
+        log.info("Received ShipmentDeliveredEvent in loyalty: shipmentId={}, orderId={}, deliveredAt={}",
                 invokeGetter(event, "getShipmentId"),
                 invokeGetter(event, "getOrderId"),
-                invokeGetter(event, "getUserId"),
                 invokeGetter(event, "getDeliveredAt"));
         // Current loyalty rules do not award extra delivery points; this listener is the required event entry.
     }
@@ -56,14 +56,19 @@ public class ShipmentDeliveredEventListener {
             FailedEventRecord record = new FailedEventRecord();
             record.setEventType("ShipmentDeliveredEvent");
             record.setEventPayload("{\"eventId\":\"" + event.getEventId()
-                    + "\",\"shipmentId\":" + invokeGetter(event, "getShipmentId")
-                    + ",\"orderId\":" + invokeGetter(event, "getOrderId")
-                    + ",\"userId\":" + invokeGetter(event, "getUserId")
+                    + "\",\"eventType\":\"" + event.getEventType()
+                    + "\",\"occurredAt\":\"" + event.getOccurredAt()
+                    + "\",\"aggregateId\":\"" + event.getAggregateId()
+                    + "\",\"traceId\":\"" + event.getTraceId()
+                    + "\",\"orderId\":" + invokeGetter(event, "getOrderId")
+                    + ",\"shipmentId\":" + invokeGetter(event, "getShipmentId")
                     + ",\"deliveredAt\":\"" + invokeGetter(event, "getDeliveredAt") + "\"}");
             record.setErrorMessage(exception.getMessage());
+            record.setLastError(exception.getMessage());
             record.setOccurredAt(LocalDateTime.now());
             record.setRetried(false);
             record.setRetryCount(0);
+            record.setStatus(FailedEventStatus.PENDING);
             failedEventRecordRepository.save(record);
         } catch (Exception persistException) {
             log.error("Failed to persist ShipmentDeliveredEvent failure: eventId={}, error={}",

@@ -56,7 +56,7 @@ class PaymentControllerTest {
                 PaymentMethod.ALIPAY, "CLIENT001");
 
         PayResponse response = new PayResponse("PAY123", 1L,
-                PaymentStatus.PENDING, new BigDecimal("99.00"),
+                PaymentStatus.CREATED, new BigDecimal("99.00"),
                 java.time.LocalDateTime.now());
 
         when(paymentService.pay(any(PayRequest.class))).thenReturn(response);
@@ -67,7 +67,7 @@ class PaymentControllerTest {
                 .andExpect(status().isCreated())
                 .andExpect(jsonPath("$.paymentNo").value("PAY123"))
                 .andExpect(jsonPath("$.orderId").value(1))
-                .andExpect(jsonPath("$.status").value("PENDING"))
+                .andExpect(jsonPath("$.status").value("CREATED"))
                 .andExpect(jsonPath("$.paidAmount").value(99.00));
 
         verify(paymentService).pay(any(PayRequest.class));

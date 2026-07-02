@@ -98,9 +98,11 @@ public class CoreNotificationEventListener {
         Object orderId = read(event, "orderId");
         Object userId = read(event, "userId");
         Object paidAmount = read(event, "paidAmount");
+        Object paidAt = read(event, "paidAt");
         return buildRequest(event, "PAYMENT_SUCCEEDED", String.valueOf(orderId), receiverForUser(userId),
                 NotificationChannel.SMS, "payment_succeeded",
-                variables("paymentNo", paymentNo, "orderId", orderId, "userId", userId, "paidAmount", paidAmount));
+                variables("paymentNo", paymentNo, "orderId", orderId, "userId", userId,
+                        "paidAmount", paidAmount, "paidAt", paidAt));
     }
 
     private NotificationRequest buildRefundCompletedNotification(AbstractDomainEvent event) {

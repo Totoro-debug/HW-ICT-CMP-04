@@ -82,7 +82,7 @@ class PaymentServiceTest {
 
         assertNotNull(response);
         assertEquals(1L, response.getOrderId());
-        assertEquals(PaymentStatus.PENDING, response.getStatus());
+        assertEquals(PaymentStatus.CREATED, response.getStatus());
         assertEquals(new BigDecimal("99.00"), response.getPaidAmount());
         assertNotNull(response.getPaymentNo());
 
@@ -98,7 +98,7 @@ class PaymentServiceTest {
         payment.setPaymentNo("PAY001");
         payment.setOrderId(1L);
         payment.setPaidAmount(new BigDecimal("99.00"));
-        payment.setStatus(PaymentStatus.PENDING);
+        payment.setStatus(PaymentStatus.CREATED);
         OrderDto order = new OrderDto();
         order.setOrderId(1L);
         order.setUserId(100L);

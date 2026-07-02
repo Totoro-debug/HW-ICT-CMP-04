@@ -66,7 +66,7 @@ class RefundServiceTest {
         RefundRecord refund = new RefundRecord();
         refund.setId(1L);
         refund.setRefundNo("RF001");
-        refund.setStatus(RefundStatus.PENDING_REVIEW);
+        refund.setStatus(RefundStatus.APPLIED);
         refund.setReason("Changed mind");
 
         when(refundRecordRepository.findById(1L)).thenReturn(Optional.of(refund));
@@ -77,22 +77,22 @@ class RefundServiceTest {
 
         RefundResponse response = refundService.reviewRefund(1L, 999L, reviewRequest);
 
-        assertEquals(RefundStatus.WAITING_WAREHOUSE_ACCEPT, response.getStatus());
+        assertEquals(RefundStatus.REVIEWED, response.getStatus());
         assertEquals("Approved by admin", response.getReviewNote());
         verify(auditLogService).record("999", "999", "REFUND_REVIEW", "REFUND", "RF001",
-                "PENDING_REVIEW", "WAITING_WAREHOUSE_ACCEPT", "Approved by admin");
+                "APPLIED", "REVIEWED", "Approved by admin");
     }
 
     @Test
     @DisplayName("warehouse acceptance returns accepted status and triggers finance stage internally")
     void testWarehouseAccept_returnsAcceptedAndTriggersFinanceStage() {
-        RefundRecord accepted = refundRecord(2L, "RF002", RefundStatus.WAREHOUSE_ACCEPTED, new BigDecimal("98.00"));
+        RefundRecord accepted = refundRecord(2L, "RF002", RefundStatus.ACCEPTED, new BigDecimal("98.00"));
 
         when(refundStageService.acceptWarehouse(2L, 999L)).thenReturn(accepted);
 
         RefundResponse response = refundService.warehouseAccept(2L, 999L);
 
-        assertEquals(RefundStatus.WAREHOUSE_ACCEPTED, response.getStatus());
+        assertEquals(RefundStatus.ACCEPTED, response.getStatus());
         verify(refundStageService).acceptWarehouse(2L, 999L);
         verify(refundStageService).executeFinanceRefund(2L);
     }
@@ -100,7 +100,7 @@ class RefundServiceTest {
     @Test
     @DisplayName("warehouse acceptance stays committed when refund execution fails")
     void testWarehouseAccept_keepsAcceptedStatusWhenExecutionFails() {
-        RefundRecord accepted = refundRecord(3L, "RF003", RefundStatus.WAREHOUSE_ACCEPTED, new BigDecimal("88.00"));
+        RefundRecord accepted = refundRecord(3L, "RF003", RefundStatus.ACCEPTED, new BigDecimal("88.00"));
 
         when(refundStageService.acceptWarehouse(3L, 1000L)).thenReturn(accepted);
         doThrow(new ConflictException("refund gateway temporarily unavailable"))
@@ -108,7 +108,7 @@ class RefundServiceTest {
 
         RefundResponse response = refundService.warehouseAccept(3L, 1000L);
 
-        assertEquals(RefundStatus.WAREHOUSE_ACCEPTED, response.getStatus());
+        assertEquals(RefundStatus.ACCEPTED, response.getStatus());
     }
 
     @Test
@@ -138,7 +138,7 @@ class RefundServiceTest {
         assertEquals("PAY004", response.getPaymentNo());
         assertEquals(40L, response.getOrderId());
         assertEquals(100L, response.getUserId());
-        assertEquals(RefundStatus.PENDING_REVIEW, response.getStatus());
+        assertEquals(RefundStatus.APPLIED, response.getStatus());
         assertEquals("Defective item", response.getReason());
         assertNotNull(response.getRefundNo());
         verify(refundCalculator).validateRefundAmount(new BigDecimal("195.00"), new BigDecimal("200.00"));
@@ -147,7 +147,7 @@ class RefundServiceTest {
     @Test
     @DisplayName("applyRefund returns first response for same refundRequestNo")
     void testApplyRefund_duplicateRequest_returnsExistingRefund() {
-        RefundRecord existing = refundRecord(4L, "RF004", RefundStatus.PENDING_REVIEW, new BigDecimal("195.00"));
+        RefundRecord existing = refundRecord(4L, "RF004", RefundStatus.APPLIED, new BigDecimal("195.00"));
         existing.setRefundRequestNo("REQ004");
         existing.setPaymentNo("PAY004");
         existing.setOrderId(40L);
@@ -171,7 +171,7 @@ class RefundServiceTest {
         payment.setPaymentNo("PAY005");
         payment.setOrderId(50L);
         payment.setPaidAmount(new BigDecimal("100.00"));
-        payment.setStatus(PaymentStatus.PENDING);
+        payment.setStatus(PaymentStatus.CREATED);
 
         when(refundRecordRepository.findByRefundRequestNo("REQ005"))
                 .thenReturn(Optional.empty());

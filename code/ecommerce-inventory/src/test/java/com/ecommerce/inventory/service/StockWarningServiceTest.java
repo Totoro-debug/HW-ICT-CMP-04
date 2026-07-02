@@ -52,7 +52,7 @@ class StockWarningServiceTest {
         stock.setSkuId(100L);
         stock.setOnHandStock(10);
         stock.setReservedStock(0);
-        stock.setSafetyStock(5);
+        stock.setWarningThreshold(5);
 
         when(warningRuleRepo.findByEnabledTrue()).thenReturn(List.of(rule));
         when(stockRepo.findByWarehouseIdAndSkuId(1L, 100L)).thenReturn(Optional.of(stock));
@@ -84,7 +84,7 @@ class StockWarningServiceTest {
         stock.setWarehouseId(1L);
         stock.setSkuId(100L);
         stock.setOnHandStock(20); // exactly at threshold
-        stock.setSafetyStock(5);
+        stock.setWarningThreshold(5);
 
         when(warningRuleRepo.findByEnabledTrue()).thenReturn(List.of(rule));
         when(stockRepo.findByWarehouseIdAndSkuId(1L, 100L)).thenReturn(Optional.of(stock));
@@ -110,7 +110,7 @@ class StockWarningServiceTest {
         stock.setWarehouseId(1L);
         stock.setSkuId(100L);
         stock.setOnHandStock(50); // above threshold
-        stock.setSafetyStock(5);
+        stock.setWarningThreshold(5);
 
         when(warningRuleRepo.findByEnabledTrue()).thenReturn(List.of(rule));
         when(stockRepo.findByWarehouseIdAndSkuId(1L, 100L)).thenReturn(Optional.of(stock));

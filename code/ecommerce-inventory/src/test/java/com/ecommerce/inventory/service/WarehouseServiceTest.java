@@ -57,6 +57,7 @@ class WarehouseServiceTest {
         assertThat(result.getServiceRegions()).isEqualTo("South China");
         assertThat(result.getPriority()).isEqualTo(1);
         assertThat(result.getStatus()).isEqualTo("ACTIVE");
+        assertThat(result.getCode()).startsWith("WH-");
     }
 
     @Test

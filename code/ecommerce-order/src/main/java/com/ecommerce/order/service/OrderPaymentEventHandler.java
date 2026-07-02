@@ -1,11 +1,13 @@
 package com.ecommerce.order.service;
 
 import com.ecommerce.common.event.DomainEventPublisher;
+import com.ecommerce.common.event.OrderPaidEventItem;
 import com.ecommerce.common.integration.LoyaltyCommandService;
 import com.ecommerce.order.entity.Order;
+import com.ecommerce.order.entity.OrderItem;
 import com.ecommerce.order.entity.OrderStatus;
 import com.ecommerce.order.event.OrderPaidEvent;
-import com.ecommerce.order.query.OrderPaymentStatusUpdater;
+import com.ecommerce.order.repository.OrderItemRepository;
 import com.ecommerce.order.repository.OrderRepository;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -14,6 +16,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
+import java.util.List;
 
 /**
  * Handles payment-related order state transitions.
@@ -41,6 +44,7 @@ public class OrderPaymentEventHandler {
     private static final Logger log = LoggerFactory.getLogger(OrderPaymentEventHandler.class);
 
     private final OrderRepository orderRepository;
+    private final OrderItemRepository orderItemRepository;
     private final DomainEventPublisher eventPublisher;
     private final com.ecommerce.inventory.query.InventoryReservationService inventoryReservationService;
     private final LoyaltyCommandService loyaltyCommandService;
@@ -48,12 +52,14 @@ public class OrderPaymentEventHandler {
     private final OrderService orderService;
 
     public OrderPaymentEventHandler(OrderRepository orderRepository,
+                                     OrderItemRepository orderItemRepository,
                                      DomainEventPublisher eventPublisher,
                                      com.ecommerce.inventory.query.InventoryReservationService inventoryReservationService,
                                      LoyaltyCommandService loyaltyCommandService,
                                      OrderStateMachine stateMachine,
                                      OrderService orderService) {
         this.orderRepository = orderRepository;
+        this.orderItemRepository = orderItemRepository;
         this.eventPublisher = eventPublisher;
         this.inventoryReservationService = inventoryReservationService;
         this.loyaltyCommandService = loyaltyCommandService;
@@ -70,8 +76,13 @@ public class OrderPaymentEventHandler {
      */
     @Transactional
     public void handlePaymentSuccess(Long orderId, String paymentNo, BigDecimal paidAmount) {
-        log.info("Handling payment success: orderId={}, paymentNo={}, paidAmount={}",
-                orderId, paymentNo, paidAmount);
+        handlePaymentSuccess(orderId, paymentNo, paidAmount, LocalDateTime.now());
+    }
+
+    @Transactional
+    public void handlePaymentSuccess(Long orderId, String paymentNo, BigDecimal paidAmount, LocalDateTime paidAt) {
+        log.info("Handling payment success: orderId={}, paymentNo={}, paidAmount={}, paidAt={}",
+                orderId, paymentNo, paidAmount, paidAt);
 
         Order order = orderRepository.findById(orderId)
                 .orElseThrow(() -> new com.ecommerce.common.exception.ResourceNotFoundException(
@@ -104,10 +115,11 @@ public class OrderPaymentEventHandler {
         stateMachine.validateTransition(fromStatus, OrderStatus.PAID);
 
         // Update order
+        LocalDateTime effectivePaidAt = paidAt != null ? paidAt : LocalDateTime.now();
         order.setStatus(OrderStatus.PAID);
         order.setPaymentNo(paymentNo);
         order.setPaidAmount(order.getPayableAmount());
-        order.setPaidAt(LocalDateTime.now());
+        order.setPaidAt(effectivePaidAt);
         orderRepository.save(order);
 
         // Record event
@@ -128,9 +140,20 @@ public class OrderPaymentEventHandler {
 
         // Publish event
         eventPublisher.publish(new OrderPaidEvent(this, orderId, order.getUserId(),
-                paymentNo, order.getPayableAmount()));
+                paymentNo, order.getPayableAmount(), buildOrderPaidItems(orderId)));
 
         log.info("Payment success handled for order {}: status={}", orderId, order.getStatus());
+    }
+
+    private List<OrderPaidEventItem> buildOrderPaidItems(Long orderId) {
+        return orderItemRepository.findByOrderId(orderId).stream()
+                .map(this::toOrderPaidEventItem)
+                .toList();
+    }
+
+    private OrderPaidEventItem toOrderPaidEventItem(OrderItem item) {
+        return new OrderPaidEventItem(item.getSkuId(), null, item.getQuantity(),
+                item.getUnitPrice(), item.getItemAmount());
     }
 
     /**

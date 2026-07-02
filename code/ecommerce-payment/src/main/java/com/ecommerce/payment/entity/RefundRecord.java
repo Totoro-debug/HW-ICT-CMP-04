@@ -12,32 +12,35 @@ import java.math.BigDecimal;
 import java.time.LocalDateTime;
 
 @Entity
-@Table(name = "refund_records", indexes = {
-        @Index(name = "idx_refund_no", columnList = "refundNo", unique = true),
-        @Index(name = "idx_refund_request_no", columnList = "refundRequestNo", unique = true),
-        @Index(name = "idx_refund_payment_no", columnList = "paymentNo"),
-        @Index(name = "idx_refund_order_id", columnList = "orderId"),
-        @Index(name = "idx_refund_user_id", columnList = "userId"),
+@Table(name = "refunds", indexes = {
+        @Index(name = "idx_refund_no", columnList = "refund_no", unique = true),
+        @Index(name = "idx_refund_request_no", columnList = "refund_request_no", unique = true),
+        @Index(name = "idx_refund_payment_no", columnList = "payment_no"),
+        @Index(name = "idx_refund_order_id", columnList = "order_id"),
+        @Index(name = "idx_refund_user_id", columnList = "user_id"),
         @Index(name = "idx_refund_status", columnList = "status")
 })
 public class RefundRecord extends BaseEntity {
 
-    @Column(nullable = false, unique = true, length = 64)
+    @Column(name = "refund_no", nullable = false, unique = true, length = 64)
     private String refundNo;
 
-    @Column(nullable = false, unique = true, length = 64)
+    @Column(name = "refund_request_no", nullable = false, unique = true, length = 64)
     private String refundRequestNo;
 
-    @Column(nullable = false, length = 64)
+    @Column(name = "payment_no", nullable = false, length = 64)
     private String paymentNo;
 
-    @Column(nullable = false)
+    @Column(name = "order_id", nullable = false)
     private Long orderId;
 
-    @Column(nullable = false)
+    @Column(name = "user_id", nullable = false)
     private Long userId;
 
-    @Column(nullable = false, precision = 12, scale = 2)
+    @Column(name = "paid_amount", nullable = false, precision = 18, scale = 2)
+    private BigDecimal paidAmount;
+
+    @Column(name = "refund_amount", nullable = false, precision = 18, scale = 2)
     private BigDecimal refundAmount;
 
     @Column(nullable = false, length = 500)
@@ -74,6 +77,8 @@ public class RefundRecord extends BaseEntity {
     public void setOrderId(Long orderId) { this.orderId = orderId; }
     public Long getUserId() { return userId; }
     public void setUserId(Long userId) { this.userId = userId; }
+    public BigDecimal getPaidAmount() { return paidAmount; }
+    public void setPaidAmount(BigDecimal paidAmount) { this.paidAmount = paidAmount; }
     public BigDecimal getRefundAmount() { return refundAmount; }
     public void setRefundAmount(BigDecimal refundAmount) { this.refundAmount = refundAmount; }
     public String getReason() { return reason; }

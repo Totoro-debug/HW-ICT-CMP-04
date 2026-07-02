@@ -55,7 +55,7 @@ class ReviewApprovedEventListenerTest {
         Long reviewId = 999L;
         Long userId = 888L;
 
-        ReviewApprovedEvent event = new ReviewApprovedEvent(new Object(), reviewId, userId);
+        ReviewApprovedEvent event = new ReviewApprovedEvent(new Object(), reviewId, userId, 777L, 666L);
 
         listener.onReviewApproved(event);
 
@@ -75,7 +75,7 @@ class ReviewApprovedEventListenerTest {
         Long reviewId = 999L;
         Long userId = 888L;
 
-        ReviewApprovedEvent event = new ReviewApprovedEvent(new Object(), reviewId, userId);
+        ReviewApprovedEvent event = new ReviewApprovedEvent(new Object(), reviewId, userId, 777L, 666L);
         listener.onReviewApproved(event);
 
         verify(loyaltyPointService).earnPoints(
@@ -90,7 +90,7 @@ class ReviewApprovedEventListenerTest {
     void testReviewApproved_failurePersistsFailedEventRecord() {
         Long reviewId = 999L;
         Long userId = 888L;
-        ReviewApprovedEvent event = new ReviewApprovedEvent(new Object(), reviewId, userId);
+        ReviewApprovedEvent event = new ReviewApprovedEvent(new Object(), reviewId, userId, 777L, 666L);
         doThrow(new RuntimeException("review award failed"))
                 .when(loyaltyPointService)
                 .earnPoints(eq(userId), eq(20), eq("REVIEW"), eq(reviewId.toString()),
@@ -102,5 +102,10 @@ class ReviewApprovedEventListenerTest {
         verify(failedEventRecordRepository).save(captor.capture());
         assertEquals("ReviewApprovedEvent", captor.getValue().getEventType());
         assertEquals("review award failed", captor.getValue().getErrorMessage());
+        org.junit.jupiter.api.Assertions.assertTrue(captor.getValue().getEventPayload().contains("eventType"));
+        org.junit.jupiter.api.Assertions.assertTrue(captor.getValue().getEventPayload().contains("aggregateId"));
+        org.junit.jupiter.api.Assertions.assertTrue(captor.getValue().getEventPayload().contains("traceId"));
+        org.junit.jupiter.api.Assertions.assertTrue(captor.getValue().getEventPayload().contains("orderId"));
+        org.junit.jupiter.api.Assertions.assertTrue(captor.getValue().getEventPayload().contains("productId"));
     }
 }

@@ -79,7 +79,7 @@ public class SettlementBatchService {
                         PaymentStatus.SUCCESS, startOfDay, endOfDay);
         List<RefundRecord> refunds = refundRecordRepository
                 .findByStatusAndCompletedAtBetweenAndSettledAtIsNull(
-                        RefundStatus.COMPLETED, startOfDay, endOfDay);
+                        RefundStatus.REFUNDED, startOfDay, endOfDay);
 
         BigDecimal totalPaymentAmount = payments.stream()
                 .map(PaymentRecord::getPaidAmount)

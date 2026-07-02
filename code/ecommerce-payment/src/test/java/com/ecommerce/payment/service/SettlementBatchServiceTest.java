@@ -80,7 +80,7 @@ class SettlementBatchServiceTest {
 
         PaymentRecord paid1 = createPayment(1L, "PAY001", new BigDecimal("100.005"), PaymentStatus.SUCCESS);
         PaymentRecord paid2 = createPayment(2L, "PAY002", new BigDecimal("200.00"), PaymentStatus.SUCCESS);
-        PaymentRecord pending = createPayment(3L, "PAY003", new BigDecimal("50.00"), PaymentStatus.PENDING);
+        PaymentRecord pending = createPayment(3L, "PAY003", new BigDecimal("50.00"), PaymentStatus.CREATED);
         PaymentRecord failed = createPayment(4L, "PAY004", new BigDecimal("75.00"), PaymentStatus.FAILED);
 
         when(settlementBatchRepository.findByBatchDate(batchDate))
@@ -89,7 +89,7 @@ class SettlementBatchServiceTest {
                 eq(PaymentStatus.SUCCESS), any(), any()))
                 .thenReturn(Arrays.asList(paid1, paid2));
         when(refundRecordRepository.findByStatusAndCompletedAtBetweenAndSettledAtIsNull(
-                eq(RefundStatus.COMPLETED), any(), any()))
+                eq(RefundStatus.REFUNDED), any(), any()))
                 .thenReturn(Collections.emptyList());
         when(invoiceRecordRepository.findAll()).thenReturn(Collections.emptyList());
 
@@ -125,7 +125,7 @@ class SettlementBatchServiceTest {
 
         PaymentRecord payment1 = createPayment(10L, "PAY010", new BigDecimal("150.005"), PaymentStatus.SUCCESS);
         PaymentRecord payment2 = createPayment(20L, "PAY020", new BigDecimal("350.00"), PaymentStatus.SUCCESS);
-        PaymentRecord pending = createPayment(30L, "PAY030", new BigDecimal("100.00"), PaymentStatus.PENDING);
+        PaymentRecord pending = createPayment(30L, "PAY030", new BigDecimal("100.00"), PaymentStatus.CREATED);
 
         when(settlementBatchRepository.findByBatchDate(batchDate))
                 .thenReturn(Optional.empty());
@@ -133,7 +133,7 @@ class SettlementBatchServiceTest {
                 eq(PaymentStatus.SUCCESS), any(), any()))
                 .thenReturn(Arrays.asList(payment1, payment2));
         when(refundRecordRepository.findByStatusAndCompletedAtBetweenAndSettledAtIsNull(
-                eq(RefundStatus.COMPLETED), any(), any()))
+                eq(RefundStatus.REFUNDED), any(), any()))
                 .thenReturn(Collections.emptyList());
         when(invoiceRecordRepository.findAll()).thenReturn(Collections.emptyList());
 
@@ -170,7 +170,7 @@ class SettlementBatchServiceTest {
                 eq(PaymentStatus.SUCCESS), any(), any()))
                 .thenReturn(payments);
         when(refundRecordRepository.findByStatusAndCompletedAtBetweenAndSettledAtIsNull(
-                eq(RefundStatus.COMPLETED), any(), any()))
+                eq(RefundStatus.REFUNDED), any(), any()))
                 .thenReturn(refunds);
         when(invoiceRecordRepository.findAll()).thenReturn(Collections.emptyList());
         when(settlementBatchRepository.save(any(SettlementBatch.class)))
@@ -213,7 +213,7 @@ class SettlementBatchServiceTest {
         refund.setUserId(200L);
         refund.setRefundAmount(refundAmount);
         refund.setReason("reason");
-        refund.setStatus(RefundStatus.COMPLETED);
+        refund.setStatus(RefundStatus.REFUNDED);
         return refund;
     }
 }

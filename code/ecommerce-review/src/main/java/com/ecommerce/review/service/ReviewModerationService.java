@@ -60,7 +60,8 @@ public class ReviewModerationService {
         log.info("Review approved: reviewId={}, approvedBy={}", reviewId, adminId);
 
         // Publish event for loyalty point award.
-        eventPublisher.publish(new ReviewApprovedEvent(this, reviewId, review.getUserId()));
+        eventPublisher.publish(new ReviewApprovedEvent(this, reviewId, review.getUserId(),
+                review.getOrderId(), review.getProductId()));
     }
 
     /**

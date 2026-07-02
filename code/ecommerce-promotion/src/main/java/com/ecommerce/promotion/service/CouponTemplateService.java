@@ -1,11 +1,12 @@
 package com.ecommerce.promotion.service;
 
-import com.ecommerce.common.exception.ResourceNotFoundException;
 import com.ecommerce.common.exception.ValidationException;
 import com.ecommerce.common.money.MonetaryUtil;
 import com.ecommerce.promotion.dto.CouponCreateRequest;
+import com.ecommerce.promotion.entity.Coupon;
 import com.ecommerce.promotion.entity.CouponTemplate;
 import com.ecommerce.promotion.entity.CouponType;
+import com.ecommerce.promotion.repository.CouponRepository;
 import com.ecommerce.promotion.repository.CouponTemplateRepository;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -14,6 +15,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
 import java.util.List;
+import java.util.UUID;
 
 /**
  * Administrative service for managing coupon templates.
@@ -22,11 +24,14 @@ import java.util.List;
 public class CouponTemplateService {
 
     private final CouponTemplateRepository couponTemplateRepository;
+    private final CouponRepository couponRepository;
     private final ObjectMapper objectMapper;
 
     public CouponTemplateService(CouponTemplateRepository couponTemplateRepository,
+                                  CouponRepository couponRepository,
                                   ObjectMapper objectMapper) {
         this.couponTemplateRepository = couponTemplateRepository;
+        this.couponRepository = couponRepository;
         this.objectMapper = objectMapper;
     }
 
@@ -59,7 +64,9 @@ public class CouponTemplateService {
             template.setApplicableProductIds(toJson(request.getApplicableProductIds()));
         }
 
-        return couponTemplateRepository.save(template);
+        CouponTemplate saved = couponTemplateRepository.save(template);
+        createDesignCoupon(saved, generateCouponCode(saved.getId()));
+        return saved;
     }
 
     /**
@@ -105,6 +112,26 @@ public class CouponTemplateService {
         if (amount != null && amount.compareTo(BigDecimal.ZERO) < 0) {
             throw new ValidationException(field, "must not be negative");
         }
+    }
+
+    private Coupon createDesignCoupon(CouponTemplate template, String couponCode) {
+        Coupon coupon = new Coupon();
+        coupon.setCouponCode(couponCode);
+        coupon.setType(template.getType());
+        if (template.getType() == CouponType.DISCOUNT) {
+            coupon.setDiscountRate(template.getDiscountValue());
+        } else {
+            coupon.setAmount(template.getDiscountValue());
+        }
+        coupon.setThresholdAmount(template.getThresholdAmount());
+        coupon.setValidFrom(template.getStartTime());
+        coupon.setValidTo(template.getEndTime());
+        return couponRepository.save(coupon);
+    }
+
+    private String generateCouponCode(Long id) {
+        String suffix = id != null ? String.valueOf(id) : UUID.randomUUID().toString().substring(0, 8).toUpperCase();
+        return "TPL-" + suffix;
     }
 
     private BigDecimal roundNullable(BigDecimal amount) {
